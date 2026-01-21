@@ -772,6 +772,12 @@ def calculate_expected_minutes(
     override_minutes: Optional[float] = None,
     manager_id: Optional[int] = None
 ) -> tuple[float, str]:
+    """
+    Calculate expected minutes with smart edge case handling:
+    - Returning from injury: 0 mins for weeks then back to 90 = full starter
+    - Consistent sub appearances: rotation risk
+    - Early substitutions: potential fitness concern
+    """
     player_id = player.get("id")
     if override_minutes is not None:
         return override_minutes, "user_override"
@@ -779,7 +785,6 @@ def calculate_expected_minutes(
     # Check cache for override (manager-specific or global)
     cached_override = cache.get_minutes_override(player_id, manager_id)
     if cached_override is not None:
-        # Determine if it's a user override or predicted
         if (manager_id, player_id) in cache.minutes_overrides or (None, player_id) in cache.minutes_overrides:
             return cached_override, "user_override"
         else:
@@ -792,6 +797,40 @@ def calculate_expected_minutes(
     
     available_gws = max(current_gw - 1, 1)
     
+    # Analyze recent history if available
+    recent_pattern = None
+    if player_history and player_history.get("history"):
+        history = player_history["history"]
+        # Get last 6 GW appearances
+        recent = sorted(history, key=lambda x: x.get("round", 0), reverse=True)[:6]
+        
+        if len(recent) >= 3:
+            recent_mins = [h.get("minutes", 0) for h in recent]
+            
+            # Pattern detection
+            # 1. Returning from injury: multiple 0s followed by 90s
+            zeros_then_full = False
+            if len(recent_mins) >= 4:
+                # Check if recent games are 90 but older were 0
+                recent_two = recent_mins[:2]
+                older = recent_mins[2:5]
+                if all(m >= 75 for m in recent_two) and sum(older) == 0:
+                    zeros_then_full = True
+                    recent_pattern = "injury_return"
+            
+            # 2. Consistent sub appearances (15-45 mins regularly = rotation risk)
+            sub_appearances = sum(1 for m in recent_mins if 10 <= m <= 45)
+            full_appearances = sum(1 for m in recent_mins if m >= 75)
+            
+            if sub_appearances >= 3 and full_appearances <= 1:
+                recent_pattern = "rotation_risk"
+            
+            # 3. Early subs (started but subbed off before 70 mins)
+            early_subs = sum(1 for m in recent_mins if 45 <= m <= 65)
+            if early_subs >= 2:
+                recent_pattern = "early_sub_risk"
+    
+    # Base calculation
     if starts == 0 or total_minutes < 90:
         base_mins = 10.0
         reason = "insufficient_data"
@@ -801,6 +840,21 @@ def calculate_expected_minutes(
         base_mins = mins_per_start * start_rate
         reason = "season_average"
     
+    # Apply pattern adjustments
+    if recent_pattern == "injury_return":
+        # Player returned from injury and is playing full games - trust recent form
+        base_mins = 85.0
+        reason = "injury_return"
+    elif recent_pattern == "rotation_risk":
+        # Consistent sub = likely rotation player
+        base_mins = min(base_mins, 35.0)
+        reason = "rotation_risk"
+    elif recent_pattern == "early_sub_risk":
+        # Getting subbed early = fitness/form concern
+        base_mins = base_mins * 0.75
+        reason = "early_sub"
+    
+    # Status overrides
     if status in ('i', 'u', 's'):
         if chance_of_playing and chance_of_playing > 0:
             base_mins = base_mins * (chance_of_playing / 100) * 0.5
@@ -812,11 +866,11 @@ def calculate_expected_minutes(
         base_mins = base_mins * cop
         reason = "doubtful"
     
-    if team_name in ROTATION_MANAGERS:
+    # Rotation manager adjustment (only if not already flagged)
+    if reason == "season_average" and team_name in ROTATION_MANAGERS:
         rotation_factor = ROTATION_MANAGERS[team_name]
         base_mins = base_mins * rotation_factor
-        if reason == "season_average":
-            reason = "rotation_adjusted"
+        reason = "rotation_adjusted"
     
     return round(min(90, max(0, base_mins)), 1), reason
 
@@ -1033,6 +1087,131 @@ async def clear_predicted_minutes():
     cache.predicted_minutes.clear()
     cache.predicted_minutes_last_update = None
     return {"status": "ok", "message": "All predicted minutes cleared"}
+
+
+@app.post("/api/predicted-minutes/fetch")
+async def fetch_predicted_minutes_from_source(source: str = "fplreview"):
+    """
+    Fetch predicted minutes from external sources.
+    Sources: fplreview, rotowire
+    """
+    data = await fetch_fpl_data()
+    elements = {e["id"]: e for e in data["elements"]}
+    elements_by_name = {}
+    for e in data["elements"]:
+        # Create lookup by various name formats
+        name = e.get("web_name", "").lower()
+        full_name = f"{e.get('first_name', '')} {e.get('second_name', '')}".lower().strip()
+        elements_by_name[name] = e["id"]
+        elements_by_name[full_name] = e["id"]
+        # Also add without accents for matching
+        import unicodedata
+        name_ascii = unicodedata.normalize('NFKD', name).encode('ASCII', 'ignore').decode()
+        elements_by_name[name_ascii] = e["id"]
+    
+    predictions = {}
+    source_used = source
+    errors = []
+    
+    if source == "fplreview":
+        # FPL Review free data - try their public endpoint
+        try:
+            client = await get_http_client()
+            # FPL Review has a free CSV export for the current GW
+            # Try their API endpoint
+            response = await client.get(
+                "https://fplreview.com/api/fpl/getFixturePredictions",
+                headers={'User-Agent': 'Mozilla/5.0'},
+                timeout=15.0
+            )
+            if response.status_code == 200:
+                fpl_data = response.json()
+                # Parse FPL Review format
+                for player in fpl_data.get("players", []):
+                    pid = player.get("id")
+                    mins = player.get("expected_mins") or player.get("mins")
+                    if pid and mins is not None:
+                        predictions[pid] = float(mins)
+        except Exception as e:
+            errors.append(f"FPL Review API: {str(e)}")
+            
+            # Fallback: try scraping their free page
+            try:
+                response = await client.get(
+                    "https://fplreview.com/free-planner/",
+                    headers={'User-Agent': 'Mozilla/5.0'},
+                    timeout=15.0
+                )
+                # Parse HTML for player data - would need proper parsing
+                errors.append("FPL Review scraping not yet implemented")
+            except Exception as e2:
+                errors.append(f"FPL Review scrape: {str(e2)}")
+    
+    elif source == "rotowire":
+        # Rotowire predicted lineups
+        try:
+            client = await get_http_client()
+            response = await client.get(
+                "https://www.rotowire.com/soccer/lineups.php?league=EPL",
+                headers={'User-Agent': 'Mozilla/5.0'},
+                timeout=15.0
+            )
+            if response.status_code == 200:
+                html = response.text
+                # Parse predicted starters - they get 90 mins, subs get 20
+                # This is a simplified parse - would need BeautifulSoup for proper parsing
+                import re
+                
+                # Find player names in lineup divs
+                starter_pattern = r'class="lineup__player[^"]*is-starter[^"]*"[^>]*>([^<]+)<'
+                sub_pattern = r'class="lineup__player[^"]*is-sub[^"]*"[^>]*>([^<]+)<'
+                
+                starters = re.findall(starter_pattern, html, re.IGNORECASE)
+                subs = re.findall(sub_pattern, html, re.IGNORECASE)
+                
+                for name in starters:
+                    name_lower = name.strip().lower()
+                    if name_lower in elements_by_name:
+                        predictions[elements_by_name[name_lower]] = 90.0
+                
+                for name in subs:
+                    name_lower = name.strip().lower()
+                    if name_lower in elements_by_name:
+                        # Subs get reduced minutes
+                        predictions[elements_by_name[name_lower]] = 25.0
+                        
+        except Exception as e:
+            errors.append(f"Rotowire: {str(e)}")
+    
+    # Apply predictions to cache
+    count = 0
+    for player_id, minutes in predictions.items():
+        if 0 <= minutes <= 90:
+            cache.predicted_minutes[player_id] = minutes
+            count += 1
+    
+    if count > 0:
+        cache.predicted_minutes_last_update = datetime.now()
+    
+    return {
+        "status": "ok" if count > 0 else "partial",
+        "source": source_used,
+        "imported": count,
+        "errors": errors if errors else None,
+        "updated_at": cache.predicted_minutes_last_update.isoformat() if cache.predicted_minutes_last_update else None
+    }
+
+
+@app.get("/api/predicted-minutes/status")
+async def get_predicted_minutes_status():
+    """Get status of predicted minutes and available sources."""
+    return {
+        "cached_count": len(cache.predicted_minutes),
+        "last_update": cache.predicted_minutes_last_update.isoformat() if cache.predicted_minutes_last_update else None,
+        "is_stale": cache.predicted_minutes_is_stale(),
+        "available_sources": ["fplreview", "rotowire", "manual"],
+        "recommended": "fplreview"
+    }
 
 
 # ============ FDR ENDPOINTS ============
@@ -1815,8 +1994,8 @@ async def get_manager_stats(manager_id: int):
         except Exception as e:
             logger.error(f"Failed to analyze FH: {e}")
     
-    # Best Differential - highest points from lowest-owned player at time of selection
-    # We look at all GWs and find the player who scored most points relative to low ownership
+    # Best Differential - highest points from lowest-owned player in STARTING XI
+    # Only counts if player was in starting 11, not on bench
     best_differential = None
     
     try:
@@ -1832,11 +2011,15 @@ async def get_manager_stats(manager_id: int):
             
             picks = gw_picks.get("picks", [])
             for pick in picks:
+                # Only consider starting XI (position 1-11), not bench (12-15)
+                pick_position = pick.get("position", 0)
+                if pick_position > 11:
+                    continue
+                
                 pid = pick.get("element")
                 element = elements.get(pid, {})
                 
-                # Get ownership at GW start (approximation - use current minus GW increase)
-                # Better: fetch the player's history to get ownership_gw
+                # Get player history
                 player_hist = player_histories.get(pid)
                 if not player_hist and pid:
                     try:
@@ -1849,14 +2032,11 @@ async def get_manager_stats(manager_id: int):
                 for ph in player_hist.get("history", []):
                     if ph.get("round") == gw_num:
                         gw_pts = ph.get("total_points", 0)
-                        # Use value change as proxy for ownership 
-                        # Better: FPL API doesn't give historical ownership, so use current as approximation
+                        # Use current ownership as approximation (historical not available)
                         ownership = float(element.get("selected_by_percent", 0) or 0)
                         
                         # Differential threshold: below 10% ownership
                         if ownership < 10 and gw_pts > 0:
-                            diff_score = gw_pts / max(ownership, 0.1)  # Points per ownership %
-                            
                             if best_differential is None or gw_pts > best_differential["pts"]:
                                 best_differential = {
                                     "player": element.get("web_name", "Unknown"),

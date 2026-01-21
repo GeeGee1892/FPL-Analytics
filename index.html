@@ -519,6 +519,8 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
         }
         .optimizer-title {
             display: flex;
@@ -526,6 +528,30 @@
             gap: 0.75rem;
             font-weight: 600;
             font-size: 0.95rem;
+        }
+        .optimizer-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .btn-sm {
+            padding: 0.25rem 0.6rem;
+            font-size: 0.75rem;
+        }
+        .prediction-status {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            background: var(--bg-secondary);
+        }
+        .prediction-status.synced {
+            color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+        .prediction-status.stale {
+            color: #f59e0b;
+            background: rgba(245, 158, 11, 0.1);
         }
         .gw-badge {
             background: var(--accent-primary);
@@ -879,6 +905,8 @@
         .pitch-player .badge { font-size: 0.6rem; background: var(--accent-primary); color: var(--bg-primary); padding: 0.1rem 0.4rem; border-radius: 10px; margin-top: 0.25rem; display: inline-block; }
         .pitch-player .badge.vc { background: var(--accent-purple); }
         .pitch-player .exp-mins-tag { font-size: 0.6rem; color: var(--text-muted); margin-top: 0.2rem; }
+        .pitch-player .exp-mins-tag.predicted { color: #8b5cf6; } /* Purple for external predictions */
+        .pitch-player .exp-mins-tag.override { color: #10b981; } /* Green for user override */
         .pitch-player.low-mins { border-color: #f59e0b; }
         .pitch-player.low-mins .exp-mins-tag { color: #f59e0b; }
         .pitch-player { cursor: pointer; }
@@ -935,15 +963,27 @@
             box-shadow: 0 0 0 2px rgba(0, 212, 170, 0.2);
         }
         .exp-mins-input.override-active {
-            background: rgba(0, 212, 170, 0.15);
-            border-color: var(--accent-primary);
+            background: rgba(16, 185, 129, 0.15);
+            border-color: #10b981;
+        }
+        .exp-mins-cell.has-prediction .exp-mins-input {
+            background: rgba(139, 92, 246, 0.1);
+            border-color: rgba(139, 92, 246, 0.4);
         }
         .exp-mins-reason {
             font-size: 0.65rem;
             padding: 0.1rem 0.3rem;
             border-radius: 3px;
+            background: rgba(100, 100, 100, 0.15);
+            color: var(--text-muted);
+        }
+        .exp-mins-reason.user_override {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+        }
+        .exp-mins-reason.predicted {
             background: rgba(139, 92, 246, 0.15);
-            color: var(--accent-purple);
+            color: #8b5cf6;
         }
 
         /* DEFCON badge styles */
@@ -1287,10 +1327,30 @@
         .chip-badge.bb { background: #10b981; color: #fff; }
         .chip-badge.fh { background: #3b82f6; color: #fff; }
         
-        .chip-schedule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
-        .chip-schedule-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: var(--surface-raised); border-radius: 8px; }
-        .chip-schedule-item label { font-size: 0.85rem; color: var(--text-secondary); }
-        .chip-schedule-item input { width: 70px; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+        .chip-schedule-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
+        .chip-schedule-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: var(--bg-tertiary); border-radius: 8px; }
+        .chip-schedule-item input { width: 50px; padding: 0.3rem 0.4rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; text-align: center; }
+        
+        /* Advanced Options */
+        .advanced-toggle { margin-top: 1rem; }
+        .advanced-options { margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 10px; border: 1px solid var(--border-color); }
+        .advanced-section { margin-bottom: 1rem; }
+        .advanced-section:last-child { margin-bottom: 0; }
+        .advanced-section h4 { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem; }
+        .advanced-help { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+        
+        .booked-transfers { display: flex; flex-direction: column; gap: 0.5rem; }
+        .booked-transfer-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+        .book-gw-select { width: 60px; padding: 0.3rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
+        .book-player-input { width: 120px; padding: 0.3rem 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
+        .book-arrow { color: var(--text-muted); }
+        .booked-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; background: var(--bg-secondary); border-radius: 6px; font-size: 0.8rem; }
+        .booked-item .remove-btn { cursor: pointer; color: var(--text-muted); margin-left: 0.5rem; }
+        .booked-item .remove-btn:hover { color: #ef4444; }
+        
+        @media (max-width: 768px) {
+            .chip-schedule-grid { grid-template-columns: repeat(2, 1fr); }
+        }
         
         .plan-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
         .plan-summary-card { background: var(--surface); border-radius: 12px; padding: 1.25rem; text-align: center; }
@@ -1890,6 +1950,12 @@
                             <span class="gw-badge" id="optimizerGwBadge">GW --</span>
                             <span>Optimal Lineup</span>
                         </div>
+                        <div class="optimizer-actions">
+                            <button class="btn btn-sm btn-secondary" onclick="syncPredictedLineups()" title="Fetch predicted lineups from FPL Review">
+                                🔄 Sync Lineups
+                            </button>
+                            <span class="prediction-status" id="predictionStatus" title="Predicted lineup status"></span>
+                        </div>
                         <div class="optimizer-summary" id="optimizerSummary">
                             <div class="optimizer-stat">
                                 <span class="value" id="optimizerTotalXpts">--</span>
@@ -2149,33 +2215,53 @@
                         <button class="btn btn-primary" onclick="loadPlan()">🧮 Calculate Plan</button>
                     </div>
                 </div>
-
-                <div class="chips-config" id="chipsConfig" style="display: none;">
-                    <h3>📦 Available Chips</h3>
-                    <div class="chips-grid" id="availableChipsGrid"></div>
+                
+                <!-- Advanced Options Toggle -->
+                <div class="advanced-toggle">
+                    <button class="btn btn-sm btn-secondary" onclick="toggleAdvancedOptions()">
+                        ⚙️ Advanced Options <span id="advancedToggleIcon">▼</span>
+                    </button>
+                </div>
+                
+                <div class="advanced-options" id="advancedOptions" style="display: none;">
+                    <div class="advanced-section">
+                        <h4>🎯 Schedule Chips</h4>
+                        <p class="advanced-help">Pre-schedule chips for specific GWs (leave blank for auto-suggestions)</p>
+                        <div class="chip-schedule-grid">
+                            <div class="chip-schedule-item">
+                                <span class="chip-badge wc">WC</span>
+                                <input type="number" id="wcGw" min="1" max="38" placeholder="GW">
+                            </div>
+                            <div class="chip-schedule-item">
+                                <span class="chip-badge fh">FH</span>
+                                <input type="number" id="fhGw" min="1" max="38" placeholder="GW">
+                            </div>
+                            <div class="chip-schedule-item">
+                                <span class="chip-badge tc">TC</span>
+                                <input type="number" id="tcGw" min="1" max="38" placeholder="GW">
+                            </div>
+                            <div class="chip-schedule-item">
+                                <span class="chip-badge bb">BB</span>
+                                <input type="number" id="bbGw" min="1" max="38" placeholder="GW">
+                            </div>
+                        </div>
+                    </div>
                     
-                    <h3>🎯 Schedule Chips (Optional)</h3>
-                    <p class="chips-help">Leave blank for auto-suggestions, or specify GW's to use chips</p>
-                    <div class="chip-schedule-grid">
-                        <div class="chip-schedule-item" id="wcSchedule" style="display: none;">
-                            <span class="chip-badge wc">WC</span>
-                            <label>Wildcard GW:</label>
-                            <input type="number" id="wcGw" min="1" max="38" placeholder="Auto">
-                        </div>
-                        <div class="chip-schedule-item" id="tcSchedule" style="display: none;">
-                            <span class="chip-badge tc">TC</span>
-                            <label>Triple Captain GW:</label>
-                            <input type="number" id="tcGw" min="1" max="38" placeholder="Auto">
-                        </div>
-                        <div class="chip-schedule-item" id="bbSchedule" style="display: none;">
-                            <span class="chip-badge bb">BB</span>
-                            <label>Bench Boost GW:</label>
-                            <input type="number" id="bbGw" min="1" max="38" placeholder="Auto">
-                        </div>
-                        <div class="chip-schedule-item" id="fhSchedule" style="display: none;">
-                            <span class="chip-badge fh">FH</span>
-                            <label>Free Hit GW:</label>
-                            <input type="number" id="fhGw" min="1" max="38" placeholder="Auto">
+                    <div class="advanced-section">
+                        <h4>📌 Book Transfers</h4>
+                        <p class="advanced-help">Force specific transfers in certain GWs</p>
+                        <div class="booked-transfers" id="bookedTransfers">
+                            <div class="booked-transfer-row">
+                                <select id="bookTransferGw" class="book-gw-select">
+                                    <option value="">GW</option>
+                                    <script>for(let i=1;i<=38;i++)document.write(`<option value="${i}">${i}</option>`)</script>
+                                </select>
+                                <input type="text" id="bookTransferOut" placeholder="Player out" class="book-player-input">
+                                <span class="book-arrow">→</span>
+                                <input type="text" id="bookTransferIn" placeholder="Player in" class="book-player-input">
+                                <button class="btn btn-sm" onclick="addBookedTransfer()">+ Add</button>
+                            </div>
+                            <div id="bookedTransfersList"></div>
                         </div>
                     </div>
                 </div>
@@ -2282,6 +2368,7 @@
             });
 
             await loadBootstrap();
+            checkPredictionStatus(); // Check for existing predictions
             if (savedTeamId) {
                 document.getElementById('teamIdInput').value = savedTeamId;
                 loadMyTeam();
@@ -2369,6 +2456,90 @@
             if (rank >= 1000000) return (rank / 1000000).toFixed(1) + 'M';
             if (rank >= 1000) return (rank / 1000).toFixed(0) + 'K';
             return rank.toLocaleString();
+        }
+        
+        // Check prediction status and update UI
+        async function checkPredictionStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/api/predicted-minutes/status`);
+                const status = await response.json();
+                
+                const statusEl = document.getElementById('predictionStatus');
+                if (status.cached_count > 0) {
+                    const isStale = status.is_stale;
+                    statusEl.textContent = `${status.cached_count} predictions${isStale ? ' (stale)' : ''}`;
+                    statusEl.className = `prediction-status ${isStale ? 'stale' : 'synced'}`;
+                } else {
+                    statusEl.textContent = 'No predictions';
+                    statusEl.className = 'prediction-status';
+                }
+            } catch (e) {
+                console.error('Failed to check prediction status:', e);
+            }
+        }
+        
+        // Sync predicted lineups from FPL Review
+        async function syncPredictedLineups() {
+            const statusEl = document.getElementById('predictionStatus');
+            statusEl.textContent = 'Syncing...';
+            statusEl.className = 'prediction-status';
+            
+            try {
+                // Try FPL Review first
+                let response = await fetch(`${API_BASE}/api/predicted-minutes/fetch?source=fplreview`, {
+                    method: 'POST'
+                });
+                let result = await response.json();
+                
+                // If FPL Review failed, try Rotowire
+                if (result.imported === 0) {
+                    response = await fetch(`${API_BASE}/api/predicted-minutes/fetch?source=rotowire`, {
+                        method: 'POST'
+                    });
+                    result = await response.json();
+                }
+                
+                if (result.imported > 0) {
+                    statusEl.textContent = `${result.imported} synced`;
+                    statusEl.className = 'prediction-status synced';
+                    
+                    // Reload team to reflect new predictions
+                    if (savedTeamId) {
+                        loadMyTeam();
+                    }
+                    loadRankings();
+                } else {
+                    statusEl.textContent = 'Sync failed';
+                    statusEl.className = 'prediction-status stale';
+                    
+                    // Show manual import option
+                    if (confirm('Auto-sync failed. Would you like to manually import predictions?\n\nYou can paste predicted minutes as JSON:\n{player_id: minutes, ...}')) {
+                        const json = prompt('Paste JSON predictions:');
+                        if (json) {
+                            try {
+                                const predictions = JSON.parse(json);
+                                const importResponse = await fetch(`${API_BASE}/api/predicted-minutes/bulk`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ predictions, source: 'manual' })
+                                });
+                                const importResult = await importResponse.json();
+                                statusEl.textContent = `${importResult.imported} imported`;
+                                statusEl.className = 'prediction-status synced';
+                                
+                                if (savedTeamId) loadMyTeam();
+                                loadRankings();
+                            } catch (e) {
+                                alert('Invalid JSON format');
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to sync predictions:', e);
+                statusEl.textContent = 'Error';
+                statusEl.className = 'prediction-status stale';
+            }
         }
         
         /**
@@ -2470,14 +2641,19 @@
                 const isVice = p.id === viceCaptain.id;
                 const expMins = p.expected_minutes || 0;
                 const expMinsWarning = expMins < 60 ? 'low-mins' : '';
+                const minsReason = p.minutes_reason || 'season_average';
+                const isPredicted = minsReason === 'predicted';
+                const isOverride = minsReason === 'user_override';
+                const minsClass = isOverride ? 'override' : (isPredicted ? 'predicted' : '');
+                const minsLabel = isOverride ? '✓' : (isPredicted ? '⚡' : '');
                 return `
                     <div class="pitch-player ${isCaptain ? 'captain' : ''} ${isVice ? 'vice' : ''} ${expMinsWarning}"
                          onclick="promptMinutesOverride(${p.id}, '${p.name}', ${expMins})"
-                         title="Expected mins: ${expMins.toFixed(0)} (click to override)">
+                         title="${minsReason.replace('_', ' ')}: ${expMins.toFixed(0)} mins (click to override)">
                         <div class="name">${p.name}</div>
                         <div class="team">${p.team}</div>
                         <div class="xpts">${p.xpts_single_gw.toFixed(1)}</div>
-                        <div class="exp-mins-tag">${expMins.toFixed(0)}m</div>
+                        <div class="exp-mins-tag ${minsClass}">${expMins.toFixed(0)}m${minsLabel}</div>
                         ${isCaptain ? '<div class="badge">C</div>' : ''}
                         ${isVice ? '<div class="badge vc">V</div>' : ''}
                     </div>
@@ -2815,14 +2991,14 @@
                         <td><div class="player-info"><span class="player-name">${p.name}</span><span class="player-team">${p.team}</span></div></td>
                         <td class="stat-value stat-highlight">${p.xpts.toFixed(1)}</td>
                         <td>
-                            <div class="exp-mins-cell">
-                                <input type="number" class="exp-mins-input" 
+                            <div class="exp-mins-cell ${p.minutes_reason === 'user_override' ? 'has-override' : ''} ${p.minutes_reason === 'predicted' ? 'has-prediction' : ''}">
+                                <input type="number" class="exp-mins-input ${p.minutes_reason === 'user_override' ? 'override-active' : ''}" 
                                     data-player-id="${p.id}" 
                                     value="${p.expected_minutes.toFixed(0)}" 
                                     min="0" max="90" step="1"
                                     onchange="setMinutesOverride(${p.id}, this.value)"
                                     title="Edit to override expected minutes">
-                                <span class="exp-mins-reason">${p.minutes_reason.replace('_', ' ')}</span>
+                                <span class="exp-mins-reason ${p.minutes_reason}">${p.minutes_reason === 'user_override' ? '✓ override' : (p.minutes_reason === 'predicted' ? '⚡ predicted' : p.minutes_reason.replace('_', ' '))}</span>
                             </div>
                         </td>
                         ${posStatHtml}
@@ -2840,7 +3016,15 @@
             }
         }
 
-        // Minutes override function
+        // Unified function to refresh all views after minutes override
+        function refreshAfterOverride() {
+            loadRankings();
+            if (savedTeamId && myTeamData) {
+                loadMyTeam();
+            }
+        }
+
+        // Minutes override function (from Rankings table)
         async function setMinutesOverride(playerId, minutes) {
             const input = document.querySelector(`input[data-player-id="${playerId}"]`);
             try {
@@ -2851,8 +3035,8 @@
                 });
                 if (response.ok) {
                     input.classList.add('override-active');
-                    // Refresh to show updated xPts
-                    loadRankings();
+                    // Refresh both views
+                    refreshAfterOverride();
                 }
             } catch (error) {
                 console.error('Failed to set override:', error);
@@ -2882,8 +3066,8 @@
                 });
                 
                 if (response.ok) {
-                    // Reload the team data to reflect changes
-                    loadMyTeam();
+                    // Refresh both views
+                    refreshAfterOverride();
                 } else {
                     alert('Failed to save override');
                 }
@@ -3004,9 +3188,8 @@
                 }
                 const data = await response.json();
                 
-                // Show chips config
+                // Store chips data
                 plannerChips = data.available_chips;
-                showChipsConfig(data.available_chips);
                 
                 // Render results
                 renderPlanResults(data);
@@ -3026,23 +3209,57 @@
             }
         }
         
-        function showChipsConfig(chips) {
-            document.getElementById('chipsConfig').style.display = 'block';
+        // Advanced options toggle
+        function toggleAdvancedOptions() {
+            const options = document.getElementById('advancedOptions');
+            const icon = document.getElementById('advancedToggleIcon');
+            if (options.style.display === 'none') {
+                options.style.display = 'block';
+                icon.textContent = '▲';
+            } else {
+                options.style.display = 'none';
+                icon.textContent = '▼';
+            }
+        }
+        
+        // Booked transfers storage
+        let bookedTransfers = [];
+        
+        function addBookedTransfer() {
+            const gw = document.getElementById('bookTransferGw').value;
+            const outPlayer = document.getElementById('bookTransferOut').value.trim();
+            const inPlayer = document.getElementById('bookTransferIn').value.trim();
             
-            // Show available chips
-            const chipsGrid = document.getElementById('availableChipsGrid');
-            chipsGrid.innerHTML = Object.entries(chips).map(([chip, available]) => `
-                <div class="chip-available ${available ? '' : 'used'}">
-                    <span class="chip-badge ${chip.toLowerCase()}">${chip}</span>
-                    <span>${available ? 'Available' : 'Used'}</span>
+            if (!gw || !outPlayer || !inPlayer) {
+                alert('Please fill in all fields');
+                return;
+            }
+            
+            bookedTransfers.push({ gw: parseInt(gw), out: outPlayer, in: inPlayer });
+            renderBookedTransfers();
+            
+            // Clear inputs
+            document.getElementById('bookTransferGw').value = '';
+            document.getElementById('bookTransferOut').value = '';
+            document.getElementById('bookTransferIn').value = '';
+        }
+        
+        function removeBookedTransfer(index) {
+            bookedTransfers.splice(index, 1);
+            renderBookedTransfers();
+        }
+        
+        function renderBookedTransfers() {
+            const list = document.getElementById('bookedTransfersList');
+            list.innerHTML = bookedTransfers.map((t, i) => `
+                <div class="booked-item">
+                    <span>GW${t.gw}:</span>
+                    <span class="out">${t.out}</span>
+                    <span>→</span>
+                    <span class="in">${t.in}</span>
+                    <span class="remove-btn" onclick="removeBookedTransfer(${i})">✕</span>
                 </div>
             `).join('');
-            
-            // Show/hide chip schedule inputs
-            document.getElementById('wcSchedule').style.display = chips.WC ? 'flex' : 'none';
-            document.getElementById('tcSchedule').style.display = chips.TC ? 'flex' : 'none';
-            document.getElementById('bbSchedule').style.display = chips.BB ? 'flex' : 'none';
-            document.getElementById('fhSchedule').style.display = chips.FH ? 'flex' : 'none';
         }
         
         let plannerData = null;
@@ -3149,9 +3366,9 @@
                         <h4>🔄 Transfers Made</h4>
                         ${transfers.map(t => `
                             <div class="gw-transfer-item">
-                                <span class="out">${t.out}</span>
+                                <span class="out">${typeof t.out === 'object' ? t.out.name : t.out}</span>
                                 <span class="arrow">→</span>
-                                <span class="in">${t.in}</span>
+                                <span class="in">${typeof t.in === 'object' ? t.in.name : t.in}</span>
                                 ${t.is_hit ? '<span class="hit-badge">-4 hit</span>' : ''}
                             </div>
                         `).join('')}
