@@ -313,18 +313,50 @@ understat_scraper = UnderstatScraper()
 
 # ============ FDR SERVICE ============
 
-async def refresh_fdr_data():
+async def refresh_fdr_data(force: bool = False):
     """Fetch Understat data and compute FDR scores for all teams."""
-    if not cache.fdr_is_stale() and cache.fdr_data:
+    # Return cached data immediately if available and not forced refresh
+    if not force and cache.fdr_data and not cache.fdr_is_stale():
         return cache.fdr_data
     
+    # If we have cached data and it's just a refresh attempt (not forced), return cache
+    # This prevents blocking requests while waiting for Understat
+    if cache.fdr_data and not force:
+        # Trigger background refresh if stale but don't wait for it
+        asyncio.create_task(_background_fdr_refresh())
+        return cache.fdr_data
+    
+    # No cached data - must wait for fetch
+    return await _do_fdr_refresh()
+
+
+async def _background_fdr_refresh():
+    """Background task to refresh FDR data without blocking."""
+    try:
+        await _do_fdr_refresh()
+    except Exception as e:
+        logger.error(f"Background FDR refresh failed: {e}")
+
+
+async def _do_fdr_refresh():
+    """Actually perform the FDR data refresh."""
     logger.info("Refreshing FDR data from Understat...")
     
-    # Fetch all matches
-    matches = await understat_scraper.fetch_league_matches("2024")
+    # Fetch all matches with timeout
+    try:
+        matches = await asyncio.wait_for(
+            understat_scraper.fetch_league_matches("2024"),
+            timeout=10.0
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Understat fetch timed out, using cached/fallback data")
+        return cache.fdr_data or {}
     
     if not matches:
         logger.warning("No Understat matches fetched, using FPL API fallback")
+        # Set a timestamp even on failure to prevent immediate retry
+        if not cache.fdr_data:
+            cache.fdr_last_update = datetime.now()
         return cache.fdr_data or {}
     
     # Aggregate by team
@@ -445,30 +477,33 @@ def get_fixture_fdr(opponent_id: int, is_home: bool, position_id: int) -> int:
 # ============ PLAYER STAT CALCULATIONS ============
 
 def calculate_defcon_per_90(player: Dict, position_id: int) -> tuple[float, float, int]:
+    """
+    Get DEFCON per 90 from FPL API (already calculated) and compute probability.
+    DEFCON = Defensive Contributions (tackles, interceptions, blocks, clearances, recoveries)
+    """
     total_minutes = int(player.get("minutes", 0) or 0)
-    dc_points = int(player.get("defensive_contributions", 0) or 0)
-    cbi = int(player.get("clearances_blocks_interceptions", 0) or 0)
     
-    if total_minutes < 90:
+    # FPL API provides these directly
+    defcon_per_90 = float(player.get("defensive_contribution_per_90", 0) or 0)
+    defcon_total = int(player.get("defensive_contribution", 0) or 0)
+    
+    if total_minutes < 90 or position_id not in [2, 3]:
         return 0.0, 0.0, 0
     
-    mins90 = total_minutes / 90.0
-    defcon_per_90 = cbi / mins90
-    
-    if position_id == 2:
+    # Position-specific thresholds for DEFCON points (2 pts if >= threshold)
+    if position_id == 2:  # DEF
         threshold = DEFCON_THRESHOLD_DEF
-    elif position_id == 3:
+    else:  # MID
         threshold = DEFCON_THRESHOLD_MID
-    else:
-        return 0.0, 0.0, 0
     
+    # Calculate probability of hitting threshold using sigmoid
     if defcon_per_90 <= 0:
         prob = 0.0
     else:
         scale = 2.0
         prob = 1.0 / (1.0 + math.exp(-(defcon_per_90 - threshold) / scale))
     
-    return round(defcon_per_90, 2), round(prob, 3), dc_points
+    return round(defcon_per_90, 2), round(prob, 3), defcon_total
 
 
 def calculate_saves_per_90(player: Dict) -> tuple[float, float]:
@@ -719,7 +754,7 @@ async def get_fdr_teams():
 async def force_fdr_refresh():
     """Force refresh FDR data from Understat."""
     cache.fdr_last_update = None  # Force refresh
-    fdr_data = await refresh_fdr_data()
+    fdr_data = await refresh_fdr_data(force=True)
     return {"status": "ok", "teams_refreshed": len(fdr_data)}
 
 
