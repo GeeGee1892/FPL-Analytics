@@ -781,6 +781,86 @@
         /* ===== OPTIMIZER ===== */
         .optimizer-result { display: grid; grid-template-columns: 1fr 300px; gap: 1.5rem; }
 
+        /* Position-specific column visibility */
+        .pos-col { display: none; }
+        .pos-gkp .gkp-col { display: table-cell; }
+        .pos-def .def-col { display: table-cell; }
+        .pos-mid .mid-col { display: table-cell; }
+        .pos-fwd .fwd-col { display: table-cell; }
+
+        /* Expected minutes override input */
+        .exp-mins-cell {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .exp-mins-input {
+            width: 45px;
+            padding: 0.2rem 0.3rem;
+            font-size: 0.8rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            text-align: center;
+        }
+        .exp-mins-input:focus {
+            border-color: var(--accent-primary);
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(0, 212, 170, 0.2);
+        }
+        .exp-mins-input.override-active {
+            background: rgba(0, 212, 170, 0.15);
+            border-color: var(--accent-primary);
+        }
+        .exp-mins-reason {
+            font-size: 0.65rem;
+            padding: 0.1rem 0.3rem;
+            border-radius: 3px;
+            background: rgba(139, 92, 246, 0.15);
+            color: var(--accent-purple);
+        }
+
+        /* DEFCON badge styles */
+        .defcon-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+        }
+        .defcon-high { background: rgba(0, 212, 170, 0.15); color: var(--fdr-1); }
+        .defcon-medium { background: rgba(234, 179, 8, 0.15); color: var(--fdr-3); }
+        .defcon-low { background: rgba(239, 68, 68, 0.15); color: var(--fdr-5); }
+
+        /* Chips panel */
+        .chips-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        .chip-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+        .chip-badge.available {
+            background: rgba(0, 212, 170, 0.1);
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+        }
+        .chip-badge.suggested {
+            background: linear-gradient(135deg, rgba(0, 212, 170, 0.2), rgba(59, 130, 246, 0.2));
+            border-color: var(--accent-primary);
+            color: var(--text-primary);
+            animation: pulse 2s infinite;
+        }
+
         .pitch-container {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -964,9 +1044,7 @@
             <button class="nav-tab" data-section="differentials">
                 <span class="nav-icon">💎</span> Differentials
             </button>
-            <button class="nav-tab" data-section="optimizer">
-                <span class="nav-icon">🧠</span> Optimizer
-            </button>
+            
         </div>
     </nav>
 
@@ -1084,7 +1162,9 @@
                                 <th>#</th>
                                 <th data-sort="name">Player</th>
                                 <th data-sort="xpts" class="sorted">xPts <span class="sort-icon">▼</span></th>
-                                <th data-sort="start_probability">Start% <span class="sort-icon">▼</span></th>
+                                <th data-sort="expected_minutes">ExpMins <span class="sort-icon">▼</span></th>
+                                <th data-sort="defcon_per_90" class="pos-col def-col mid-col">DEFCON/90 <span class="sort-icon">▼</span></th>
+                                <th data-sort="saves_per_90" class="pos-col gkp-col">Saves/90 <span class="sort-icon">▼</span></th>
                                 <th data-sort="form">Form <span class="sort-icon">▼</span></th>
                                 <th data-sort="total_points">Pts <span class="sort-icon">▼</span></th>
                                 <th data-sort="price">Price <span class="sort-icon">▼</span></th>
@@ -1093,7 +1173,7 @@
                             </tr>
                         </thead>
                         <tbody id="rankingsBody">
-                            <tr><td colspan="9" class="loading"><div class="loading-spinner"></div>Loading...</td></tr>
+                            <tr><td colspan="11" class="loading"><div class="loading-spinner"></div>Loading...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1171,45 +1251,7 @@
             </div>
         </section>
 
-        <!-- OPTIMIZER SECTION -->
-        <section id="optimizer" class="section">
-            <div class="controls-panel">
-                <div class="control-group">
-                    <label>Budget (£m)</label>
-                    <input type="number" id="optBudget" value="100" min="50" max="120" step="0.1">
-                </div>
-                <div class="control-group">
-                    <label>Formation</label>
-                    <select id="optFormation">
-                        <option value="3-4-3">3-4-3</option>
-                        <option value="3-5-2">3-5-2</option>
-                        <option value="4-4-2">4-4-2</option>
-                        <option value="4-3-3">4-3-3</option>
-                        <option value="4-5-1">4-5-1</option>
-                        <option value="5-3-2">5-3-2</option>
-                        <option value="5-4-1">5-4-1</option>
-                    </select>
-                </div>
-                <div class="control-group">
-                    <label>GW Range</label>
-                    <div class="control-row">
-                        <input type="number" id="optGwStart" value="1" min="1" max="38">
-                        <span style="color: var(--text-muted)">to</span>
-                        <input type="number" id="optGwEnd" value="8" min="1" max="38">
-                    </div>
-                </div>
-                <div class="control-group">
-                    <label>&nbsp;</label>
-                    <button class="btn btn-primary" onclick="optimizeTeam()">🧠 Optimize</button>
-                </div>
-            </div>
-            <div id="optimizerResult">
-                <div class="empty-state">
-                    <div class="empty-state-icon">🧠</div>
-                    <p>Configure settings and click "Optimize" to generate the optimal squad</p>
-                </div>
-            </div>
-        </section>
+
     </main>
 
     <script>
@@ -1299,8 +1341,6 @@
                     document.getElementById('currentGwDisplay').textContent = `GW ${currentGw}`;
                     document.getElementById('gwStart').value = currentGw;
                     document.getElementById('gwEnd').value = Math.min(currentGw + 5, 38);
-                    document.getElementById('optGwStart').value = currentGw;
-                    document.getElementById('optGwEnd').value = Math.min(currentGw + 5, 38);
                 }
             } catch (error) {
                 console.error('Failed to load bootstrap:', error);
@@ -1311,6 +1351,7 @@
             const teamId = document.getElementById('teamIdInput').value;
             if (!teamId) return alert('Please enter your FPL Team ID');
             localStorage.setItem('fpl_team_id', teamId);
+            savedTeamId = teamId;  // Update the saved variable
             document.getElementById('myTeamContent').style.display = 'block';
             document.getElementById('managerCard').innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading team...</div>';
 
@@ -1482,7 +1523,11 @@
             const minPrice = document.getElementById('rankMinPrice').value;
             const maxPrice = document.getElementById('rankMaxPrice').value;
 
-            document.getElementById('rankingsBody').innerHTML = '<tr><td colspan="9" class="loading"><div class="loading-spinner"></div></td></tr>';
+            document.getElementById('rankingsBody').innerHTML = '<tr><td colspan="11" class="loading"><div class="loading-spinner"></div></td></tr>';
+            
+            // Update table class for position-specific columns
+            const table = document.getElementById('rankingsTable');
+            table.className = `data-table pos-${currentPosition.toLowerCase()}`;
 
             try {
                 const response = await fetch(`${API_BASE}/api/rankings/${currentPosition}?gw_start=${gwStart}&gw_end=${gwEnd}&min_minutes=${minMinutes}&min_price=${minPrice}&max_price=${maxPrice}&sort_by=${currentSort.field}&sort_order=${currentSort.order}`);
@@ -1491,22 +1536,65 @@
                 document.getElementById('rankingsTitle').textContent = `${currentPosition} Rankings (${data.gw_range})`;
                 document.getElementById('rankingsCount').textContent = `${data.players.length} players`;
 
-                const html = data.players.map((p, i) => `
+                const html = data.players.map((p, i) => {
+                    // Position-specific stat
+                    let posStatHtml = '';
+                    if (currentPosition === 'GKP') {
+                        posStatHtml = `<td class="pos-col gkp-col stat-value">${p.saves_per_90 !== null ? p.saves_per_90.toFixed(1) : '-'}</td>`;
+                    } else if (currentPosition === 'DEF' || currentPosition === 'MID') {
+                        const defconClass = p.defcon_per_90 >= 10 ? 'defcon-high' : (p.defcon_per_90 >= 7 ? 'defcon-medium' : 'defcon-low');
+                        posStatHtml = `<td class="pos-col def-col mid-col"><span class="defcon-badge ${defconClass}">${p.defcon_per_90 !== null ? p.defcon_per_90.toFixed(1) : '-'}</span></td>`;
+                    } else {
+                        posStatHtml = `<td class="pos-col fwd-col">-</td>`;
+                    }
+                    
+                    return `
                     <tr>
                         <td>${i + 1}</td>
                         <td><div class="player-info"><span class="player-name">${p.name}</span><span class="player-team">${p.team}</span></div></td>
                         <td class="stat-value stat-highlight">${p.xpts.toFixed(1)}</td>
-                        <td><span class="start-prob ${getStartProbClass(p.start_probability)}">${p.start_probability}%</span></td>
+                        <td>
+                            <div class="exp-mins-cell">
+                                <input type="number" class="exp-mins-input" 
+                                    data-player-id="${p.id}" 
+                                    value="${p.expected_minutes.toFixed(0)}" 
+                                    min="0" max="90" step="1"
+                                    onchange="setMinutesOverride(${p.id}, this.value)"
+                                    title="Edit to override expected minutes">
+                                <span class="exp-mins-reason">${p.minutes_reason.replace('_', ' ')}</span>
+                            </div>
+                        </td>
+                        ${posStatHtml}
+                        <td class="pos-col gkp-col stat-value">${currentPosition === 'GKP' && p.saves_per_90 !== null ? p.saves_per_90.toFixed(1) : ''}</td>
                         <td class="stat-value">${p.form.toFixed(1)}</td>
                         <td class="stat-value">${p.total_points}</td>
                         <td class="stat-value">£${p.price.toFixed(1)}</td>
                         <td class="stat-value">${p.ownership.toFixed(1)}%</td>
                         <td>${renderFixtures(p.fixtures)}</td>
                     </tr>
-                `).join('');
-                document.getElementById('rankingsBody').innerHTML = html || '<tr><td colspan="9" class="empty-state">No players found</td></tr>';
+                `}).join('');
+                document.getElementById('rankingsBody').innerHTML = html || '<tr><td colspan="11" class="empty-state">No players found</td></tr>';
             } catch (error) {
                 console.error('Failed to load rankings:', error);
+            }
+        }
+
+        // Minutes override function
+        async function setMinutesOverride(playerId, minutes) {
+            const input = document.querySelector(`input[data-player-id="${playerId}"]`);
+            try {
+                const response = await fetch(`${API_BASE}/api/minutes-override`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ player_id: playerId, expected_minutes: parseFloat(minutes) })
+                });
+                if (response.ok) {
+                    input.classList.add('override-active');
+                    // Refresh to show updated xPts
+                    loadRankings();
+                }
+            } catch (error) {
+                console.error('Failed to set override:', error);
             }
         }
 
@@ -1525,7 +1613,7 @@
                         <div class="stat-card-meta">
                             <span>Avg: ${team.avg_difficulty.toFixed(2)}</span>
                             <span>Easy: ${team.easy_fixtures}</span>
-                            <span>Rotation: ${(team.rotation_factor * 100).toFixed(0)}%</span>
+                            <span>Hard: ${team.hard_fixtures}</span>
                         </div>
                         <div class="stat-card-fixtures">${team.fixtures.map(f => `<div class="fixture-badge fdr-${f.difficulty}"><span class="gw">${f.gameweek}</span><span class="opp">${f.is_home ? '' : '@'}${f.opponent}</span></div>`).join('')}</div>
                     </div>
@@ -1567,46 +1655,6 @@
                 document.getElementById('diffBody').innerHTML = html || '<tr><td colspan="10" class="empty-state">No differentials found</td></tr>';
             } catch (error) {
                 console.error('Failed to load differentials:', error);
-            }
-        }
-
-        async function optimizeTeam() {
-            const budget = document.getElementById('optBudget').value;
-            const formation = document.getElementById('optFormation').value;
-            const gwStart = document.getElementById('optGwStart').value;
-            const gwEnd = document.getElementById('optGwEnd').value;
-
-            document.getElementById('optimizerResult').innerHTML = '<div class="loading"><div class="loading-spinner"></div>Optimizing...</div>';
-
-            try {
-                const response = await fetch(`${API_BASE}/api/optimize-team`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ budget: parseFloat(budget), formation, gw_start: parseInt(gwStart), gw_end: parseInt(gwEnd), min_minutes: 400 })
-                });
-                if (!response.ok) throw new Error((await response.json()).detail || 'Failed');
-                const data = await response.json();
-
-                const posOrder = ['GKP', 'DEF', 'MID', 'FWD'];
-                const pitchHtml = posOrder.map(pos => {
-                    const players = data.by_position[pos] || [];
-                    return players.length ? `<div class="pitch-row">${players.map(p => `<div class="pitch-player"><div class="name">${p.name}</div><div class="team">${p.team}</div><div class="xpts">£${p.price.toFixed(1)} · ${p.xpts.toFixed(1)}</div></div>`).join('')}</div>` : '';
-                }).join('');
-
-                document.getElementById('optimizerResult').innerHTML = `
-                    <div class="optimizer-result">
-                        <div class="pitch-container"><h3 style="text-align: center; margin-bottom: 1.5rem; color: var(--accent-primary);">${data.formation}</h3>${pitchHtml}</div>
-                        <div class="optimizer-summary">
-                            <div class="summary-title">Summary</div>
-                            <div class="summary-stat"><span class="summary-label">Total xPts</span><span class="summary-value" style="font-size: 1.25rem;">${data.total_xpts.toFixed(2)}</span></div>
-                            <div class="summary-stat"><span class="summary-label">Budget Used</span><span class="summary-value">£${data.budget_used.toFixed(1)}m</span></div>
-                            <div class="summary-stat"><span class="summary-label">Remaining</span><span class="summary-value">£${data.budget_remaining.toFixed(1)}m</span></div>
-                            <div style="margin-top: 1.5rem;"><div class="summary-title">Squad</div>${data.players.map(p => `<div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;"><span><span style="color: var(--text-muted); width: 35px; display: inline-block;">${p.position}</span>${p.name}</span><span style="color: var(--accent-primary); font-family: 'JetBrains Mono';">${p.xpts.toFixed(1)}</span></div>`).join('')}</div>
-                        </div>
-                    </div>
-                `;
-            } catch (error) {
-                document.getElementById('optimizerResult').innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${error.message}</p></div>`;
             }
         }
 
