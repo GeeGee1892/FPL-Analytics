@@ -765,6 +765,73 @@ def calculate_saves_per_90(player: Dict) -> tuple[float, float]:
     return round(saves_per_90, 2), round(save_pts_per_90, 2)
 
 
+def calculate_expected_bonus(player: Dict, position: int) -> tuple[float, float]:
+    """
+    Calculate expected bonus points per 90 minutes.
+    
+    BPS (Bonus Point System) is heavily driven by:
+    - Goals scored (highest BPS impact)
+    - Assists
+    - Clean sheets (DEF/GKP)
+    - Key passes, tackles, saves
+    
+    Returns: (bonus_per_90, expected_bonus_pts)
+    """
+    total_minutes = int(player.get("minutes", 0) or 0)
+    bonus = int(player.get("bonus", 0) or 0)
+    bps = int(player.get("bps", 0) or 0)
+    goals = int(player.get("goals_scored", 0) or 0)
+    assists = int(player.get("assists", 0) or 0)
+    
+    if total_minutes < 180:  # Need at least 2 games worth
+        # Use position-based baseline for new/low-minute players
+        baseline = {1: 0.3, 2: 0.4, 3: 0.5, 4: 0.6}.get(position, 0.4)
+        return baseline, baseline
+    
+    mins90 = total_minutes / 90.0
+    
+    # Historical bonus rate
+    bonus_per_90 = bonus / mins90
+    
+    # xGI component - goals and assists drive bonus heavily
+    xG = float(player.get("expected_goals", 0) or 0)
+    xA = float(player.get("expected_assists", 0) or 0)
+    xGI_per_90 = (xG + xA) / mins90
+    
+    # Actual GI per 90 (for calibration)
+    actual_gi_per_90 = (goals + assists) / mins90
+    
+    # BPS per 90 gives us underlying performance
+    bps_per_90 = bps / mins90
+    
+    # Estimate bonus probability based on BPS ranking
+    # Top 3 BPS in a match get 3, 2, 1 bonus points
+    # Average BPS per 90 of ~25+ usually indicates regular bonus getter
+    
+    # Position-specific bonus baseline (some positions naturally get more)
+    position_baseline = {
+        1: 0.25,  # GKP - occasional bonus from saves/CS
+        2: 0.35,  # DEF - CS + defensive actions
+        3: 0.50,  # MID - balanced
+        4: 0.60,  # FWD - goals drive bonus heavily
+    }.get(position, 0.4)
+    
+    # Blend historical rate with xGI projection
+    # Players with high xGI will likely continue getting bonus
+    xgi_bonus_factor = xGI_per_90 * 1.5  # Each xGI/90 adds ~1.5 expected bonus
+    
+    # Weight: 60% historical, 40% xGI-projected
+    if bonus_per_90 > 0:
+        expected_bonus = 0.6 * bonus_per_90 + 0.4 * (position_baseline + xgi_bonus_factor)
+    else:
+        expected_bonus = position_baseline + xgi_bonus_factor
+    
+    # Cap at realistic maximum (even Haaland averages ~1.5 bonus/90)
+    expected_bonus = min(expected_bonus, 2.0)
+    
+    return round(bonus_per_90, 2), round(expected_bonus, 2)
+
+
 def calculate_expected_minutes(
     player: Dict,
     current_gw: int,
@@ -822,31 +889,32 @@ def calculate_expected_minutes(
             recent_mins = [h.get("minutes", 0) for h in recent]
             
             # === PATTERN 1: Absence then return (AFCON, injury, suspension) ===
-            # Pattern: recent games are 75+, then 0s, then possibly 75+ before
-            # e.g., [90,90,90,0,0,0,0,90,90,90] = returned from absence
+            # Look for pattern: playing full games now, had a gap of 0s, played before
+            # More lenient: allow easing back in (60+ mins counts as returned)
             
-            # Find how many recent games are full (75+)
-            recent_full_streak = 0
-            for m in recent_mins:
-                if m >= 75:
-                    recent_full_streak += 1
-                else:
-                    break
+            # Count recent games where they played significant minutes (60+)
+            recent_playing = 0
+            for m in recent_mins[:4]:  # Last 4 games
+                if m >= 60:
+                    recent_playing += 1
+                elif m > 0 and m < 60:
+                    break  # Sub appearance breaks the streak
+                # 0s are OK (could be rest/rotation after return)
             
-            # If we have 2+ recent full games, check for absence pattern
-            if recent_full_streak >= 2:
-                # Look for 0s after the full streak
-                rest = recent_mins[recent_full_streak:]
-                zeros_after = sum(1 for m in rest[:6] if m == 0)
+            # If playing regularly now (2+ of last 4 with 60+ mins)
+            if recent_playing >= 2:
+                # Look for absence period in games 3-9
+                mid_section = recent_mins[2:9] if len(recent_mins) > 2 else []
+                zeros_in_mid = sum(1 for m in mid_section if m == 0)
                 
-                # If there are 2+ zeros (absence), this is likely return from absence
-                if zeros_after >= 2:
-                    # Check if they were a starter before absence
-                    before_absence = rest[zeros_after:zeros_after+3] if len(rest) > zeros_after else []
-                    was_starter_before = sum(1 for m in before_absence if m >= 75) >= 1
+                # If there's a clear absence period (3+ zeros)
+                if zeros_in_mid >= 3:
+                    # Check games before the absence
+                    older_games = recent_mins[5:] if len(recent_mins) > 5 else []
+                    was_regular_before = sum(1 for m in older_games if m >= 60) >= 1
                     
-                    # DEF/GKP returning from absence almost always go back to starting
-                    if was_starter_before or position in [1, 2]:
+                    # DEF/GKP or was regular starter before → trust return
+                    if was_regular_before or position in [1, 2]:
                         base_mins = 87.0
                         reason = "returned_starter"
             
@@ -854,34 +922,46 @@ def calculate_expected_minutes(
             # If no special pattern detected, use weighted recent average
             # Weights: last 3 games = 60%, next 3 = 30%, older = 10%
             if reason == "season_average" and len(recent_mins) >= 3:
+                # First, identify absence periods (consecutive 0s surrounded by playing time)
+                absence_indices = set()
+                i = 0
+                while i < len(recent_mins):
+                    if recent_mins[i] == 0:
+                        # Found a zero, check if it's part of an absence block
+                        block_start = i
+                        while i < len(recent_mins) and recent_mins[i] == 0:
+                            i += 1
+                        block_end = i
+                        
+                        # Check if this block is surrounded by playing time
+                        before_block = recent_mins[block_start - 1] if block_start > 0 else 0
+                        after_block = recent_mins[block_end] if block_end < len(recent_mins) else 0
+                        
+                        # If either side has 60+ mins, this is likely an absence
+                        if before_block >= 60 or after_block >= 60:
+                            for j in range(block_start, block_end):
+                                absence_indices.add(j)
+                    else:
+                        i += 1
+                
+                # Build weighted average excluding absence periods
                 weights = []
                 for i, m in enumerate(recent_mins):
-                    if i < 3:
-                        weights.append((m, 0.6 / min(3, len(recent_mins[:3]))))
-                    elif i < 6:
-                        weights.append((m, 0.3 / min(3, len(recent_mins[3:6]))))
-                    else:
-                        weights.append((m, 0.1 / max(1, len(recent_mins[6:]))))
-                
-                # Calculate weighted average (only count games where they could have played)
-                # Exclude 0s that look like absences (surrounded by high mins)
-                played_weights = []
-                for i, (m, w) in enumerate(weights):
-                    # Skip obvious absences (0 surrounded by 75+ on both sides)
-                    is_absence = False
-                    if m == 0:
-                        before = recent_mins[i-1] if i > 0 else 0
-                        after = recent_mins[i+1] if i < len(recent_mins)-1 else 0
-                        if before >= 75 or after >= 75:
-                            is_absence = True
+                    if i in absence_indices:
+                        continue  # Skip absence games
                     
-                    if not is_absence:
-                        played_weights.append((m, w))
+                    if i < 3:
+                        w = 0.6 / 3
+                    elif i < 6:
+                        w = 0.3 / 3
+                    else:
+                        w = 0.1 / max(1, len(recent_mins) - 6)
+                    weights.append((m, w))
                 
-                if played_weights:
-                    total_weight = sum(w for _, w in played_weights)
+                if weights:
+                    total_weight = sum(w for _, w in weights)
                     if total_weight > 0:
-                        weighted_avg = sum(m * w for m, w in played_weights) / total_weight
+                        weighted_avg = sum(m * w for m, w in weights) / total_weight
                         # Blend with season average (70% recent, 30% season)
                         base_mins = 0.7 * weighted_avg + 0.3 * base_mins
                         reason = "recency_weighted"
@@ -937,6 +1017,7 @@ def calculate_expected_points(
 ) -> Dict:
     """
     Enhanced expected points using position-specific FDR from Understat xG data.
+    Now includes bonus point prediction.
     """
     total_minutes = int(player.get("minutes", 0) or 0)
     xG = float(player.get("expected_goals", 0) or 0)
@@ -963,19 +1044,20 @@ def calculate_expected_points(
     
     defcon_per_90, defcon_prob, defcon_pts_total = calculate_defcon_per_90(player, position)
     saves_per_90, save_pts_per_90 = calculate_saves_per_90(player) if position == 1 else (0, 0)
+    bonus_per_90, expected_bonus = calculate_expected_bonus(player, position)
     
     app_pts = 2.0
     
     if position == 1:  # GKP
-        base90 = app_pts + (4.0 * cs_prob) + save_pts_per_90 + 0.5
+        base90 = app_pts + (4.0 * cs_prob) + save_pts_per_90 + expected_bonus
     elif position == 2:  # DEF
         defcon_pts = defcon_prob * DEFCON_POINTS
-        base90 = app_pts + (4.0 * cs_prob) + (6.0 * xG90) + (3.0 * xA90) + defcon_pts
+        base90 = app_pts + (4.0 * cs_prob) + (6.0 * xG90) + (3.0 * xA90) + defcon_pts + expected_bonus
     elif position == 3:  # MID
         defcon_pts = defcon_prob * DEFCON_POINTS
-        base90 = app_pts + (1.0 * cs_prob) + (5.0 * xG90) + (3.0 * xA90) + defcon_pts
+        base90 = app_pts + (1.0 * cs_prob) + (5.0 * xG90) + (3.0 * xA90) + defcon_pts + expected_bonus
     else:  # FWD
-        base90 = app_pts + (4.0 * xG90) + (3.0 * xA90)
+        base90 = app_pts + (4.0 * xG90) + (3.0 * xA90) + expected_bonus
     
     base90 = 0.6 * base90 + 0.4 * points_per_game
     
@@ -1013,6 +1095,8 @@ def calculate_expected_points(
         "defcon_pts_total": defcon_pts_total,
         "saves_per_90": saves_per_90,
         "save_pts_per_90": save_pts_per_90,
+        "bonus_per_90": bonus_per_90,
+        "expected_bonus": expected_bonus,
         "xGC_per_90": round(xGC90, 2),
         "cs_prob": round(cs_prob, 2),
         "xG_per_90": round(xG90, 2),
@@ -1317,7 +1401,7 @@ async def get_rankings(
     max_price: float = Query(20, ge=0, le=20),
     max_ownership: float = Query(100, ge=0, le=100),
     limit: int = Query(50, ge=1, le=200),
-    sort_by: str = Query("xpts", pattern="^(xpts|price|form|ownership|defcon_per_90|saves_per_90|expected_minutes|total_points|xgi_per_90)$"),
+    sort_by: str = Query("xpts", pattern="^(xpts|price|form|ownership|defcon_per_90|saves_per_90|expected_minutes|total_points|xgi_per_90|bonus_per_90)$"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$")
 ):
     if gw_end < gw_start:
@@ -1335,8 +1419,8 @@ async def get_rankings(
     current_gw = get_current_gameweek(events)
     position_id = POSITION_ID_MAP[position.value]
     
-    ranked_players = []
-    
+    # Filter players first
+    filtered_players = []
     for player in elements:
         if player["element_type"] != position_id:
             continue
@@ -1348,14 +1432,43 @@ async def get_rankings(
         if total_minutes < min_minutes or price < min_price or price > max_price:
             continue
         
-        # Filter by max ownership (for differentials)
         if ownership > max_ownership:
             continue
         
+        filtered_players.append(player)
+    
+    # Batch fetch player histories for smarter expected minutes
+    player_histories = {}
+    
+    async def fetch_history_safe(pid):
+        try:
+            return pid, await fetch_player_history(pid)
+        except:
+            return pid, {"history": []}
+    
+    # Fetch histories in parallel with semaphore
+    sem = asyncio.Semaphore(10)
+    async def fetch_with_sem(pid):
+        async with sem:
+            return await fetch_history_safe(pid)
+    
+    history_tasks = [fetch_with_sem(p["id"]) for p in filtered_players]
+    history_results = await asyncio.gather(*history_tasks)
+    player_histories = {pid: hist for pid, hist in history_results}
+    
+    ranked_players = []
+    
+    for player in filtered_players:
+        price = player["now_cost"] / 10
+        
         upcoming = get_player_upcoming_fixtures(player["team"], fixtures, gw_start, gw_end, teams)
         
+        # Pass player history for smart pattern detection
+        player_hist = player_histories.get(player["id"])
+        
         stats = calculate_expected_points(
-            player, position_id, current_gw, upcoming, teams, fixtures, events
+            player, position_id, current_gw, upcoming, teams, fixtures, events,
+            player_history=player_hist
         )
         
         team_data = teams.get(player["team"], {})
@@ -1376,6 +1489,8 @@ async def get_rankings(
             "total_points": player.get("total_points", 0),
             "ownership": float(player.get("selected_by_percent", 0) or 0),
             "xgi_per_90": round(stats["xG_per_90"] + stats["xA_per_90"], 2),
+            "bonus_per_90": stats["bonus_per_90"],
+            "expected_bonus": stats["expected_bonus"],
             "defcon_per_90": stats["defcon_per_90"] if position_id in [2, 3] else None,
             "defcon_prob": stats["defcon_prob"] if position_id in [2, 3] else None,
             "defcon_pts_total": stats["defcon_pts_total"] if position_id in [2, 3] else None,
@@ -1423,6 +1538,18 @@ async def get_my_team(manager_id: int):
     picks = team_data["picks"]["picks"]
     entry_history = team_data["picks"].get("entry_history", {})
     
+    # Fetch player histories for all squad members (only 15 players)
+    player_histories = {}
+    async def fetch_hist(pid):
+        try:
+            return pid, await fetch_player_history(pid)
+        except:
+            return pid, {"history": []}
+    
+    hist_tasks = [fetch_hist(p["element"]) for p in picks]
+    hist_results = await asyncio.gather(*hist_tasks)
+    player_histories = {pid: hist for pid, hist in hist_results}
+    
     squad = []
     for pick in picks:
         player = elements.get(pick["element"])
@@ -1430,12 +1557,13 @@ async def get_my_team(manager_id: int):
             continue
         
         position_id = player["element_type"]
+        player_hist = player_histories.get(player["id"])
         
         upcoming = get_player_upcoming_fixtures(player["team"], fixtures, next_gw, next_gw + 5, teams)
-        stats = calculate_expected_points(player, position_id, current_gw, upcoming, teams, fixtures, events)
+        stats = calculate_expected_points(player, position_id, current_gw, upcoming, teams, fixtures, events, player_history=player_hist)
         
         single_fixtures = get_player_upcoming_fixtures(player["team"], fixtures, next_gw, next_gw, teams)
-        single_stats = calculate_expected_points(player, position_id, current_gw, single_fixtures, teams, fixtures, events)
+        single_stats = calculate_expected_points(player, position_id, current_gw, single_fixtures, teams, fixtures, events, player_history=player_hist)
         
         squad.append({
             "id": player["id"],

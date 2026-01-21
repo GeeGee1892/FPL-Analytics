@@ -2151,6 +2151,8 @@
                                 <th data-sort="name">Player</th>
                                 <th data-sort="xpts" class="sorted">xPts <span class="sort-icon">▼</span></th>
                                 <th data-sort="expected_minutes">ExpMins <span class="sort-icon">▼</span></th>
+                                <th data-sort="xgi_per_90">xGI/90 <span class="sort-icon">▼</span></th>
+                                <th data-sort="bonus_per_90">Bonus/90 <span class="sort-icon">▼</span></th>
                                 <th data-sort="defcon_per_90" class="pos-col def-col mid-col">DEFCON/90 <span class="sort-icon">▼</span></th>
                                 <th data-sort="saves_per_90" class="pos-col gkp-col">Saves/90 <span class="sort-icon">▼</span></th>
                                 <th data-sort="form">Form <span class="sort-icon">▼</span></th>
@@ -2161,7 +2163,7 @@
                             </tr>
                         </thead>
                         <tbody id="rankingsBody">
-                            <tr><td colspan="11" class="loading"><div class="loading-spinner"></div>Loading...</td></tr>
+                            <tr><td colspan="13" class="loading"><div class="loading-spinner"></div>Loading...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -3001,6 +3003,8 @@
                                 <span class="exp-mins-reason ${p.minutes_reason}">${p.minutes_reason === 'user_override' ? '✓ override' : (p.minutes_reason === 'predicted' ? '⚡ predicted' : p.minutes_reason.replace('_', ' '))}</span>
                             </div>
                         </td>
+                        <td class="stat-value">${p.xgi_per_90.toFixed(2)}</td>
+                        <td class="stat-value">${p.bonus_per_90.toFixed(2)}</td>
                         ${posStatHtml}
                         <td class="pos-col gkp-col stat-value">${currentPosition === 'GKP' && p.saves_per_90 !== null ? p.saves_per_90.toFixed(1) : ''}</td>
                         <td class="stat-value">${p.form.toFixed(1)}</td>
@@ -3010,7 +3014,7 @@
                         <td>${renderFixtures(p.fixtures)}</td>
                     </tr>
                 `}).join('');
-                document.getElementById('rankingsBody').innerHTML = html || '<tr><td colspan="11" class="empty-state">No players found</td></tr>';
+                document.getElementById('rankingsBody').innerHTML = html || '<tr><td colspan="13" class="empty-state">No players found</td></tr>';
             } catch (error) {
                 console.error('Failed to load rankings:', error);
             }
