@@ -75,32 +75,17 @@
         .logo-icon {
             width: 48px;
             height: 48px;
-            background: var(--gradient-logo);
-            background-size: 300% 300%;
-            animation: gradientShift 4s ease infinite;
-            border-radius: 14px;
+            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.5rem;
             box-shadow: 0 4px 20px rgba(0, 212, 170, 0.3);
-            position: relative;
             overflow: hidden;
         }
 
-        .logo-icon::before {
-            content: '';
-            position: absolute;
-            inset: 2px;
-            background: var(--bg-primary);
-            border-radius: 12px;
-            z-index: 0;
-        }
-
-        .logo-icon span {
-            position: relative;
-            z-index: 1;
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        .logo-icon svg {
+            width: 100%;
+            height: 100%;
         }
 
         @keyframes gradientShift {
@@ -912,7 +897,45 @@
     <header class="header">
         <div class="header-content">
             <div class="logo">
-                <div class="logo-icon"><span>⚡</span></div>
+                <div class="logo-icon">
+                <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="100" cy="100" r="95" fill="#f5f5f5"/>
+                    <path d="M100 55 L120 70 L115 95 L85 95 L80 70 Z" fill="#1a1a25"/>
+                    <path d="M100 5 L115 20 L108 35 L92 35 L85 20 Z" fill="#1a1a25"/>
+                    <path d="M160 35 L175 55 L165 75 L145 70 L145 50 Z" fill="#1a1a25"/>
+                    <path d="M40 35 L55 50 L55 70 L35 75 L25 55 Z" fill="#1a1a25"/>
+                    <path d="M165 125 L175 145 L160 165 L140 160 L140 140 Z" fill="#1a1a25"/>
+                    <path d="M35 125 L60 140 L60 160 L40 165 L25 145 Z" fill="#1a1a25"/>
+                    <path d="M85 165 L92 180 L100 195 L108 180 L115 165 Z" fill="#1a1a25"/>
+                    <path d="M60 200 L70 130 L100 120 L130 130 L140 200" fill="#1e1e2a"/>
+                    <path d="M65 140 L75 125 L100 118 L125 125 L135 140 L130 180 L70 180 Z" fill="#2d2d3a"/>
+                    <path d="M85 125 L100 118 L100 145 L90 140 Z" fill="#1a1a25"/>
+                    <path d="M115 125 L100 118 L100 145 L110 140 Z" fill="#1a1a25"/>
+                    <path d="M92 118 L100 115 L108 118 L105 145 L95 145 Z" fill="#ffffff"/>
+                    <path d="M97 120 L103 120 L104 128 L100 145 L96 128 Z" fill="#00d4aa"/>
+                    <ellipse cx="100" cy="115" rx="12" ry="8" fill="#f5d0c5"/>
+                    <ellipse cx="100" cy="75" rx="35" ry="40" fill="#f5d0c5"/>
+                    <path d="M65 65 Q65 35, 100 35 Q135 35, 135 65 Q130 50, 100 50 Q70 50, 65 65" fill="#3d3d4a"/>
+                    <path d="M68 70 Q70 55, 85 52" stroke="#3d3d4a" stroke-width="8" stroke-linecap="round"/>
+                    <path d="M132 70 Q130 55, 115 52" stroke="#3d3d4a" stroke-width="8" stroke-linecap="round"/>
+                    <ellipse cx="65" cy="78" rx="6" ry="10" fill="#f5d0c5"/>
+                    <ellipse cx="135" cy="78" rx="6" ry="10" fill="#f5d0c5"/>
+                    <rect x="73" y="65" width="22" height="18" rx="4" fill="none" stroke="#3d3d4a" stroke-width="3"/>
+                    <rect x="105" y="65" width="22" height="18" rx="4" fill="none" stroke="#3d3d4a" stroke-width="3"/>
+                    <path d="M95 73 L105 73" stroke="#3d3d4a" stroke-width="2.5"/>
+                    <circle cx="84" cy="74" r="4" fill="#2d2d3a"/>
+                    <circle cx="116" cy="74" r="4" fill="#2d2d3a"/>
+                    <circle cx="85" cy="73" r="1.5" fill="#fff"/>
+                    <circle cx="117" cy="73" r="1.5" fill="#fff"/>
+                    <path d="M92 95 Q100 100, 108 95" stroke="#c9a090" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+                    <rect x="138" y="135" width="25" height="35" rx="2" fill="#f0f0f0"/>
+                    <line x1="142" y1="143" x2="158" y2="143" stroke="#00d4aa" stroke-width="3"/>
+                    <line x1="142" y1="150" x2="155" y2="150" stroke="#ccc" stroke-width="1.5"/>
+                    <line x1="142" y1="156" x2="158" y2="156" stroke="#ccc" stroke-width="1.5"/>
+                    <ellipse cx="145" cy="145" rx="8" ry="6" fill="#f5d0c5"/>
+                    <circle cx="100" cy="100" r="95" fill="none" stroke="#00d4aa" stroke-width="5"/>
+                </svg>
+            </div>
                 <div class="logo-text-container">
                     <div class="logo-text">FPL Assistant</div>
                     <div class="logo-subtitle">AI-Powered FPL Advisor</div>
@@ -940,9 +963,6 @@
             </button>
             <button class="nav-tab" data-section="differentials">
                 <span class="nav-icon">💎</span> Differentials
-            </button>
-            <button class="nav-tab" data-section="price-changes">
-                <span class="nav-icon">💹</span> Prices
             </button>
             <button class="nav-tab" data-section="optimizer">
                 <span class="nav-icon">🧠</span> Optimizer
@@ -1147,33 +1167,6 @@
                         </thead>
                         <tbody id="diffBody"></tbody>
                     </table>
-                </div>
-            </div>
-        </section>
-
-        <!-- PRICE CHANGES SECTION -->
-        <section id="price-changes" class="section">
-            <div class="controls-panel">
-                <button class="btn btn-primary" onclick="loadPriceChanges()">🔄 Refresh</button>
-            </div>
-            <div class="price-grid">
-                <div class="table-container">
-                    <div class="table-header"><div class="table-title" style="color: var(--fdr-1)">📈 Rising</div></div>
-                    <div class="table-scroll">
-                        <table class="data-table">
-                            <thead><tr><th>Player</th><th>Price</th><th>Net Transfers</th><th>Likelihood</th></tr></thead>
-                            <tbody id="risingBody"></tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="table-container">
-                    <div class="table-header"><div class="table-title" style="color: var(--fdr-5)">📉 Falling</div></div>
-                    <div class="table-scroll">
-                        <table class="data-table">
-                            <thead><tr><th>Player</th><th>Price</th><th>Net Transfers</th><th>Likelihood</th></tr></thead>
-                            <tbody id="fallingBody"></tbody>
-                        </table>
-                    </div>
                 </div>
             </div>
         </section>
@@ -1574,33 +1567,6 @@
                 document.getElementById('diffBody').innerHTML = html || '<tr><td colspan="10" class="empty-state">No differentials found</td></tr>';
             } catch (error) {
                 console.error('Failed to load differentials:', error);
-            }
-        }
-
-        async function loadPriceChanges() {
-            try {
-                const response = await fetch(`${API_BASE}/api/price-changes`);
-                const data = await response.json();
-
-                document.getElementById('risingBody').innerHTML = data.rising.map(p => `
-                    <tr>
-                        <td><div class="player-info"><span class="player-name">${p.name}</span><span class="player-team">${p.team} · ${p.position}</span></div></td>
-                        <td class="stat-value">£${p.price.toFixed(1)}</td>
-                        <td class="stat-value stat-positive">+${formatNumber(p.net_transfers)}</td>
-                        <td><span class="start-prob high">${p.likelihood.toFixed(0)}%</span></td>
-                    </tr>
-                `).join('') || '<tr><td colspan="4" class="empty-state">No data</td></tr>';
-
-                document.getElementById('fallingBody').innerHTML = data.falling.map(p => `
-                    <tr>
-                        <td><div class="player-info"><span class="player-name">${p.name}</span><span class="player-team">${p.team} · ${p.position}</span></div></td>
-                        <td class="stat-value">£${p.price.toFixed(1)}</td>
-                        <td class="stat-value stat-negative">${formatNumber(p.net_transfers)}</td>
-                        <td><span class="start-prob low">${p.likelihood.toFixed(0)}%</span></td>
-                    </tr>
-                `).join('') || '<tr><td colspan="4" class="empty-state">No data</td></tr>';
-            } catch (error) {
-                console.error('Failed to load price changes:', error);
             }
         }
 
