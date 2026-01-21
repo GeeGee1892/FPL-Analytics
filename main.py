@@ -204,7 +204,7 @@ FPL_FDR_TO_10 = {1: 2, 2: 4, 3: 5, 4: 7, 5: 9}
 # DEFCON thresholds (2025/26 rules)
 DEFCON_THRESHOLD_DEF = 10
 DEFCON_THRESHOLD_MID = 12
-DEFCON_POINTS = 2
+DEFCON_POINTS = 1.5  # Reduced from 2 - DEFCON bonus is nice but not that common
 
 # European teams for rotation modeling
 EUROPEAN_TEAMS_UCL = {"Arsenal", "Aston Villa", "Liverpool", "Man City"}
@@ -739,11 +739,14 @@ def calculate_defcon_per_90(player: Dict, position_id: int) -> tuple[float, floa
         threshold = DEFCON_THRESHOLD_MID
     
     # Calculate probability of hitting threshold using sigmoid
+    # Steeper curve (scale=1.5) and capped at 0.5 - even high DEFCON players
+    # don't hit the bonus every game due to variance
     if defcon_per_90 <= 0:
         prob = 0.0
     else:
-        scale = 2.0
-        prob = 1.0 / (1.0 + math.exp(-(defcon_per_90 - threshold) / scale))
+        scale = 1.5  # Steeper than before
+        raw_prob = 1.0 / (1.0 + math.exp(-(defcon_per_90 - threshold) / scale))
+        prob = min(raw_prob, 0.5)  # Cap at 50% - realistic for even the best
     
     return round(defcon_per_90, 2), round(prob, 3), defcon_total
 
@@ -774,7 +777,8 @@ def calculate_expected_minutes(
 ) -> tuple[float, str]:
     """
     Calculate expected minutes with smart edge case handling:
-    - Returning from injury: 0 mins for weeks then back to 90 = full starter
+    - Returning from absence (injury/AFCON/suspension): 0s in middle of 90s = trust recent
+    - Recency weighting: recent games count more than older games
     - Consistent sub appearances: rotation risk
     - Early substitutions: potential fitness concern
     """
@@ -794,43 +798,11 @@ def calculate_expected_minutes(
     starts = int(player.get("starts", 0) or 0)
     chance_of_playing = player.get("chance_of_playing_next_round")
     status = player.get("status", "a")
+    position = player.get("element_type", 4)  # 1=GKP, 2=DEF, 3=MID, 4=FWD
     
     available_gws = max(current_gw - 1, 1)
     
-    # Analyze recent history if available
-    recent_pattern = None
-    if player_history and player_history.get("history"):
-        history = player_history["history"]
-        # Get last 6 GW appearances
-        recent = sorted(history, key=lambda x: x.get("round", 0), reverse=True)[:6]
-        
-        if len(recent) >= 3:
-            recent_mins = [h.get("minutes", 0) for h in recent]
-            
-            # Pattern detection
-            # 1. Returning from injury: multiple 0s followed by 90s
-            zeros_then_full = False
-            if len(recent_mins) >= 4:
-                # Check if recent games are 90 but older were 0
-                recent_two = recent_mins[:2]
-                older = recent_mins[2:5]
-                if all(m >= 75 for m in recent_two) and sum(older) == 0:
-                    zeros_then_full = True
-                    recent_pattern = "injury_return"
-            
-            # 2. Consistent sub appearances (15-45 mins regularly = rotation risk)
-            sub_appearances = sum(1 for m in recent_mins if 10 <= m <= 45)
-            full_appearances = sum(1 for m in recent_mins if m >= 75)
-            
-            if sub_appearances >= 3 and full_appearances <= 1:
-                recent_pattern = "rotation_risk"
-            
-            # 3. Early subs (started but subbed off before 70 mins)
-            early_subs = sum(1 for m in recent_mins if 45 <= m <= 65)
-            if early_subs >= 2:
-                recent_pattern = "early_sub_risk"
-    
-    # Base calculation
+    # Default: use season average
     if starts == 0 or total_minutes < 90:
         base_mins = 10.0
         reason = "insufficient_data"
@@ -840,21 +812,97 @@ def calculate_expected_minutes(
         base_mins = mins_per_start * start_rate
         reason = "season_average"
     
-    # Apply pattern adjustments
-    if recent_pattern == "injury_return":
-        # Player returned from injury and is playing full games - trust recent form
-        base_mins = 85.0
-        reason = "injury_return"
-    elif recent_pattern == "rotation_risk":
-        # Consistent sub = likely rotation player
-        base_mins = min(base_mins, 35.0)
-        reason = "rotation_risk"
-    elif recent_pattern == "early_sub_risk":
-        # Getting subbed early = fitness/form concern
-        base_mins = base_mins * 0.75
-        reason = "early_sub"
+    # Analyze recent history for patterns
+    if player_history and player_history.get("history"):
+        history = player_history["history"]
+        # Get last 10 GW appearances (sorted most recent first)
+        recent = sorted(history, key=lambda x: x.get("round", 0), reverse=True)[:10]
+        
+        if len(recent) >= 3:
+            recent_mins = [h.get("minutes", 0) for h in recent]
+            
+            # === PATTERN 1: Absence then return (AFCON, injury, suspension) ===
+            # Pattern: recent games are 75+, then 0s, then possibly 75+ before
+            # e.g., [90,90,90,0,0,0,0,90,90,90] = returned from absence
+            
+            # Find how many recent games are full (75+)
+            recent_full_streak = 0
+            for m in recent_mins:
+                if m >= 75:
+                    recent_full_streak += 1
+                else:
+                    break
+            
+            # If we have 2+ recent full games, check for absence pattern
+            if recent_full_streak >= 2:
+                # Look for 0s after the full streak
+                rest = recent_mins[recent_full_streak:]
+                zeros_after = sum(1 for m in rest[:6] if m == 0)
+                
+                # If there are 2+ zeros (absence), this is likely return from absence
+                if zeros_after >= 2:
+                    # Check if they were a starter before absence
+                    before_absence = rest[zeros_after:zeros_after+3] if len(rest) > zeros_after else []
+                    was_starter_before = sum(1 for m in before_absence if m >= 75) >= 1
+                    
+                    # DEF/GKP returning from absence almost always go back to starting
+                    if was_starter_before or position in [1, 2]:
+                        base_mins = 87.0
+                        reason = "returned_starter"
+            
+            # === PATTERN 2: Recency-weighted average ===
+            # If no special pattern detected, use weighted recent average
+            # Weights: last 3 games = 60%, next 3 = 30%, older = 10%
+            if reason == "season_average" and len(recent_mins) >= 3:
+                weights = []
+                for i, m in enumerate(recent_mins):
+                    if i < 3:
+                        weights.append((m, 0.6 / min(3, len(recent_mins[:3]))))
+                    elif i < 6:
+                        weights.append((m, 0.3 / min(3, len(recent_mins[3:6]))))
+                    else:
+                        weights.append((m, 0.1 / max(1, len(recent_mins[6:]))))
+                
+                # Calculate weighted average (only count games where they could have played)
+                # Exclude 0s that look like absences (surrounded by high mins)
+                played_weights = []
+                for i, (m, w) in enumerate(weights):
+                    # Skip obvious absences (0 surrounded by 75+ on both sides)
+                    is_absence = False
+                    if m == 0:
+                        before = recent_mins[i-1] if i > 0 else 0
+                        after = recent_mins[i+1] if i < len(recent_mins)-1 else 0
+                        if before >= 75 or after >= 75:
+                            is_absence = True
+                    
+                    if not is_absence:
+                        played_weights.append((m, w))
+                
+                if played_weights:
+                    total_weight = sum(w for _, w in played_weights)
+                    if total_weight > 0:
+                        weighted_avg = sum(m * w for m, w in played_weights) / total_weight
+                        # Blend with season average (70% recent, 30% season)
+                        base_mins = 0.7 * weighted_avg + 0.3 * base_mins
+                        reason = "recency_weighted"
+            
+            # === PATTERN 3: Consistent sub appearances ===
+            # 3+ sub appearances (15-45 mins) in last 6 with ≤1 full game = rotation
+            sub_appearances = sum(1 for m in recent_mins[:6] if 10 <= m <= 45)
+            full_appearances = sum(1 for m in recent_mins[:6] if m >= 75)
+            
+            if sub_appearances >= 3 and full_appearances <= 1:
+                base_mins = min(base_mins, 35.0)
+                reason = "rotation_risk"
+            
+            # === PATTERN 4: Consistently subbed early ===
+            # 2+ games subbed off between 45-65 mins = fitness/tactical concern
+            early_subs = sum(1 for m in recent_mins[:6] if 45 <= m <= 65)
+            if early_subs >= 2 and reason not in ["returned_starter", "rotation_risk"]:
+                base_mins = base_mins * 0.8
+                reason = "early_sub"
     
-    # Status overrides
+    # === STATUS OVERRIDES (injury/suspension flags) ===
     if status in ('i', 'u', 's'):
         if chance_of_playing and chance_of_playing > 0:
             base_mins = base_mins * (chance_of_playing / 100) * 0.5
@@ -866,8 +914,9 @@ def calculate_expected_minutes(
         base_mins = base_mins * cop
         reason = "doubtful"
     
-    # Rotation manager adjustment (only if not already flagged)
-    if reason == "season_average" and team_name in ROTATION_MANAGERS:
+    # === ROTATION MANAGER ADJUSTMENT ===
+    # Only apply if no special pattern detected
+    if reason in ["season_average", "recency_weighted"] and team_name in ROTATION_MANAGERS:
         rotation_factor = ROTATION_MANAGERS[team_name]
         base_mins = base_mins * rotation_factor
         reason = "rotation_adjusted"
@@ -1268,7 +1317,7 @@ async def get_rankings(
     max_price: float = Query(20, ge=0, le=20),
     max_ownership: float = Query(100, ge=0, le=100),
     limit: int = Query(50, ge=1, le=200),
-    sort_by: str = Query("xpts", pattern="^(xpts|price|form|ownership|defcon_per_90|saves_per_90|expected_minutes|total_points)$"),
+    sort_by: str = Query("xpts", pattern="^(xpts|price|form|ownership|defcon_per_90|saves_per_90|expected_minutes|total_points|xgi_per_90)$"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$")
 ):
     if gw_end < gw_start:
@@ -1326,6 +1375,7 @@ async def get_rankings(
             "form": float(player.get("form", 0) or 0),
             "total_points": player.get("total_points", 0),
             "ownership": float(player.get("selected_by_percent", 0) or 0),
+            "xgi_per_90": round(stats["xG_per_90"] + stats["xA_per_90"], 2),
             "defcon_per_90": stats["defcon_per_90"] if position_id in [2, 3] else None,
             "defcon_prob": stats["defcon_prob"] if position_id in [2, 3] else None,
             "defcon_pts_total": stats["defcon_pts_total"] if position_id in [2, 3] else None,
