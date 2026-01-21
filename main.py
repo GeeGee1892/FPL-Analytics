@@ -1488,6 +1488,13 @@ def evaluate_squad_xpts(
     for p in squad:
         player = elements.get(p["id"])
         if not player:
+            # Player not found in elements, use data from squad
+            player_xpts.append({
+                "id": p["id"],
+                "position_id": p.get("position_id", 3),
+                "xpts": p.get("xpts", 0) / 5,  # Rough per-GW estimate
+                "is_captain": p.get("is_captain", False),
+            })
             continue
         
         position_id = player["element_type"]
@@ -1510,11 +1517,18 @@ def evaluate_squad_xpts(
             "is_captain": p.get("is_captain", False),
         })
     
+    if not player_xpts:
+        return 0.0
+    
     # Sort by position for valid formation, then by xPts
     player_xpts.sort(key=lambda x: (x["position_id"], -x["xpts"]))
     
     # Select best XI with valid formation
     selected = select_best_xi(player_xpts)
+    
+    if not selected:
+        # Fallback: use all players if formation selection fails
+        selected = sorted(player_xpts, key=lambda x: -x["xpts"])[:11]
     
     if chip == "bboost":
         # Bench boost: all 15 count

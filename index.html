@@ -966,6 +966,15 @@
         .planner-input-row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end; margin-bottom: 1rem; }
         .planner-input-row .control-group { flex: 1; min-width: 150px; }
         
+        .planner-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 4rem 2rem; background: var(--surface); border-radius: 12px; margin-bottom: 1.5rem; }
+        .planner-loading .loading-spinner { width: 48px; height: 48px; }
+        .planner-loading span { font-size: 1.1rem; color: var(--text-secondary); }
+        .planner-loading .loading-sub { font-size: 0.85rem; color: var(--text-muted); margin: 0; }
+        
+        .planner-error { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 3rem 2rem; background: var(--surface); border-radius: 12px; margin-bottom: 1.5rem; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .planner-error .error-icon { font-size: 2.5rem; }
+        .planner-error .error-message { color: #ef4444; text-align: center; }
+        
         .chips-config { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
         .chips-config h3 { font-size: 1rem; margin-bottom: 1rem; color: var(--text-secondary); }
         .chips-help { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; }
@@ -1500,6 +1509,17 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <div class="planner-loading" id="plannerLoading" style="display: none;">
+                <div class="loading-spinner"></div>
+                <span>Calculating optimal transfer plan...</span>
+                <p class="loading-sub">This may take 10-20 seconds</p>
+            </div>
+
+            <div class="planner-error" id="plannerError" style="display: none;">
+                <div class="error-icon">❌</div>
+                <div class="error-message" id="plannerErrorMsg">Failed to load plan</div>
             </div>
 
             <div id="plannerResult" style="display: none;">
@@ -2157,11 +2177,17 @@
             if (bbGw) url += `&bb_gw=${bbGw}`;
             if (fhGw) url += `&fh_gw=${fhGw}`;
             
+            // Show loading, hide results and errors
+            document.getElementById('plannerLoading').style.display = 'flex';
             document.getElementById('plannerResult').style.display = 'none';
+            document.getElementById('plannerError').style.display = 'none';
             
             try {
                 const response = await fetch(url);
-                if (!response.ok) throw new Error('Failed to load plan');
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || `HTTP ${response.status}`);
+                }
                 const data = await response.json();
                 
                 // Show chips config
@@ -2171,9 +2197,15 @@
                 // Render results
                 renderPlanResults(data);
                 
+                // Hide loading, show results
+                document.getElementById('plannerLoading').style.display = 'none';
+                document.getElementById('plannerResult').style.display = 'block';
+                
             } catch (error) {
                 console.error('Failed to load plan:', error);
-                alert('Failed to load plan. Check your Team ID.');
+                document.getElementById('plannerLoading').style.display = 'none';
+                document.getElementById('plannerError').style.display = 'flex';
+                document.getElementById('plannerErrorMsg').textContent = `Failed to load plan: ${error.message}`;
             }
         }
         
@@ -2278,8 +2310,6 @@
                     </div>
                 `).join('');
             }
-            
-            document.getElementById('plannerResult').style.display = 'block';
         }
         
         // Auto-fill planner team ID from saved
