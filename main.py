@@ -350,15 +350,16 @@ async def api_root():
 async def root():
     """Serve the frontend (index.html) from the same directory as this file."""
     base_dir = os.path.dirname(__file__)
-    # Prefer index.html (Render Static Site convention)
-    frontend_path = os.path.join(base_dir, "index.html")
-    if os.path.exists(frontend_path):
-        return FileResponse(frontend_path)
-    # Fallback: if you kept the patched filename
+    index_path = os.path.join(base_dir, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+
+    # Fallback if you kept the patched filename in the repo
     patched_path = os.path.join(base_dir, "index_patched.html")
     if os.path.exists(patched_path):
         return FileResponse(patched_path)
-    # If no frontend is bundled, keep the API response
+
+    # Frontend not bundled; keep a helpful API response
     return {"message": "FPL Analytics API", "docs": "/docs"}
 
 @app.get("/api/bootstrap")
@@ -969,7 +970,6 @@ async def get_transfer_recommendations(
     }
 
 # Serve static files
-# Serve static assets if present.
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
