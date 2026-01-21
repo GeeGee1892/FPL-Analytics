@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FPL Assistant</title>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --bg-primary: #0a0a0f;
@@ -524,22 +525,6 @@
         .transfer-gain .xpts { font-size: 1.25rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--fdr-1); }
         .transfer-gain .label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
 
-        /* ===== START PROBABILITY BADGE ===== */
-        .start-prob {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.35rem;
-            padding: 0.2rem 0.5rem;
-            border-radius: 6px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        .start-prob.high { background: rgba(0, 255, 135, 0.15); color: var(--fdr-1); }
-        .start-prob.medium { background: rgba(255, 215, 0, 0.15); color: var(--fdr-3); }
-        .start-prob.low { background: rgba(255, 56, 96, 0.15); color: var(--fdr-5); }
-
         /* ===== TABLES ===== */
         .table-container {
             background: var(--bg-card);
@@ -1052,6 +1037,54 @@
             .plan-transfer-card { grid-template-columns: 1fr; text-align: center; }
             .plan-transfer-arrow { transform: rotate(90deg); }
         }
+
+        /* STATS TAB STYLES */
+        .stats-loading { display: flex; align-items: center; justify-content: center; gap: 1rem; padding: 3rem; color: var(--text-muted); }
+        
+        .stats-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+        .stat-summary-card { background: var(--surface); border-radius: 12px; padding: 1.25rem; display: flex; align-items: center; gap: 1rem; }
+        .stat-summary-card.best { border-left: 4px solid #f59e0b; }
+        .stat-summary-card.good { border-left: 4px solid #10b981; }
+        .stat-summary-card.bad { border-left: 4px solid #ef4444; }
+        .stat-summary-card.bench { border-left: 4px solid #8b5cf6; }
+        .stat-summary-icon { font-size: 2rem; }
+        .stat-summary-info { flex: 1; }
+        .stat-summary-label { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem; }
+        .stat-summary-value { font-size: 1.5rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+        .stat-summary-value.positive { color: #10b981; }
+        .stat-summary-value.negative { color: #ef4444; }
+        .stat-summary-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
+
+        .stats-section { background: var(--surface); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        .stats-section h3 { font-size: 1rem; margin-bottom: 1rem; color: var(--text-secondary); }
+
+        .or-chart-container { height: 250px; position: relative; }
+        
+        .wildcard-section { border-left: 4px solid #f59e0b; }
+        .wildcard-analysis { display: grid; grid-template-columns: 1fr auto 1fr; gap: 1.5rem; align-items: center; }
+        .wildcard-team { text-align: center; }
+        .wildcard-team-label { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; }
+        .wildcard-team-pts { font-size: 2rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+        .wildcard-team-pts.old { color: #ef4444; }
+        .wildcard-team-pts.new { color: #10b981; }
+        .wildcard-vs { font-size: 1.5rem; color: var(--text-muted); }
+        .wildcard-net { text-align: center; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color); }
+        .wildcard-net-label { font-size: 0.85rem; color: var(--text-muted); }
+        .wildcard-net-value { font-size: 1.75rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+        .wildcard-net-value.positive { color: #10b981; }
+        .wildcard-net-value.negative { color: #ef4444; }
+        .wildcard-range { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem; }
+
+        .chips-used-grid { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+        .chip-used-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: var(--surface-raised); border-radius: 8px; }
+        .chip-used-gw { font-size: 0.8rem; color: var(--text-muted); }
+        .no-chips { color: var(--text-muted); font-style: italic; }
+
+        @media (max-width: 768px) {
+            .stats-summary-grid { grid-template-columns: repeat(2, 1fr); }
+            .wildcard-analysis { grid-template-columns: 1fr; text-align: center; }
+            .wildcard-vs { display: none; }
+        }
     </style>
 </head>
 <body>
@@ -1155,6 +1188,7 @@
                     <button class="rec-tab" data-panel="captain">👑 Captain</button>
                     <button class="rec-tab" data-panel="bench">📋 Bench</button>
                     <button class="rec-tab" data-panel="squad">👥 Squad</button>
+                    <button class="rec-tab" data-panel="stats">📈 Stats</button>
                 </div>
 
                 <div id="transfersPanel" class="rec-panel active">
@@ -1191,6 +1225,73 @@
                     <div class="squad-container">
                         <div class="pitch-visual" id="squadPitch"></div>
                         <div class="squad-sidebar" id="squadSidebar"></div>
+                    </div>
+                </div>
+
+                <div id="statsPanel" class="rec-panel">
+                    <div class="stats-loading" id="statsLoading">
+                        <div class="loading-spinner"></div>
+                        <span>Loading season stats...</span>
+                    </div>
+                    
+                    <div id="statsContent" style="display: none;">
+                        <!-- Summary Cards - 4 cards -->
+                        <div class="stats-summary-grid">
+                            <div class="stat-summary-card best">
+                                <div class="stat-summary-icon">🏆</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Best GW</div>
+                                    <div class="stat-summary-value" id="bestGwPoints">-</div>
+                                    <div class="stat-summary-sub" id="bestGwRank">GW - · Rank -</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card good">
+                                <div class="stat-summary-icon">✅</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Best Transfer</div>
+                                    <div class="stat-summary-value" id="bestTransferPts">-</div>
+                                    <div class="stat-summary-sub" id="bestTransferDetail">-</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card bad">
+                                <div class="stat-summary-icon">❌</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Worst Transfer</div>
+                                    <div class="stat-summary-value" id="worstTransferPts">-</div>
+                                    <div class="stat-summary-sub" id="worstTransferDetail">-</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card bench">
+                                <div class="stat-summary-icon">🪑</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Highest Bench</div>
+                                    <div class="stat-summary-value" id="highestBenchPts">-</div>
+                                    <div class="stat-summary-sub" id="highestBenchGw">GW -</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Wildcard Analysis -->
+                        <div class="stats-section wildcard-section" id="wildcardSection" style="display: none;">
+                            <h3>🃏 Wildcard Analysis</h3>
+                            <div class="wildcard-analysis" id="wildcardAnalysis"></div>
+                        </div>
+
+                        <!-- OR Graph -->
+                        <div class="stats-section">
+                            <h3>📈 Overall Rank Progression</h3>
+                            <div class="or-chart-container">
+                                <canvas id="orChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Chips Used -->
+                        <div class="stats-section">
+                            <h3>🎫 Chips Used</h3>
+                            <div class="chips-used-grid" id="chipsUsedGrid">
+                                <span class="no-chips">No chips used yet</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1322,7 +1423,7 @@
                                 <th>Pos</th>
                                 <th data-sort="diff_score" class="sorted">Score <span class="sort-icon">▼</span></th>
                                 <th data-sort="xpts">xPts <span class="sort-icon">▼</span></th>
-                                <th data-sort="start_probability">Start% <span class="sort-icon">▼</span></th>
+                                <th data-sort="expected_minutes">ExpMins <span class="sort-icon">▼</span></th>
                                 <th data-sort="form">Form <span class="sort-icon">▼</span></th>
                                 <th data-sort="price">Price <span class="sort-icon">▼</span></th>
                                 <th data-sort="ownership">Own% <span class="sort-icon">▼</span></th>
@@ -1555,6 +1656,9 @@
                 renderTransfersData(transfers);
                 renderCaptainPicks(myTeamData);
                 renderBenchOrder(myTeamData);
+                
+                // Load stats in background
+                loadManagerStats(teamId);
             } catch (error) {
                 document.getElementById('managerCard').innerHTML = `<div class="empty-state"><div class="empty-state-icon">❌</div><p>${error.message}</p></div>`;
             }
@@ -1590,12 +1694,6 @@
             `;
         }
 
-        function getStartProbClass(prob) {
-            if (prob >= 80) return 'high';
-            if (prob >= 50) return 'medium';
-            return 'low';
-        }
-
         function renderTransfersData(data) {
             const singleHtml = data.best_single_transfers.slice(0, 8).map(t => `
                 <div class="transfer-card">
@@ -1606,7 +1704,7 @@
                     <div class="transfer-arrow">→</div>
                     <div class="transfer-player in">
                         <span class="name">${t.in.name}</span>
-                        <span class="meta">${t.in.team} · £${t.in.price.toFixed(1)}m · <span class="start-prob ${getStartProbClass(t.in.start_probability)}">${t.in.start_probability}%</span></span>
+                        <span class="meta">${t.in.team} · £${t.in.price.toFixed(1)}m · ${t.in.expected_minutes?.toFixed(0) || '-'}min</span>
                     </div>
                     <div class="transfer-gain"><div class="xpts">+${t.xpts_gain.toFixed(1)}</div><div class="label">xPts</div></div>
                 </div>
@@ -1642,7 +1740,7 @@
                     <div class="rank">${i + 1}</div>
                     <div class="captain-info">
                         <div class="name">${p.name}</div>
-                        <div class="meta">${p.team} · ${p.position} · <span class="start-prob ${getStartProbClass(p.start_probability)}">${p.start_probability}%</span></div>
+                        <div class="meta">${p.team} · ${p.position} · ${p.expected_minutes?.toFixed(0) || '-'}min</div>
                     </div>
                     <div class="captain-xpts"><div class="value">${(p.xpts_single_gw * 2).toFixed(1)}</div><div class="label">xPts (C)</div></div>
                     ${i === 0 ? '<span class="captain-badge">CAPTAIN</span>' : ''}${i === 1 ? '<span class="captain-badge vice">VICE</span>' : ''}
@@ -1701,6 +1799,183 @@
                     <div class="sidebar-stat"><span class="label">Bank</span><span class="value">£${data.bank.toFixed(1)}m</span></div>
                 </div>
             `;
+        }
+
+        // ============ STATS TAB ============
+        let orChart = null;
+        
+        async function loadManagerStats(teamId) {
+            document.getElementById('statsLoading').style.display = 'flex';
+            document.getElementById('statsContent').style.display = 'none';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/my-team/${teamId}/stats`);
+                if (!response.ok) throw new Error('Failed to load stats');
+                const stats = await response.json();
+                renderManagerStats(stats);
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+                document.getElementById('statsLoading').innerHTML = `<span style="color: var(--accent-red)">Failed to load stats</span>`;
+            }
+        }
+        
+        function renderManagerStats(stats) {
+            // Best GW - points + rank
+            document.getElementById('bestGwPoints').textContent = `${stats.best_gw?.points || '-'} pts`;
+            document.getElementById('bestGwRank').textContent = `GW ${stats.best_gw?.gw || '-'} · Rank ${stats.best_gw?.rank?.toLocaleString() || '-'}`;
+            
+            // Best Transfer - actual pts gained
+            if (stats.best_transfer) {
+                const bt = stats.best_transfer;
+                const ptsClass = bt.pts_diff >= 0 ? 'positive' : 'negative';
+                document.getElementById('bestTransferPts').textContent = `+${bt.pts_diff} pts`;
+                document.getElementById('bestTransferPts').className = `stat-summary-value ${ptsClass}`;
+                document.getElementById('bestTransferDetail').textContent = `${bt.out.name} → ${bt.in.name} (GW${bt.gw})`;
+            } else {
+                document.getElementById('bestTransferPts').textContent = '-';
+                document.getElementById('bestTransferDetail').textContent = 'No transfers yet';
+            }
+            
+            // Worst Transfer - actual pts lost
+            if (stats.worst_transfer) {
+                const wt = stats.worst_transfer;
+                const ptsClass = wt.pts_diff >= 0 ? 'positive' : 'negative';
+                document.getElementById('worstTransferPts').textContent = `${wt.pts_diff} pts`;
+                document.getElementById('worstTransferPts').className = `stat-summary-value ${ptsClass}`;
+                document.getElementById('worstTransferDetail').textContent = `${wt.out.name} → ${wt.in.name} (GW${wt.gw})`;
+            } else {
+                document.getElementById('worstTransferPts').textContent = '-';
+                document.getElementById('worstTransferDetail').textContent = 'No transfers yet';
+            }
+            
+            // Highest Bench
+            document.getElementById('highestBenchPts').textContent = `${stats.highest_bench?.points || 0} pts`;
+            document.getElementById('highestBenchGw').textContent = `GW ${stats.highest_bench?.gw || '-'}`;
+            
+            // Wildcard Analysis
+            if (stats.wildcard_analysis) {
+                const wc = stats.wildcard_analysis;
+                const netClass = wc.net_pts >= 0 ? 'positive' : 'negative';
+                const netSign = wc.net_pts >= 0 ? '+' : '';
+                
+                document.getElementById('wildcardSection').style.display = 'block';
+                document.getElementById('wildcardAnalysis').innerHTML = `
+                    <div class="wildcard-team">
+                        <div class="wildcard-team-label">Players Out (${wc.players_out})</div>
+                        <div class="wildcard-team-pts old">${wc.pts_old_team_5gw} pts</div>
+                    </div>
+                    <div class="wildcard-vs">vs</div>
+                    <div class="wildcard-team">
+                        <div class="wildcard-team-label">Players In (${wc.players_in})</div>
+                        <div class="wildcard-team-pts new">${wc.pts_new_team_5gw} pts</div>
+                    </div>
+                    <div class="wildcard-net" style="grid-column: 1 / -1;">
+                        <div class="wildcard-net-label">Net Effect (${wc.gw_range})</div>
+                        <div class="wildcard-net-value ${netClass}">${netSign}${wc.net_pts} pts</div>
+                        <div class="wildcard-range">WC played GW${wc.gw}</div>
+                    </div>
+                `;
+            } else {
+                document.getElementById('wildcardSection').style.display = 'none';
+            }
+            
+            // OR Chart
+            renderORChart(stats.or_progression);
+            
+            // Chips used
+            if (stats.chips_used?.length > 0) {
+                const chipNames = { 'wildcard': 'WC', '3xc': 'TC', 'bboost': 'BB', 'freehit': 'FH' };
+                const chipColors = { 'wildcard': 'wc', '3xc': 'tc', 'bboost': 'bb', 'freehit': 'fh' };
+                document.getElementById('chipsUsedGrid').innerHTML = stats.chips_used.map(c => `
+                    <div class="chip-used-item">
+                        <span class="chip-badge ${chipColors[c.name] || ''}">${chipNames[c.name] || c.name}</span>
+                        <span class="chip-used-gw">GW ${c.event}</span>
+                    </div>
+                `).join('');
+            }
+            
+            document.getElementById('statsLoading').style.display = 'none';
+            document.getElementById('statsContent').style.display = 'block';
+        }
+        
+        function renderORChart(progression) {
+            const ctx = document.getElementById('orChart');
+            if (!ctx) return;
+            
+            // Destroy existing chart
+            if (orChart) {
+                orChart.destroy();
+            }
+            
+            const labels = progression.map(d => `GW${d.gw}`);
+            const orData = progression.map(d => d.or);
+            const pointsData = progression.map(d => d.points);
+            
+            orChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Overall Rank',
+                        data: orData,
+                        borderColor: '#00d4aa',
+                        backgroundColor: 'rgba(0, 212, 170, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        yAxisID: 'y',
+                    }, {
+                        label: 'GW Points',
+                        data: pointsData,
+                        borderColor: '#8b5cf6',
+                        backgroundColor: 'transparent',
+                        borderDash: [5, 5],
+                        tension: 0.3,
+                        yAxisID: 'y1',
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#9090a0' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#606070' },
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            reverse: true,  // Lower rank is better
+                            ticks: { 
+                                color: '#00d4aa',
+                                callback: function(value) {
+                                    return value >= 1000000 ? (value/1000000).toFixed(1) + 'M' :
+                                           value >= 1000 ? (value/1000).toFixed(0) + 'K' : value;
+                                }
+                            },
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            title: { display: true, text: 'Overall Rank', color: '#00d4aa' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            ticks: { color: '#8b5cf6' },
+                            grid: { drawOnChartArea: false },
+                            title: { display: true, text: 'GW Points', color: '#8b5cf6' }
+                        }
+                    }
+                }
+            });
         }
 
         async function loadRankings() {
@@ -1832,7 +2107,7 @@
                         <td>${p.position}</td>
                         <td class="stat-value stat-highlight">${p.diff_score.toFixed(1)}</td>
                         <td class="stat-value">${p.xpts.toFixed(1)}</td>
-                        <td><span class="start-prob ${getStartProbClass(p.start_probability)}">${p.start_probability}%</span></td>
+                        <td class="stat-value">${p.expected_minutes.toFixed(0)}</td>
                         <td class="stat-value">${p.form.toFixed(1)}</td>
                         <td class="stat-value">£${p.price.toFixed(1)}</td>
                         <td class="stat-value">${p.ownership.toFixed(1)}%</td>

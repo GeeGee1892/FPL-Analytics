@@ -1104,6 +1104,222 @@ async def get_fixture_ratings(horizon: int = Query(8, ge=1, le=15)):
 
 # ============ DIFFERENTIALS ============
 
+async def fetch_manager_transfers(manager_id: int) -> List[Dict]:
+    """Fetch all transfers made by a manager this season."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/transfers/")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to fetch transfers: {e}")
+            return []
+
+
+async def fetch_player_history(player_id: int) -> Dict:
+    """Fetch player's GW-by-GW history."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(f"{FPL_BASE_URL}/element-summary/{player_id}/")
+            response.raise_for_status()
+            return response.json()
+        except Exception:
+            return {"history": []}
+
+
+async def fetch_gw_picks(manager_id: int, gw: int) -> Optional[Dict]:
+    """Fetch picks for a specific gameweek."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/event/{gw}/picks/")
+            response.raise_for_status()
+            return response.json()
+        except Exception:
+            return None
+
+
+def get_player_gw_points(player_history: Dict, gw: int) -> int:
+    """Get points a player scored in a specific GW."""
+    for h in player_history.get("history", []):
+        if h.get("round") == gw:
+            return h.get("total_points", 0)
+    return 0
+
+
+def get_player_points_range(player_history: Dict, start_gw: int, end_gw: int) -> int:
+    """Get total points a player scored over a GW range."""
+    total = 0
+    for h in player_history.get("history", []):
+        gw = h.get("round", 0)
+        if start_gw <= gw <= end_gw:
+            total += h.get("total_points", 0)
+    return total
+
+
+@app.get("/api/my-team/{manager_id}/stats")
+async def get_manager_stats(manager_id: int):
+    """
+    Get comprehensive manager stats:
+    - Best GW (highest points + rank for that GW)
+    - Best/Worst transfer (actual pts diff next GW)
+    - Highest bench score
+    - Wildcard net effect (5 GW comparison)
+    """
+    data = await fetch_fpl_data()
+    history = await fetch_manager_history(manager_id)
+    transfers = await fetch_manager_transfers(manager_id)
+    
+    elements = {e["id"]: e for e in data["elements"]}
+    teams = {t["id"]: t for t in data["teams"]}
+    events = data["events"]
+    current_gw = get_current_gameweek(events)
+    
+    # Process GW history
+    gw_history = history.get("current", [])
+    
+    if not gw_history:
+        return {"error": "No gameweek history found"}
+    
+    # Find best GW (highest points) - include rank for that GW
+    best_gw = max(gw_history, key=lambda x: x.get("points", 0))
+    
+    # OR progression for graph
+    or_progression = [
+        {"gw": gw["event"], "or": gw.get("overall_rank", 0), "points": gw.get("points", 0), "rank": gw.get("rank", 0)}
+        for gw in gw_history
+    ]
+    
+    # Calculate highest bench points
+    highest_bench = {"gw": 0, "points": 0}
+    for gw_data in gw_history:
+        bench_pts = gw_data.get("points_on_bench", 0)
+        if bench_pts > highest_bench["points"]:
+            highest_bench = {"gw": gw_data["event"], "points": bench_pts}
+    
+    # Process transfers with ACTUAL points difference (next GW)
+    # Fetch player histories for all transferred players
+    transfer_player_ids = set()
+    for t in transfers:
+        transfer_player_ids.add(t.get("element_in"))
+        transfer_player_ids.add(t.get("element_out"))
+    
+    # Fetch histories in parallel (limit to avoid too many requests)
+    player_histories = {}
+    for pid in list(transfer_player_ids)[:40]:  # Limit to 40 players
+        if pid:
+            player_histories[pid] = await fetch_player_history(pid)
+    
+    transfer_analysis = []
+    for transfer in transfers:
+        gw = transfer.get("event", 0)
+        player_in_id = transfer.get("element_in")
+        player_out_id = transfer.get("element_out")
+        
+        player_in = elements.get(player_in_id, {})
+        player_out = elements.get(player_out_id, {})
+        
+        if not player_in or not player_out:
+            continue
+        
+        # Get actual points in the NEXT gameweek after transfer
+        in_history = player_histories.get(player_in_id, {"history": []})
+        out_history = player_histories.get(player_out_id, {"history": []})
+        
+        in_pts_next_gw = get_player_gw_points(in_history, gw)
+        out_pts_next_gw = get_player_gw_points(out_history, gw)
+        
+        pts_diff = in_pts_next_gw - out_pts_next_gw
+        
+        transfer_analysis.append({
+            "gw": gw,
+            "in": {
+                "id": player_in_id,
+                "name": player_in.get("web_name", "Unknown"),
+                "team": teams.get(player_in.get("team", 0), {}).get("short_name", "???"),
+                "pts_next_gw": in_pts_next_gw,
+            },
+            "out": {
+                "id": player_out_id,
+                "name": player_out.get("web_name", "Unknown"),
+                "team": teams.get(player_out.get("team", 0), {}).get("short_name", "???"),
+                "pts_next_gw": out_pts_next_gw,
+            },
+            "pts_diff": pts_diff,
+        })
+    
+    # Find best and worst transfer by actual points diff
+    best_transfer = None
+    worst_transfer = None
+    if transfer_analysis:
+        transfer_analysis.sort(key=lambda x: x["pts_diff"], reverse=True)
+        best_transfer = transfer_analysis[0]
+        worst_transfer = transfer_analysis[-1]
+    
+    # Wildcard analysis - compare 5 GW pts before vs after
+    wildcard_analysis = None
+    chips_used = history.get("chips", [])
+    
+    for chip in chips_used:
+        if chip.get("name") == "wildcard":
+            wc_gw = chip.get("event", 0)
+            
+            # Get picks before WC (GW before) and after WC
+            picks_before = await fetch_gw_picks(manager_id, wc_gw - 1) if wc_gw > 1 else None
+            picks_after = await fetch_gw_picks(manager_id, wc_gw)
+            
+            if picks_before and picks_after:
+                # Get player IDs before and after
+                team_before = {p["element"] for p in picks_before.get("picks", [])}
+                team_after = {p["element"] for p in picks_after.get("picks", [])}
+                
+                players_out = team_before - team_after
+                players_in = team_after - team_before
+                
+                # Calculate points over next 5 GWs for both sets
+                end_gw = min(wc_gw + 4, current_gw)
+                
+                pts_old_team = 0
+                pts_new_team = 0
+                
+                # Fetch histories for WC players
+                for pid in players_out:
+                    if pid not in player_histories:
+                        player_histories[pid] = await fetch_player_history(pid)
+                    pts_old_team += get_player_points_range(player_histories[pid], wc_gw, end_gw)
+                
+                for pid in players_in:
+                    if pid not in player_histories:
+                        player_histories[pid] = await fetch_player_history(pid)
+                    pts_new_team += get_player_points_range(player_histories[pid], wc_gw, end_gw)
+                
+                wildcard_analysis = {
+                    "gw": wc_gw,
+                    "players_out": len(players_out),
+                    "players_in": len(players_in),
+                    "pts_old_team_5gw": pts_old_team,
+                    "pts_new_team_5gw": pts_new_team,
+                    "net_pts": pts_new_team - pts_old_team,
+                    "gw_range": f"GW{wc_gw}-GW{end_gw}",
+                }
+            break  # Only analyze first wildcard
+    
+    return {
+        "manager_id": manager_id,
+        "current_gw": current_gw,
+        "best_gw": {
+            "gw": best_gw.get("event", 0),
+            "points": best_gw.get("points", 0),
+            "rank": best_gw.get("rank", 0),
+        },
+        "highest_bench": highest_bench,
+        "or_progression": or_progression,
+        "best_transfer": best_transfer,
+        "worst_transfer": worst_transfer,
+        "wildcard_analysis": wildcard_analysis,
+        "chips_used": chips_used,
+    }
+
+
 @app.get("/api/differentials")
 async def get_differentials(
     max_ownership: float = Query(10.0, ge=0, le=100),
