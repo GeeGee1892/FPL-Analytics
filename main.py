@@ -1143,6 +1143,589 @@ async def get_bootstrap():
     return await fetch_fpl_data()
 
 
+# ============ TRANSFER PLANNER / SOLVER ============
+
+ALL_CHIPS = {"wildcard", "freehit", "bboost", "3xc"}  # FPL API chip names
+CHIP_DISPLAY = {"wildcard": "WC", "freehit": "FH", "bboost": "BB", "3xc": "TC"}
+
+
+async def fetch_manager_history(manager_id: int) -> Dict:
+    """Fetch manager history including chips used."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/history/")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Failed to fetch manager history: {str(e)}")
+
+
+def get_available_chips(history: Dict, current_gw: int) -> Dict[str, bool]:
+    """Determine which chips are still available."""
+    chips_used = {c["name"]: c["event"] for c in history.get("chips", [])}
+    
+    # In second half of season (GW20+), second set of chips becomes available
+    # WC1 used before GW20, WC2 available after
+    is_second_half = current_gw >= 20
+    
+    available = {}
+    for chip in ALL_CHIPS:
+        if chip == "wildcard":
+            # Two wildcards per season
+            wc_uses = [c for c in history.get("chips", []) if c["name"] == "wildcard"]
+            if is_second_half:
+                # Can use WC2 if we haven't used it in GW20+
+                wc2_used = any(c["event"] >= 20 for c in wc_uses)
+                available["wildcard"] = not wc2_used
+            else:
+                # Can use WC1 if we haven't used any WC yet
+                available["wildcard"] = len(wc_uses) == 0
+        else:
+            available[chip] = chip not in chips_used
+    
+    return available
+
+
+def detect_dgw_bgw(fixtures: List[Dict], events: List[Dict], horizon_start: int, horizon_end: int) -> Dict[int, Dict]:
+    """Detect Double and Blank gameweeks in horizon."""
+    gw_info = {}
+    
+    for gw in range(horizon_start, horizon_end + 1):
+        team_fixtures = defaultdict(int)
+        for fix in fixtures:
+            if fix.get("event") == gw:
+                team_fixtures[fix["team_h"]] += 1
+                team_fixtures[fix["team_a"]] += 1
+        
+        dgw_teams = [t for t, count in team_fixtures.items() if count >= 2]
+        bgw_teams = [t for t in range(1, 21) if team_fixtures.get(t, 0) == 0]
+        
+        gw_info[gw] = {
+            "is_dgw": len(dgw_teams) > 0,
+            "is_bgw": len(bgw_teams) > 0,
+            "dgw_teams": dgw_teams,
+            "bgw_teams": bgw_teams,
+            "dgw_count": len(dgw_teams),
+            "bgw_count": len(bgw_teams),
+        }
+    
+    return gw_info
+
+
+def evaluate_squad_xpts(
+    squad: List[Dict],
+    gw: int,
+    fixtures: List[Dict],
+    teams_dict: Dict,
+    elements: Dict,
+    events: List[Dict],
+    chip: Optional[str] = None
+) -> float:
+    """
+    Calculate expected points for a squad in a single GW.
+    Handles chip effects (BB = all 15 play, TC = captain x3).
+    """
+    # Get xPts for each player for this specific GW
+    player_xpts = []
+    
+    for p in squad:
+        player = elements.get(p["id"])
+        if not player:
+            continue
+        
+        position_id = player["element_type"]
+        upcoming = get_player_upcoming_fixtures(player["team"], fixtures, gw, gw, teams_dict)
+        
+        if not upcoming:
+            # Player has blank gameweek
+            xpts = 0
+        else:
+            stats = calculate_expected_points(
+                player, position_id, gw, upcoming, teams_dict, fixtures, events
+            )
+            # Single GW xPts (base90 * minutes_factor * fixture_multiplier)
+            xpts = stats["xpts"] / max(len(upcoming), 1)  # Per fixture if DGW
+        
+        player_xpts.append({
+            "id": p["id"],
+            "position_id": position_id,
+            "xpts": xpts,
+            "is_captain": p.get("is_captain", False),
+        })
+    
+    # Sort by position for valid formation, then by xPts
+    player_xpts.sort(key=lambda x: (x["position_id"], -x["xpts"]))
+    
+    # Select best XI with valid formation
+    selected = select_best_xi(player_xpts)
+    
+    if chip == "bboost":
+        # Bench boost: all 15 count
+        total = sum(p["xpts"] for p in player_xpts)
+    else:
+        # Normal: only starting XI
+        total = sum(p["xpts"] for p in selected)
+    
+    # Captain bonus
+    captain = max(selected, key=lambda x: x["xpts"])
+    if chip == "3xc":
+        # Triple captain: 3x instead of 2x
+        total += captain["xpts"] * 2  # Already counted once, add 2 more
+    else:
+        total += captain["xpts"]  # Normal captain doubles
+    
+    return total
+
+
+def select_best_xi(players: List[Dict]) -> List[Dict]:
+    """Select best valid XI from 15 players."""
+    by_pos = defaultdict(list)
+    for p in players:
+        by_pos[p["position_id"]].append(p)
+    
+    # Sort each position by xPts descending
+    for pos in by_pos:
+        by_pos[pos].sort(key=lambda x: -x["xpts"])
+    
+    # Valid formations: need 1 GKP, 3-5 DEF, 2-5 MID, 1-3 FWD, total 11
+    best_xi = []
+    best_xpts = 0
+    
+    formations = [
+        (1, 3, 4, 3), (1, 3, 5, 2), (1, 4, 3, 3), (1, 4, 4, 2), (1, 4, 5, 1),
+        (1, 5, 3, 2), (1, 5, 4, 1),
+    ]
+    
+    for gkp, defs, mids, fwds in formations:
+        xi = []
+        xi.extend(by_pos[1][:gkp])
+        xi.extend(by_pos[2][:defs])
+        xi.extend(by_pos[3][:mids])
+        xi.extend(by_pos[4][:fwds])
+        
+        if len(xi) == 11:
+            total = sum(p["xpts"] for p in xi)
+            if total > best_xpts:
+                best_xpts = total
+                best_xi = xi
+    
+    return best_xi
+
+
+def get_transfer_candidates(
+    squad: List[Dict],
+    all_players: List[Dict],
+    teams_dict: Dict,
+    fixtures: List[Dict],
+    current_gw: int,
+    horizon: int,
+    budget: float,
+    limit: int = 5
+) -> List[Dict]:
+    """Get top transfer candidates for each position."""
+    squad_ids = {p["id"] for p in squad}
+    team_counts = defaultdict(int)
+    for p in squad:
+        team_counts[p["team_id"]] += 1
+    
+    candidates = []
+    
+    for position in ["GKP", "DEF", "MID", "FWD"]:
+        pos_id = POSITION_ID_MAP[position]
+        squad_in_pos = [p for p in squad if p["position_id"] == pos_id]
+        
+        for out_player in squad_in_pos:
+            available_budget = budget + out_player["selling_price"]
+            
+            potential_ins = []
+            for player in all_players:
+                if player["id"] in squad_ids:
+                    continue
+                if player["element_type"] != pos_id:
+                    continue
+                
+                price = player["now_cost"] / 10
+                if price > available_budget:
+                    continue
+                
+                # Check 3-player-per-team rule
+                player_team = player["team"]
+                current_count = team_counts[player_team] - (1 if out_player["team_id"] == player_team else 0)
+                if current_count >= 3:
+                    continue
+                
+                # Minimum minutes filter
+                if player.get("minutes", 0) < 200:
+                    continue
+                
+                # Calculate xPts over horizon
+                upcoming = get_player_upcoming_fixtures(
+                    player["team"], fixtures, current_gw, current_gw + horizon, teams_dict
+                )
+                stats = calculate_expected_points(
+                    player, pos_id, current_gw, upcoming, teams_dict, fixtures, []
+                )
+                
+                # Calculate out player's xPts
+                out_upcoming = get_player_upcoming_fixtures(
+                    out_player["team_id"], fixtures, current_gw, current_gw + horizon, teams_dict
+                )
+                out_stats = calculate_expected_points(
+                    {"id": out_player["id"], "team": out_player["team_id"], 
+                     "minutes": out_player.get("minutes", 900), "expected_goals": 0,
+                     "expected_assists": 0, "expected_goals_conceded": 0,
+                     "points_per_game": out_player.get("form", 4), "status": "a"},
+                    pos_id, current_gw, out_upcoming, teams_dict, fixtures, []
+                )
+                
+                xpts_gain = stats["xpts"] - out_player.get("xpts", out_stats["xpts"])
+                
+                if xpts_gain > 0:
+                    potential_ins.append({
+                        "out": out_player,
+                        "in": {
+                            "id": player["id"],
+                            "name": player["web_name"],
+                            "team": teams_dict.get(player["team"], {}).get("short_name", "???"),
+                            "team_id": player["team"],
+                            "position": position,
+                            "position_id": pos_id,
+                            "price": price,
+                            "xpts": stats["xpts"],
+                            "form": float(player.get("form", 0) or 0),
+                        },
+                        "xpts_gain": round(xpts_gain, 2),
+                        "cost_change": round(price - out_player["selling_price"], 1),
+                    })
+            
+            potential_ins.sort(key=lambda x: -x["xpts_gain"])
+            candidates.extend(potential_ins[:limit])
+    
+    # Sort all candidates by xPts gain
+    candidates.sort(key=lambda x: -x["xpts_gain"])
+    return candidates[:20]  # Top 20 overall
+
+
+class TransferPath:
+    """Represents a sequence of transfer decisions across GWs."""
+    
+    def __init__(self, squad: List[Dict], bank: float, free_transfers: int):
+        self.squad = squad.copy()
+        self.bank = bank
+        self.ft = free_transfers
+        self.actions = []  # List of (gw, action_type, details)
+        self.total_xpts = 0
+        self.hits = 0
+    
+    def copy(self):
+        new_path = TransferPath(self.squad, self.bank, self.ft)
+        new_path.actions = self.actions.copy()
+        new_path.total_xpts = self.total_xpts
+        new_path.hits = self.hits
+        return new_path
+    
+    def apply_transfer(self, transfer: Dict, gw: int, is_hit: bool = False):
+        """Apply a transfer to the squad."""
+        out_id = transfer["out"]["id"]
+        self.squad = [p for p in self.squad if p["id"] != out_id]
+        self.squad.append({
+            "id": transfer["in"]["id"],
+            "name": transfer["in"]["name"],
+            "team_id": transfer["in"]["team_id"],
+            "position_id": transfer["in"]["position_id"],
+            "price": transfer["in"]["price"],
+            "selling_price": transfer["in"]["price"],
+            "xpts": transfer["in"]["xpts"],
+            "form": transfer["in"]["form"],
+        })
+        self.bank += transfer["out"]["selling_price"] - transfer["in"]["price"]
+        
+        action = {
+            "type": "transfer",
+            "gw": gw,
+            "out": transfer["out"]["name"],
+            "in": transfer["in"]["name"],
+            "xpts_gain": transfer["xpts_gain"],
+            "is_hit": is_hit,
+        }
+        self.actions.append(action)
+        
+        if is_hit:
+            self.hits += 1
+            self.total_xpts -= 4
+    
+    def roll_transfer(self, gw: int):
+        """Roll the free transfer."""
+        self.ft = min(self.ft + 1, 5)  # Max 5 FTs now (2024/25 rules)
+        self.actions.append({"type": "roll", "gw": gw})
+    
+    def use_ft(self):
+        """Use a free transfer."""
+        self.ft = max(self.ft - 1, 0)
+
+
+def solve_transfer_plan(
+    squad: List[Dict],
+    bank: float,
+    free_transfers: int,
+    all_players: List[Dict],
+    teams_dict: Dict,
+    elements: Dict,
+    fixtures: List[Dict],
+    events: List[Dict],
+    start_gw: int,
+    horizon: int,
+    chip_gws: Dict[str, int],  # {chip_name: gw} - user specified chip GWs
+    max_hits: int = 1
+) -> Dict:
+    """
+    Tree-based solver for optimal transfer path.
+    
+    Explores paths: roll FT, use FT for best transfer, take hit for additional transfer.
+    Prunes paths that fall too far behind.
+    """
+    end_gw = min(start_gw + horizon, 39)
+    gw_info = detect_dgw_bgw(fixtures, events, start_gw, end_gw)
+    
+    # Initialize root path
+    root = TransferPath(squad, bank, free_transfers)
+    
+    # Calculate baseline xPts (no transfers)
+    baseline_xpts = 0
+    for gw in range(start_gw, end_gw):
+        chip = None
+        for chip_name, chip_gw in chip_gws.items():
+            if chip_gw == gw:
+                chip = chip_name
+                break
+        baseline_xpts += evaluate_squad_xpts(squad, gw, fixtures, teams_dict, elements, events, chip)
+    
+    root.total_xpts = baseline_xpts
+    
+    # BFS through decision tree
+    paths = [root]
+    
+    for gw in range(start_gw, end_gw):
+        new_paths = []
+        
+        # Get chip for this GW if specified
+        chip_this_gw = None
+        for chip_name, chip_gw in chip_gws.items():
+            if chip_gw == gw:
+                chip_this_gw = chip_name
+                break
+        
+        for path in paths:
+            # Option 1: Roll FT (if beneficial or no good transfers)
+            roll_path = path.copy()
+            roll_path.roll_transfer(gw)
+            gw_xpts = evaluate_squad_xpts(roll_path.squad, gw, fixtures, teams_dict, elements, events, chip_this_gw)
+            roll_path.total_xpts = sum(
+                evaluate_squad_xpts(roll_path.squad, g, fixtures, teams_dict, elements, events,
+                                   chip_gws.get(g))
+                for g in range(start_gw, end_gw)
+            )
+            new_paths.append(roll_path)
+            
+            # Get transfer candidates
+            candidates = get_transfer_candidates(
+                path.squad, all_players, teams_dict, fixtures, gw, end_gw - gw, path.bank, limit=3
+            )
+            
+            if path.ft > 0 and candidates:
+                # Option 2: Use FT for best transfer
+                for i, transfer in enumerate(candidates[:3]):  # Top 3 transfers
+                    ft_path = path.copy()
+                    ft_path.use_ft()
+                    ft_path.apply_transfer(transfer, gw, is_hit=False)
+                    ft_path.total_xpts = sum(
+                        evaluate_squad_xpts(ft_path.squad, g, fixtures, teams_dict, elements, events,
+                                           chip_gws.get(g))
+                        for g in range(start_gw, end_gw)
+                    )
+                    new_paths.append(ft_path)
+                    
+                    # Option 3: Take hit for second transfer (if allowed)
+                    if max_hits > 0 and path.hits < max_hits and len(candidates) > 1:
+                        for j, second_transfer in enumerate(candidates[i+1:i+3]):  # Next 2
+                            if second_transfer["out"]["id"] == transfer["in"]["id"]:
+                                continue
+                            if second_transfer["in"]["id"] == transfer["out"]["id"]:
+                                continue
+                            
+                            hit_path = ft_path.copy()
+                            hit_path.apply_transfer(second_transfer, gw, is_hit=True)
+                            hit_path.total_xpts = sum(
+                                evaluate_squad_xpts(hit_path.squad, g, fixtures, teams_dict, elements, events,
+                                                   chip_gws.get(g))
+                                for g in range(start_gw, end_gw)
+                            ) - 4  # -4 for hit
+                            new_paths.append(hit_path)
+        
+        # Prune: keep top 20 paths by xPts
+        new_paths.sort(key=lambda p: -p.total_xpts)
+        paths = new_paths[:20]
+    
+    # Find best path
+    best_path = max(paths, key=lambda p: p.total_xpts)
+    
+    # Build timeline
+    timeline = []
+    for gw in range(start_gw, end_gw):
+        gw_actions = [a for a in best_path.actions if a.get("gw") == gw]
+        chip = chip_gws.get(gw)
+        
+        timeline.append({
+            "gw": gw,
+            "actions": gw_actions,
+            "chip": CHIP_DISPLAY.get(chip) if chip else None,
+            "is_dgw": gw_info[gw]["is_dgw"],
+            "is_bgw": gw_info[gw]["is_bgw"],
+            "dgw_count": gw_info[gw]["dgw_count"],
+        })
+    
+    return {
+        "total_xpts": round(best_path.total_xpts, 1),
+        "baseline_xpts": round(baseline_xpts, 1),
+        "xpts_gain": round(best_path.total_xpts - baseline_xpts, 1),
+        "total_hits": best_path.hits,
+        "hit_cost": best_path.hits * 4,
+        "net_xpts_gain": round(best_path.total_xpts - baseline_xpts, 1),
+        "final_bank": round(best_path.bank, 1),
+        "timeline": timeline,
+        "transfers": [a for a in best_path.actions if a["type"] == "transfer"],
+        "final_squad": best_path.squad,
+    }
+
+
+@app.get("/api/planner/{manager_id}")
+async def get_transfer_plan(
+    manager_id: int,
+    horizon: int = Query(5, ge=1, le=8),
+    max_hits: int = Query(1, ge=0, le=3),
+    wc_gw: Optional[int] = Query(None, ge=1, le=38),
+    tc_gw: Optional[int] = Query(None, ge=1, le=38),
+    bb_gw: Optional[int] = Query(None, ge=1, le=38),
+    fh_gw: Optional[int] = Query(None, ge=1, le=38),
+):
+    """
+    Multi-gameweek transfer planner.
+    
+    Returns optimal transfer path over horizon GWs.
+    User can specify which GWs to use chips (or leave for auto-suggestion).
+    """
+    await refresh_fdr_data()
+    
+    data = await fetch_fpl_data()
+    fixtures = await fetch_fixtures()
+    history = await fetch_manager_history(manager_id)
+    
+    elements = {e["id"]: e for e in data["elements"]}
+    all_players = data["elements"]
+    teams = {t["id"]: t for t in data["teams"]}
+    events = data["events"]
+    current_gw = get_current_gameweek(events)
+    next_gw = get_next_gameweek(events)
+    
+    # Get current squad
+    team_data = await fetch_manager_team(manager_id, current_gw)
+    picks = team_data["picks"]["picks"]
+    entry_history = team_data["picks"].get("entry_history", {})
+    bank = entry_history.get("bank", 0) / 10
+    
+    # Determine free transfers (1 base + rolled if applicable)
+    # This is simplified - real logic would check previous GW transfers
+    free_transfers = 1
+    if entry_history.get("event_transfers", 0) == 0:
+        free_transfers = min(free_transfers + 1, 5)
+    
+    # Build squad list
+    squad = []
+    for pick in picks:
+        player = elements.get(pick["element"])
+        if not player:
+            continue
+        
+        position_id = player["element_type"]
+        upcoming = get_player_upcoming_fixtures(player["team"], fixtures, next_gw, next_gw + horizon, teams)
+        stats = calculate_expected_points(player, position_id, current_gw, upcoming, teams, fixtures, events)
+        
+        squad.append({
+            "id": player["id"],
+            "name": player["web_name"],
+            "team_id": player["team"],
+            "position_id": position_id,
+            "price": player["now_cost"] / 10,
+            "selling_price": pick.get("selling_price", player["now_cost"]) / 10,
+            "xpts": stats["xpts"],
+            "form": float(player.get("form", 0) or 0),
+            "minutes": player.get("minutes", 0),
+        })
+    
+    # Get available chips
+    available_chips = get_available_chips(history, current_gw)
+    
+    # Build chip schedule from user input
+    chip_gws = {}
+    if wc_gw and available_chips.get("wildcard"):
+        chip_gws["wildcard"] = wc_gw
+    if tc_gw and available_chips.get("3xc"):
+        chip_gws["3xc"] = tc_gw
+    if bb_gw and available_chips.get("bboost"):
+        chip_gws["bboost"] = bb_gw
+    if fh_gw and available_chips.get("freehit"):
+        chip_gws["freehit"] = fh_gw
+    
+    # Detect DGW/BGW for chip suggestions
+    gw_info = detect_dgw_bgw(fixtures, events, next_gw, next_gw + horizon)
+    
+    # Auto-suggest chips if not specified
+    chip_suggestions = []
+    for gw, info in gw_info.items():
+        if info["is_dgw"] and info["dgw_count"] >= 5:
+            if available_chips.get("bboost") and "bboost" not in chip_gws:
+                chip_suggestions.append({
+                    "chip": "BB",
+                    "gw": gw,
+                    "reason": f"DGW with {info['dgw_count']} teams having doubles",
+                })
+            if available_chips.get("3xc") and "3xc" not in chip_gws:
+                chip_suggestions.append({
+                    "chip": "TC",
+                    "gw": gw,
+                    "reason": f"DGW opportunity for captain",
+                })
+    
+    # Run solver
+    plan = solve_transfer_plan(
+        squad=squad,
+        bank=bank,
+        free_transfers=free_transfers,
+        all_players=all_players,
+        teams_dict=teams,
+        elements=elements,
+        fixtures=fixtures,
+        events=events,
+        start_gw=next_gw,
+        horizon=horizon,
+        chip_gws=chip_gws,
+        max_hits=max_hits,
+    )
+    
+    return {
+        "manager_id": manager_id,
+        "current_gw": current_gw,
+        "planning_horizon": f"GW{next_gw}-GW{next_gw + horizon - 1}",
+        "available_chips": {CHIP_DISPLAY.get(k, k): v for k, v in available_chips.items()},
+        "chip_schedule": {CHIP_DISPLAY.get(k, k): v for k, v in chip_gws.items()},
+        "chip_suggestions": chip_suggestions,
+        "gw_info": gw_info,
+        "bank": bank,
+        "free_transfers": free_transfers,
+        "plan": plan,
+    }
+
+
 @app.on_event("startup")
 async def startup_fdr_refresh():
     """Initialize FDR data on startup."""
