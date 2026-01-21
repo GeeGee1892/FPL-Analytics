@@ -206,6 +206,10 @@ DEFCON_THRESHOLD_DEF = 10
 DEFCON_THRESHOLD_MID = 12
 DEFCON_POINTS = 1.5  # Reduced from 2 - DEFCON bonus is nice but not that common
 
+# Fixture importance weights - near-term fixtures matter more
+# Sum = 1.0 for easy normalization
+FIXTURE_WEIGHTS = [0.30, 0.22, 0.18, 0.12, 0.08, 0.05, 0.03, 0.02]
+
 # European teams for rotation modeling
 EUROPEAN_TEAMS_UCL = {"Arsenal", "Aston Villa", "Liverpool", "Man City"}
 EUROPEAN_TEAMS_UEL = {"Man Utd", "Tottenham"}
@@ -718,6 +722,27 @@ def get_fixture_fdr(opponent_id: int, is_home: bool, position_id: int) -> int:
 
 # ============ PLAYER STAT CALCULATIONS ============
 
+def get_ownership_tier(ownership: float) -> Tuple[str, str]:
+    """
+    Categorize player by ownership for rank climbing strategy.
+    
+    Returns: (tier_name, tier_description)
+    
+    - template: Must-own players, you lose rank without them
+    - popular: Common picks, low differential upside  
+    - differential: Can gain rank significantly if they haul
+    - punt: High variance, big rank swings possible
+    """
+    if ownership >= 30:
+        return "template", "Essential pick"
+    elif ownership >= 15:
+        return "popular", "Common pick"
+    elif ownership >= 5:
+        return "differential", "Rank gainer"
+    else:
+        return "punt", "High variance"
+
+
 def calculate_defcon_per_90(player: Dict, position_id: int) -> tuple[float, float, int]:
     """
     Get DEFCON per 90 from FPL API (already calculated) and compute probability.
@@ -876,8 +901,22 @@ def calculate_expected_minutes(
     else:
         mins_per_start = total_minutes / starts
         start_rate = min(1.0, starts / available_gws)
-        base_mins = mins_per_start * start_rate
-        reason = "season_average"
+        
+        # KEY FIX: If player plays nearly full 90 every time they start (87+ mins/start),
+        # they're clearly first choice when fit. Don't penalize for missed games (injury).
+        # Palmer, Salah, etc. might miss games through injury but start every game when fit.
+        if mins_per_start >= 87:
+            # First choice when fit - trust their mins_per_start, assume they'll start
+            base_mins = mins_per_start
+            reason = "first_choice"
+        elif mins_per_start >= 80:
+            # Regular starter but occasionally subbed - slight discount
+            base_mins = mins_per_start * 0.95
+            reason = "regular_starter"
+        else:
+            # Rotation/sub risk - use full start_rate calculation
+            base_mins = mins_per_start * start_rate
+            reason = "season_average"
     
     # Analyze recent history for patterns
     if player_history and player_history.get("history"):
@@ -968,17 +1007,19 @@ def calculate_expected_minutes(
             
             # === PATTERN 3: Consistent sub appearances ===
             # 3+ sub appearances (15-45 mins) in last 6 with ≤1 full game = rotation
+            # BUT don't downgrade first_choice or regular_starter players
             sub_appearances = sum(1 for m in recent_mins[:6] if 10 <= m <= 45)
             full_appearances = sum(1 for m in recent_mins[:6] if m >= 75)
             
-            if sub_appearances >= 3 and full_appearances <= 1:
+            if sub_appearances >= 3 and full_appearances <= 1 and reason not in ["first_choice", "regular_starter", "returned_starter"]:
                 base_mins = min(base_mins, 35.0)
                 reason = "rotation_risk"
             
             # === PATTERN 4: Consistently subbed early ===
             # 2+ games subbed off between 45-65 mins = fitness/tactical concern
+            # BUT don't downgrade first_choice or regular_starter players
             early_subs = sum(1 for m in recent_mins[:6] if 45 <= m <= 65)
-            if early_subs >= 2 and reason not in ["returned_starter", "rotation_risk"]:
+            if early_subs >= 2 and reason not in ["first_choice", "regular_starter", "returned_starter", "rotation_risk"]:
                 base_mins = base_mins * 0.8
                 reason = "early_sub"
     
@@ -995,13 +1036,98 @@ def calculate_expected_minutes(
         reason = "doubtful"
     
     # === ROTATION MANAGER ADJUSTMENT ===
-    # Only apply if no special pattern detected
+    # Only apply to players with season_average/recency_weighted AND not clearly nailed
+    # Skip for first_choice and regular_starter - they don't get rotated
     if reason in ["season_average", "recency_weighted"] and team_name in ROTATION_MANAGERS:
-        rotation_factor = ROTATION_MANAGERS[team_name]
-        base_mins = base_mins * rotation_factor
-        reason = "rotation_adjusted"
+        # Check if player is truly nailed - high start rate + plays full games when starting
+        start_rate = starts / available_gws if available_gws > 0 else 0
+        mins_per_start = total_minutes / starts if starts > 0 else 0
+        
+        # Truly nailed players: start 90%+ of available games AND play 85+ mins per start
+        # These are the talismans (Palmer, Salah, Haaland) who don't get rotated
+        is_truly_nailed = start_rate >= 0.90 and mins_per_start >= 85
+        
+        if not is_truly_nailed:
+            rotation_factor = ROTATION_MANAGERS[team_name]
+            base_mins = base_mins * rotation_factor
+            reason = "rotation_adjusted"
+        else:
+            reason = "nailed_starter"
     
     return round(min(90, max(0, base_mins)), 1), reason
+
+
+def get_dgw_adjustment(
+    player: Dict,
+    team_name: str,
+    team_id: int,
+    gw: int,
+    fixtures: List[Dict],
+    base_exp_mins: float
+) -> Tuple[float, int, str]:
+    """
+    For DGWs, calculate adjusted expected minutes accounting for rotation risk.
+    
+    Returns: (adjusted_mins_per_game, num_games, reason)
+    
+    European teams and rotation-happy managers rest players in DGWs.
+    Nailed starters rotate less than fringe players.
+    """
+    # Count fixtures this team has in this GW
+    gw_fixtures = [
+        f for f in fixtures 
+        if f.get("event") == gw and (f["team_h"] == team_id or f["team_a"] == team_id)
+    ]
+    
+    num_games = len(gw_fixtures)
+    
+    if num_games <= 1:
+        return base_exp_mins, 1, "sgw"
+    
+    # === DGW DETECTED ===
+    rotation_factor = 1.0
+    reason = "dgw"
+    
+    # Team-level rotation risk
+    if team_name in EUROPEAN_TEAMS_UCL:
+        rotation_factor = 0.78
+        reason = "dgw_ucl_rotation"
+    elif team_name in EUROPEAN_TEAMS_UEL:
+        rotation_factor = 0.82
+        reason = "dgw_uel_rotation"
+    elif team_name in EUROPEAN_TEAMS_UECL:
+        rotation_factor = 0.85
+        reason = "dgw_uecl_rotation"
+    elif team_name in ROTATION_MANAGERS:
+        rotation_factor = ROTATION_MANAGERS[team_name] - 0.05
+        reason = "dgw_manager_rotation"
+    else:
+        rotation_factor = 0.90
+        reason = "dgw_mild_rotation"
+    
+    # Player-level nailedness adjustment
+    total_mins = int(player.get("minutes", 0) or 0)
+    starts = int(player.get("starts", 0) or 0)
+    
+    if starts > 0:
+        mins_per_start = total_mins / starts
+        if mins_per_start >= 85:
+            # Very nailed - reduce rotation penalty
+            rotation_factor = min(1.0, rotation_factor + 0.12)
+            if "rotation" in reason:
+                reason = reason.replace("rotation", "nailed")
+        elif mins_per_start >= 78:
+            rotation_factor = min(1.0, rotation_factor + 0.06)
+    
+    # GKPs almost never rotate
+    position = player.get("element_type", 4)
+    if position == 1 and starts >= 5:
+        rotation_factor = min(1.0, rotation_factor + 0.15)
+        reason = "dgw_gkp_nailed"
+    
+    adjusted_mins = base_exp_mins * rotation_factor
+    
+    return round(adjusted_mins, 1), num_games, reason
 
 
 def calculate_expected_points(
@@ -1061,13 +1187,17 @@ def calculate_expected_points(
     
     base90 = 0.6 * base90 + 0.4 * points_per_game
     
-    # Apply fixture difficulty using new position-specific FDR
+    # Apply fixture difficulty using weighted decay - near-term matters more
     horizon = upcoming_fixtures[:8]
     if not horizon:
         total = base90
     else:
         total = 0
-        for fix in horizon:
+        weights_used = FIXTURE_WEIGHTS[:len(horizon)]
+        total_weight = sum(weights_used)
+        
+        for i, fix in enumerate(horizon):
+            weight = weights_used[i] / total_weight  # Normalize to sum to 1
             opponent_id = fix.get("opponent_id")
             is_home = fix.get("is_home", True)
             
@@ -1080,7 +1210,7 @@ def calculate_expected_points(
                 fdr = FPL_FDR_TO_10.get(fpl_diff, 5)
             
             multiplier = FDR_MULTIPLIERS_10.get(fdr, 1.0)
-            total += base90 * multiplier
+            total += base90 * multiplier * weight * len(horizon)
     
     expected_pts = total * minutes_factor
     
@@ -1101,6 +1231,74 @@ def calculate_expected_points(
         "cs_prob": round(cs_prob, 2),
         "xG_per_90": round(xG90, 2),
         "xA_per_90": round(xA90, 2),
+    }
+
+
+def calculate_captain_score(
+    player: Dict,
+    position_id: int,
+    base_xpts: float,
+    next_fixture: Optional[Dict]
+) -> Dict:
+    """
+    Calculate captaincy score factoring in ceiling potential.
+    
+    Attackers vs weak defences at home have higher ceilings.
+    We want ceiling for captaincy, not just expected value.
+    
+    Returns dict with captain_score and ceiling_mult.
+    """
+    ceiling_mult = 1.0
+    
+    # Position multiplier - attackers have higher point ceilings
+    position_mults = {
+        1: 0.70,   # GKP - very low ceiling
+        2: 0.85,   # DEF - moderate ceiling
+        3: 1.10,   # MID - high ceiling (5pt goals + CS point)
+        4: 1.15    # FWD - highest ceiling
+    }
+    ceiling_mult *= position_mults.get(position_id, 1.0)
+    
+    # Next fixture analysis for captaincy
+    if next_fixture:
+        is_home = next_fixture.get("is_home", False)
+        opponent_id = next_fixture.get("opponent_id")
+        
+        # Home advantage increases ceiling
+        if is_home:
+            ceiling_mult *= 1.08
+        
+        # Opponent defensive strength affects attacker ceilings
+        if position_id in [3, 4] and cache.fdr_data and opponent_id in cache.fdr_data:
+            opp_def_fdr = cache.fdr_data[opponent_id].get("defence_fdr", 5)
+            if opp_def_fdr <= 3:
+                ceiling_mult *= 1.12  # Weak defence = haul potential
+            elif opp_def_fdr <= 4:
+                ceiling_mult *= 1.05
+            elif opp_def_fdr >= 8:
+                ceiling_mult *= 0.88  # Strong defence = capped upside
+            elif opp_def_fdr >= 7:
+                ceiling_mult *= 0.94
+    
+    # Historical explosiveness - PPG as proxy for haul frequency
+    total_points = int(player.get("total_points", 0) or 0)
+    starts = int(player.get("starts", 0) or 0)
+    if starts >= 5:
+        ppg = total_points / starts
+        if ppg >= 7.5:
+            ceiling_mult *= 1.12  # Elite returner
+        elif ppg >= 6.5:
+            ceiling_mult *= 1.08
+        elif ppg >= 5.5:
+            ceiling_mult *= 1.04
+        elif ppg < 4:
+            ceiling_mult *= 0.88  # Historically poor
+    
+    captain_score = base_xpts * ceiling_mult
+    
+    return {
+        "captain_score": round(captain_score, 2),
+        "ceiling_mult": round(ceiling_mult, 3),
     }
 
 
@@ -1472,6 +1670,8 @@ async def get_rankings(
         )
         
         team_data = teams.get(player["team"], {})
+        ownership_pct = float(player.get("selected_by_percent", 0) or 0)
+        ownership_tier, tier_desc = get_ownership_tier(ownership_pct)
         
         ranked_players.append({
             "id": player["id"],
@@ -1487,7 +1687,9 @@ async def get_rankings(
             "minutes_reason": stats["minutes_reason"],
             "form": float(player.get("form", 0) or 0),
             "total_points": player.get("total_points", 0),
-            "ownership": float(player.get("selected_by_percent", 0) or 0),
+            "ownership": ownership_pct,
+            "ownership_tier": ownership_tier,
+            "ownership_tier_desc": tier_desc,
             "xgi_per_90": round(stats["xG_per_90"] + stats["xA_per_90"], 2),
             "bonus_per_90": stats["bonus_per_90"],
             "expected_bonus": stats["expected_bonus"],
@@ -2928,9 +3130,33 @@ def solve_transfer_plan(
         # Sort bench by xPts (optimal bench order)
         bench.sort(key=lambda p: -p["xpts"])
         
-        # Captain is highest xPts in starting XI
-        captain = max(starting_xi, key=lambda p: p["xpts"]) if starting_xi else None
-        vice_captain = sorted(starting_xi, key=lambda p: -p["xpts"])[1] if len(starting_xi) > 1 else None
+        # Captain selection using ceiling score, not just raw xPts
+        if starting_xi:
+            for p in starting_xi:
+                player_data = elements.get(p["id"], {})
+                player_team_id = p.get("team_id") or player_data.get("team")
+                
+                # Get next fixture for this player
+                player_next_fixtures = get_player_upcoming_fixtures(
+                    player_team_id, fixtures, gw, gw, teams_dict
+                )
+                next_fix = player_next_fixtures[0] if player_next_fixtures else None
+                
+                cap_data = calculate_captain_score(
+                    player=player_data,
+                    position_id=p["position_id"],
+                    base_xpts=p["xpts"],
+                    next_fixture=next_fix
+                )
+                p["captain_score"] = cap_data["captain_score"]
+                p["ceiling_mult"] = cap_data["ceiling_mult"]
+            
+            starting_xi_by_cap = sorted(starting_xi, key=lambda p: -p.get("captain_score", p["xpts"]))
+            captain = starting_xi_by_cap[0]
+            vice_captain = starting_xi_by_cap[1] if len(starting_xi_by_cap) > 1 else None
+        else:
+            captain = None
+            vice_captain = None
         
         # Calculate total GW xPts
         gw_total_xpts = sum(p["xpts"] for p in starting_xi)
