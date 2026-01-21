@@ -1,0 +1,1305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FPL Analytics Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a25;
+            --bg-card: #15151f;
+            --bg-hover: #1e1e2a;
+            --text-primary: #e8e8ed;
+            --text-secondary: #9090a0;
+            --text-muted: #606070;
+            --accent-primary: #00d4aa;
+            --accent-secondary: #00a088;
+            --accent-purple: #8b5cf6;
+            --accent-blue: #3b82f6;
+            --accent-orange: #f59e0b;
+            --accent-red: #ef4444;
+            --border-color: #252530;
+            --fdr-1: #00ff87;
+            --fdr-2: #2dce89;
+            --fdr-3: #ffd700;
+            --fdr-4: #ff6b35;
+            --fdr-5: #ff3860;
+            --gradient-1: linear-gradient(135deg, #00d4aa 0%, #00a088 100%);
+            --shadow-glow: 0 0 40px rgba(0, 212, 170, 0.15);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .header-content {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            width: 42px;
+            height: 42px;
+            background: var(--gradient-1);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--bg-primary);
+        }
+
+        .logo-text {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .logo-subtitle {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .current-gw {
+            background: var(--bg-tertiary);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--accent-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .nav-tabs {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 2rem;
+        }
+
+        .nav-tabs-inner {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            gap: 0.25rem;
+            overflow-x: auto;
+        }
+
+        .nav-tab {
+            padding: 1rem 1.5rem;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-bottom: 2px solid transparent;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .nav-tab:hover {
+            color: var(--text-primary);
+            background: var(--bg-tertiary);
+        }
+
+        .nav-tab.active {
+            color: var(--accent-primary);
+            border-bottom-color: var(--accent-primary);
+        }
+
+        .main-content {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .section { display: none; }
+        .section.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .controls-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            align-items: flex-end;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .control-group label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        input[type="number"], select {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.65rem 1rem;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            min-width: 80px;
+            transition: all 0.2s ease;
+        }
+
+        input[type="number"]:focus, select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.1);
+        }
+
+        select { min-width: 140px; cursor: pointer; }
+
+        .btn {
+            padding: 0.65rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--gradient-1);
+            color: var(--bg-primary);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .position-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .position-tab {
+            padding: 0.5rem 1.25rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .position-tab:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .position-tab.active {
+            background: var(--accent-primary);
+            color: var(--bg-primary);
+            border-color: var(--accent-primary);
+        }
+
+        .table-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .table-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .table-count {
+            background: var(--bg-tertiary);
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .data-table th {
+            background: var(--bg-tertiary);
+            padding: 0.85rem 1rem;
+            text-align: left;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            font-weight: 600;
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+        }
+
+        .data-table td {
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.9rem;
+        }
+
+        .data-table tr:hover td { background: var(--bg-hover); }
+        .data-table tr:last-child td { border-bottom: none; }
+
+        .player-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
+        }
+
+        .player-name { font-weight: 600; color: var(--text-primary); }
+        .player-team { font-size: 0.75rem; color: var(--text-muted); }
+
+        .stat-value { font-family: 'JetBrains Mono', monospace; font-weight: 500; }
+        .stat-highlight { color: var(--accent-primary); font-weight: 600; }
+        .stat-positive { color: var(--fdr-1); }
+        .stat-negative { color: var(--fdr-5); }
+        .stat-warning { color: var(--accent-orange); }
+
+        .mins-bar {
+            width: 60px;
+            height: 6px;
+            background: var(--bg-tertiary);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .mins-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .fixtures-row {
+            display: flex;
+            gap: 0.35rem;
+            flex-wrap: wrap;
+        }
+
+        .fixture-badge {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0.25rem 0.45rem;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            min-width: 38px;
+            transition: transform 0.2s;
+        }
+
+        .fixture-badge:hover { transform: scale(1.1); }
+        .fixture-badge .gw { font-size: 0.55rem; opacity: 0.8; margin-bottom: 1px; }
+        .fixture-badge .opp { font-size: 0.75rem; }
+
+        .fixture-badge.fdr-1 { background: rgba(0, 255, 135, 0.2); color: var(--fdr-1); border: 1px solid rgba(0, 255, 135, 0.3); }
+        .fixture-badge.fdr-2 { background: rgba(45, 206, 137, 0.2); color: var(--fdr-2); border: 1px solid rgba(45, 206, 137, 0.3); }
+        .fixture-badge.fdr-3 { background: rgba(255, 215, 0, 0.2); color: var(--fdr-3); border: 1px solid rgba(255, 215, 0, 0.3); }
+        .fixture-badge.fdr-4 { background: rgba(255, 107, 53, 0.2); color: var(--fdr-4); border: 1px solid rgba(255, 107, 53, 0.3); }
+        .fixture-badge.fdr-5 { background: rgba(255, 56, 96, 0.2); color: var(--fdr-5); border: 1px solid rgba(255, 56, 96, 0.3); }
+
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.25rem;
+            transition: all 0.2s ease;
+        }
+
+        .stat-card:hover {
+            border-color: var(--accent-primary);
+            transform: translateY(-2px);
+        }
+
+        .stat-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .stat-card-team { font-size: 1.1rem; font-weight: 700; }
+
+        .stat-card-rating {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .rating-easy { background: rgba(0, 255, 135, 0.2); color: var(--fdr-1); }
+        .rating-medium { background: rgba(255, 215, 0, 0.2); color: var(--fdr-3); }
+        .rating-hard { background: rgba(255, 56, 96, 0.2); color: var(--fdr-5); }
+
+        .stat-card-meta {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .stat-card-fixtures {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+        }
+
+        .optimizer-result {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 1.5rem;
+        }
+
+        .pitch-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 2rem;
+            background-image: 
+                linear-gradient(to bottom, rgba(0, 212, 170, 0.05) 0%, transparent 20%),
+                linear-gradient(to top, rgba(0, 212, 170, 0.05) 0%, transparent 20%);
+        }
+
+        .pitch-row {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .pitch-row:last-child { margin-bottom: 0; }
+
+        .pitch-player {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            text-align: center;
+            min-width: 100px;
+            transition: all 0.2s;
+        }
+
+        .pitch-player:hover {
+            border-color: var(--accent-primary);
+            transform: scale(1.05);
+        }
+
+        .pitch-player-name { font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; }
+        .pitch-player-team { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.35rem; }
+
+        .pitch-player-stats {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            font-size: 0.7rem;
+            color: var(--accent-primary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .optimizer-summary {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+
+        .summary-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1.25rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .summary-stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .summary-stat:last-child { border-bottom: none; }
+        .summary-label { color: var(--text-secondary); }
+
+        .summary-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: var(--accent-primary);
+        }
+
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 4rem;
+            color: var(--text-muted);
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem;
+            color: var(--text-muted);
+        }
+
+        .empty-state-icon { font-size: 3rem; margin-bottom: 1rem; }
+
+        .table-scroll {
+            overflow-x: auto;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .price-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 1200px) {
+            .optimizer-result { grid-template-columns: 1fr; }
+            .price-grid { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 768px) {
+            .header-content { flex-direction: column; gap: 1rem; }
+            .controls-panel { flex-direction: column; }
+            .control-group { width: 100%; }
+            input[type="number"], select { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">⚽</div>
+                <div>
+                    <div class="logo-text">FPL Analytics</div>
+                    <div class="logo-subtitle">Pro Dashboard</div>
+                </div>
+            </div>
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                <div class="current-gw" id="currentGw">Loading...</div>
+                <div style="display: flex; gap: 0.5rem; font-size: 0.7rem;">
+                    <span style="background: var(--bg-tertiary); padding: 0.25rem 0.5rem; border-radius: 4px; color: var(--accent-primary);">FPL API</span>
+                    <span style="background: var(--bg-tertiary); padding: 0.25rem 0.5rem; border-radius: 4px; color: var(--accent-purple);">Understat</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <nav class="nav-tabs">
+        <div class="nav-tabs-inner">
+            <button class="nav-tab active" data-section="rankings">📊 Player Rankings</button>
+            <button class="nav-tab" data-section="fixtures">📅 Fixture Ratings</button>
+            <button class="nav-tab" data-section="differentials">💎 Differentials</button>
+            <button class="nav-tab" data-section="price-changes">💰 Price Changes</button>
+            <button class="nav-tab" data-section="optimizer">🎯 Team Optimizer</button>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <!-- Rankings Section -->
+        <section id="rankings" class="section active">
+            <div class="controls-panel">
+                <div class="control-group">
+                    <label>Gameweek Range</label>
+                    <div class="control-row">
+                        <input type="number" id="gwStart" value="1" min="1" max="38">
+                        <span style="color: var(--text-muted)">to</span>
+                        <input type="number" id="gwEnd" value="8" min="1" max="38">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Min Total Minutes</label>
+                    <input type="number" id="minMinutes" value="400" min="0" step="50">
+                </div>
+                <div class="control-group">
+                    <label>Results Limit</label>
+                    <input type="number" id="rankLimit" value="50" min="10" max="200">
+                </div>
+                <div class="control-group">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-primary" onclick="loadRankings()">🔄 Update Rankings</button>
+                </div>
+            </div>
+
+            <div class="position-tabs">
+                <button class="position-tab active" data-position="GKP">GKP</button>
+                <button class="position-tab" data-position="DEF">DEF</button>
+                <button class="position-tab" data-position="MID">MID</button>
+                <button class="position-tab" data-position="FWD">FWD</button>
+            </div>
+
+            <div class="table-container">
+                <div class="table-header">
+                    <div class="table-title">
+                        <span id="rankingsTitle">Player Rankings</span>
+                        <span class="table-count" id="rankingsCount">0 players</span>
+                    </div>
+                </div>
+                <div class="table-scroll">
+                    <table class="data-table" id="rankingsTable">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Player</th>
+                                <th>xPts</th>
+                                <th>Form</th>
+                                <th>Total Pts</th>
+                                <th>Mins/GW</th>
+                                <th>Mins Factor</th>
+                                <th>Price</th>
+                                <th>Own%</th>
+                                <th>xG</th>
+                                <th>npxG</th>
+                                <th>xA</th>
+                                <th>Fixtures</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rankingsBody">
+                            <tr><td colspan="13" class="loading"><div class="loading-spinner"></div>Loading data...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Fixture Ratings Section -->
+        <section id="fixtures" class="section">
+            <div class="controls-panel">
+                <div class="control-group">
+                    <label>Fixture Horizon (GWs)</label>
+                    <input type="number" id="fixtureHorizon" value="8" min="1" max="15">
+                </div>
+                <div class="control-group">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-primary" onclick="loadFixtureRatings()">🔄 Update Fixtures</button>
+                </div>
+            </div>
+            <div class="cards-grid" id="fixturesGrid">
+                <div class="loading"><div class="loading-spinner"></div>Loading fixtures...</div>
+            </div>
+        </section>
+
+        <!-- Differentials Section -->
+        <section id="differentials" class="section">
+            <div class="controls-panel">
+                <div class="control-group">
+                    <label>Max Ownership %</label>
+                    <input type="number" id="maxOwnership" value="10" min="0" max="100" step="0.5">
+                </div>
+                <div class="control-group">
+                    <label>Min Form</label>
+                    <input type="number" id="minForm" value="4" min="0" max="15" step="0.5">
+                </div>
+                <div class="control-group">
+                    <label>Min Minutes</label>
+                    <input type="number" id="diffMinMinutes" value="400" min="0" step="50">
+                </div>
+                <div class="control-group">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-primary" onclick="loadDifferentials()">🔄 Find Differentials</button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <div class="table-header">
+                    <div class="table-title">
+                        <span>💎 Differential Players</span>
+                        <span class="table-count" id="diffCount">0 players</span>
+                    </div>
+                </div>
+                <div class="table-scroll">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Player</th>
+                                <th>Pos</th>
+                                <th>Diff Score</th>
+                                <th>xPts</th>
+                                <th>Form</th>
+                                <th>Total Pts</th>
+                                <th>Mins/GW</th>
+                                <th>Price</th>
+                                <th>Own%</th>
+                                <th>xG</th>
+                                <th>xA</th>
+                                <th>Fixtures</th>
+                            </tr>
+                        </thead>
+                        <tbody id="diffBody">
+                            <tr><td colspan="13" class="loading"><div class="loading-spinner"></div>Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Price Changes Section -->
+        <section id="price-changes" class="section">
+            <div class="controls-panel">
+                <button class="btn btn-primary" onclick="loadPriceChanges()">🔄 Refresh Price Data</button>
+            </div>
+
+            <div class="price-grid">
+                <div class="table-container">
+                    <div class="table-header">
+                        <div class="table-title" style="color: var(--fdr-1)">📈 Rising</div>
+                    </div>
+                    <div class="table-scroll">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Player</th>
+                                    <th>Price</th>
+                                    <th>Net Transfers</th>
+                                    <th>Likelihood</th>
+                                </tr>
+                            </thead>
+                            <tbody id="risingBody">
+                                <tr><td colspan="4" class="loading"><div class="loading-spinner"></div></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <div class="table-header">
+                        <div class="table-title" style="color: var(--fdr-5)">📉 Falling</div>
+                    </div>
+                    <div class="table-scroll">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Player</th>
+                                    <th>Price</th>
+                                    <th>Net Transfers</th>
+                                    <th>Likelihood</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fallingBody">
+                                <tr><td colspan="4" class="loading"><div class="loading-spinner"></div></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Team Optimizer Section -->
+        <section id="optimizer" class="section">
+            <div class="controls-panel">
+                <div class="control-group">
+                    <label>Budget (£m)</label>
+                    <input type="number" id="optBudget" value="100" min="50" max="120" step="0.1">
+                </div>
+                <div class="control-group">
+                    <label>Formation</label>
+                    <select id="optFormation">
+                        <option value="3-4-3">3-4-3</option>
+                        <option value="3-5-2">3-5-2</option>
+                        <option value="4-4-2">4-4-2</option>
+                        <option value="4-3-3">4-3-3</option>
+                        <option value="4-5-1">4-5-1</option>
+                        <option value="5-3-2">5-3-2</option>
+                        <option value="5-4-1">5-4-1</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>GW Range</label>
+                    <div class="control-row">
+                        <input type="number" id="optGwStart" value="1" min="1" max="38">
+                        <span style="color: var(--text-muted)">to</span>
+                        <input type="number" id="optGwEnd" value="8" min="1" max="38">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Min Minutes</label>
+                    <input type="number" id="optMinMinutes" value="400" min="0" step="50">
+                </div>
+                <div class="control-group">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-primary" onclick="optimizeTeam()">🎯 Optimize Team</button>
+                </div>
+            </div>
+
+            <div id="optimizerResult">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🎯</div>
+                    <p>Configure your settings and click "Optimize Team" to generate the best lineup</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const API_BASE = '';
+        let currentPosition = 'GKP';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initNavigation();
+            initPositionTabs();
+            loadInitialData();
+        });
+
+        function initNavigation() {
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const section = tab.dataset.section;
+                    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+                    document.getElementById(section).classList.add('active');
+                    loadSectionData(section);
+                });
+            });
+        }
+
+        function initPositionTabs() {
+            document.querySelectorAll('.position-tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    document.querySelectorAll('.position-tab').forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    currentPosition = tab.dataset.position;
+                    loadRankings();
+                });
+            });
+        }
+
+        function loadSectionData(section) {
+            switch(section) {
+                case 'rankings': loadRankings(); break;
+                case 'fixtures': loadFixtureRatings(); break;
+                case 'differentials': loadDifferentials(); break;
+                case 'price-changes': loadPriceChanges(); break;
+            }
+        }
+
+        async function loadInitialData() {
+            try {
+                const response = await fetch(`${API_BASE}/api/bootstrap`);
+                const data = await response.json();
+                
+                const currentEvent = data.events.find(e => e.is_current) || data.events.find(e => e.is_next);
+                if (currentEvent) {
+                    document.getElementById('currentGw').textContent = `Gameweek ${currentEvent.id}`;
+                    document.getElementById('gwStart').value = currentEvent.id;
+                    document.getElementById('gwEnd').value = Math.min(currentEvent.id + 7, 38);
+                    document.getElementById('optGwStart').value = currentEvent.id;
+                    document.getElementById('optGwEnd').value = Math.min(currentEvent.id + 7, 38);
+                }
+                loadRankings();
+            } catch (error) {
+                console.error('Failed to load bootstrap data:', error);
+                document.getElementById('currentGw').textContent = 'Error loading';
+            }
+        }
+
+        async function loadRankings() {
+            const gwStart = document.getElementById('gwStart').value;
+            const gwEnd = document.getElementById('gwEnd').value;
+            const minMinutes = document.getElementById('minMinutes').value;
+            const limit = document.getElementById('rankLimit').value;
+            
+            document.getElementById('rankingsBody').innerHTML = `
+                <tr><td colspan="13" class="loading"><div class="loading-spinner"></div>Loading ${currentPosition} rankings...</td></tr>
+            `;
+            
+            try {
+                const response = await fetch(
+                    `${API_BASE}/api/rankings/${currentPosition}?gw_start=${gwStart}&gw_end=${gwEnd}&min_minutes=${minMinutes}&limit=${limit}`
+                );
+                const data = await response.json();
+                
+                document.getElementById('rankingsTitle').textContent = `${currentPosition} Rankings (${data.gw_range})`;
+                document.getElementById('rankingsCount').textContent = `${data.total_players} players`;
+                
+                renderRankingsTable(data.players);
+            } catch (error) {
+                console.error('Failed to load rankings:', error);
+                document.getElementById('rankingsBody').innerHTML = `
+                    <tr><td colspan="13" class="empty-state">Failed to load data. Please try again.</td></tr>
+                `;
+            }
+        }
+
+        function renderRankingsTable(players) {
+            if (!players || players.length === 0) {
+                document.getElementById('rankingsBody').innerHTML = `
+                    <tr><td colspan="13" class="empty-state">No players found with current filters</td></tr>
+                `;
+                return;
+            }
+            
+            const html = players.map((p, i) => `
+                <tr>
+                    <td>${i + 1}</td>
+                    <td>
+                        <div class="player-info">
+                            <span class="player-name">${p.name} ${p.has_understat ? '<span style="color: var(--accent-purple); font-size: 0.6rem;" title="Understat data available">★</span>' : ''}</span>
+                            <span class="player-team">${p.team}</span>
+                        </div>
+                    </td>
+                    <td class="stat-value stat-highlight">${p.xpts.toFixed(2)}</td>
+                    <td class="stat-value ${getFormClass(p.form)}">${p.form.toFixed(1)}</td>
+                    <td class="stat-value">${p.total_points}</td>
+                    <td class="stat-value ${getMinsClass(p.mins_per_gw)}">${p.mins_per_gw.toFixed(0)}</td>
+                    <td>
+                        <div class="mins-bar" title="Minutes Factor: ${(p.minutes_factor * 100).toFixed(0)}%">
+                            <div class="mins-bar-fill" style="width: ${p.minutes_factor * 100}%; background: ${getMinsColor(p.minutes_factor)}"></div>
+                        </div>
+                    </td>
+                    <td class="stat-value">£${p.price.toFixed(1)}</td>
+                    <td class="stat-value">${p.ownership.toFixed(1)}%</td>
+                    <td class="stat-value">${p.xG.toFixed(2)}</td>
+                    <td class="stat-value" style="color: ${p.npxG ? 'var(--accent-purple)' : 'var(--text-muted)'}">${p.npxG ? p.npxG.toFixed(2) : '-'}</td>
+                    <td class="stat-value">${p.xA.toFixed(2)}</td>
+                    <td>${renderFixtures(p.fixtures)}</td>
+                </tr>
+            `).join('');
+            
+            document.getElementById('rankingsBody').innerHTML = html;
+        }
+
+        async function loadFixtureRatings() {
+            const horizon = document.getElementById('fixtureHorizon').value;
+            
+            document.getElementById('fixturesGrid').innerHTML = `
+                <div class="loading"><div class="loading-spinner"></div>Loading fixtures...</div>
+            `;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/fixture-ratings?horizon=${horizon}`);
+                const data = await response.json();
+                renderFixtureCards(data.teams);
+            } catch (error) {
+                console.error('Failed to load fixtures:', error);
+                document.getElementById('fixturesGrid').innerHTML = `
+                    <div class="empty-state">Failed to load fixture data</div>
+                `;
+            }
+        }
+
+        function renderFixtureCards(teams) {
+            const html = teams.map(team => `
+                <div class="stat-card">
+                    <div class="stat-card-header">
+                        <span class="stat-card-team">${team.team_short}</span>
+                        <span class="stat-card-rating rating-${team.rating.toLowerCase()}">${team.rating}</span>
+                    </div>
+                    <div class="stat-card-meta">
+                        <span>Avg: <strong>${team.avg_difficulty}</strong></span>
+                        <span style="color: var(--fdr-1)">Easy: ${team.easy_fixtures}</span>
+                        <span style="color: var(--fdr-5)">Hard: ${team.hard_fixtures}</span>
+                    </div>
+                    <div class="stat-card-fixtures">
+                        ${team.fixtures.map(f => `
+                            <div class="fixture-badge fdr-${f.difficulty}">
+                                <span class="gw">GW${f.gameweek}</span>
+                                <span class="opp">${f.is_home ? '' : '@'}${f.opponent}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+            
+            document.getElementById('fixturesGrid').innerHTML = html;
+        }
+
+        async function loadDifferentials() {
+            const maxOwnership = document.getElementById('maxOwnership').value;
+            const minForm = document.getElementById('minForm').value;
+            const minMinutes = document.getElementById('diffMinMinutes').value;
+            
+            document.getElementById('diffBody').innerHTML = `
+                <tr><td colspan="13" class="loading"><div class="loading-spinner"></div>Finding differentials...</td></tr>
+            `;
+            
+            try {
+                const response = await fetch(
+                    `${API_BASE}/api/differentials?max_ownership=${maxOwnership}&min_form=${minForm}&min_minutes=${minMinutes}`
+                );
+                const data = await response.json();
+                
+                document.getElementById('diffCount').textContent = `${data.total_found} players`;
+                renderDifferentialsTable(data.players);
+            } catch (error) {
+                console.error('Failed to load differentials:', error);
+                document.getElementById('diffBody').innerHTML = `
+                    <tr><td colspan="13" class="empty-state">Failed to load data</td></tr>
+                `;
+            }
+        }
+
+        function renderDifferentialsTable(players) {
+            if (!players || players.length === 0) {
+                document.getElementById('diffBody').innerHTML = `
+                    <tr><td colspan="13" class="empty-state">No differentials found with current filters</td></tr>
+                `;
+                return;
+            }
+            
+            const html = players.map((p, i) => `
+                <tr>
+                    <td>${i + 1}</td>
+                    <td>
+                        <div class="player-info">
+                            <span class="player-name">${p.name}</span>
+                            <span class="player-team">${p.team}</span>
+                        </div>
+                    </td>
+                    <td>${p.position}</td>
+                    <td class="stat-value stat-highlight">${p.diff_score.toFixed(2)}</td>
+                    <td class="stat-value">${p.xpts.toFixed(2)}</td>
+                    <td class="stat-value ${getFormClass(p.form)}">${p.form.toFixed(1)}</td>
+                    <td class="stat-value">${p.total_points}</td>
+                    <td class="stat-value">${p.mins_per_gw.toFixed(0)}</td>
+                    <td class="stat-value">£${p.price.toFixed(1)}</td>
+                    <td class="stat-value stat-positive">${p.ownership.toFixed(1)}%</td>
+                    <td class="stat-value">${p.xG.toFixed(2)}</td>
+                    <td class="stat-value">${p.xA.toFixed(2)}</td>
+                    <td>${renderFixtures(p.fixtures)}</td>
+                </tr>
+            `).join('');
+            
+            document.getElementById('diffBody').innerHTML = html;
+        }
+
+        async function loadPriceChanges() {
+            document.getElementById('risingBody').innerHTML = `<tr><td colspan="4" class="loading"><div class="loading-spinner"></div></td></tr>`;
+            document.getElementById('fallingBody').innerHTML = `<tr><td colspan="4" class="loading"><div class="loading-spinner"></div></td></tr>`;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/price-changes`);
+                const data = await response.json();
+                renderPriceChanges(data);
+            } catch (error) {
+                console.error('Failed to load price changes:', error);
+                document.getElementById('risingBody').innerHTML = `<tr><td colspan="4" class="empty-state">Failed to load</td></tr>`;
+                document.getElementById('fallingBody').innerHTML = `<tr><td colspan="4" class="empty-state">Failed to load</td></tr>`;
+            }
+        }
+
+        function renderPriceChanges(data) {
+            const risingHtml = data.rising.map(p => `
+                <tr>
+                    <td>
+                        <div class="player-info">
+                            <span class="player-name">${p.name}</span>
+                            <span class="player-team">${p.team} · ${p.position}</span>
+                        </div>
+                    </td>
+                    <td class="stat-value">£${p.price.toFixed(1)}</td>
+                    <td class="stat-value stat-positive">+${formatNumber(p.net_transfers)}</td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <div class="mins-bar">
+                                <div class="mins-bar-fill" style="width: ${Math.min(p.likelihood, 100)}%; background: var(--fdr-1);"></div>
+                            </div>
+                            <span class="stat-value" style="font-size: 0.75rem">${p.likelihood.toFixed(0)}%</span>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+            
+            document.getElementById('risingBody').innerHTML = risingHtml || '<tr><td colspan="4" class="empty-state">No rising players</td></tr>';
+            
+            const fallingHtml = data.falling.map(p => `
+                <tr>
+                    <td>
+                        <div class="player-info">
+                            <span class="player-name">${p.name}</span>
+                            <span class="player-team">${p.team} · ${p.position}</span>
+                        </div>
+                    </td>
+                    <td class="stat-value">£${p.price.toFixed(1)}</td>
+                    <td class="stat-value stat-negative">${formatNumber(p.net_transfers)}</td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <div class="mins-bar">
+                                <div class="mins-bar-fill" style="width: ${Math.min(p.likelihood, 100)}%; background: var(--fdr-5);"></div>
+                            </div>
+                            <span class="stat-value" style="font-size: 0.75rem">${p.likelihood.toFixed(0)}%</span>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+            
+            document.getElementById('fallingBody').innerHTML = fallingHtml || '<tr><td colspan="4" class="empty-state">No falling players</td></tr>';
+        }
+
+        async function optimizeTeam() {
+            const budget = document.getElementById('optBudget').value;
+            const formation = document.getElementById('optFormation').value;
+            const gwStart = document.getElementById('optGwStart').value;
+            const gwEnd = document.getElementById('optGwEnd').value;
+            const minMinutes = document.getElementById('optMinMinutes').value;
+            
+            document.getElementById('optimizerResult').innerHTML = `
+                <div class="loading"><div class="loading-spinner"></div>Optimizing team...</div>
+            `;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/optimize-team`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        budget: parseFloat(budget),
+                        formation: formation,
+                        gw_start: parseInt(gwStart),
+                        gw_end: parseInt(gwEnd),
+                        min_minutes: parseInt(minMinutes)
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Optimization failed');
+                }
+                
+                const data = await response.json();
+                renderOptimizedTeam(data);
+            } catch (error) {
+                console.error('Failed to optimize team:', error);
+                document.getElementById('optimizerResult').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⚠️</div>
+                        <p>Optimization failed: ${error.message}</p>
+                        <p style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted)">Try adjusting your parameters or increasing the budget.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function renderOptimizedTeam(data) {
+            const posOrder = ['GKP', 'DEF', 'MID', 'FWD'];
+            
+            const pitchHtml = posOrder.map(pos => {
+                const players = data.by_position[pos] || [];
+                if (players.length === 0) return '';
+                
+                return `
+                    <div class="pitch-row">
+                        ${players.map(p => `
+                            <div class="pitch-player">
+                                <div class="pitch-player-name">${p.name}</div>
+                                <div class="pitch-player-team">${p.team}</div>
+                                <div class="pitch-player-stats">
+                                    <span>£${p.price.toFixed(1)}</span>
+                                    <span>xPts: ${p.xpts.toFixed(1)}</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }).join('');
+            
+            const html = `
+                <div class="optimizer-result">
+                    <div class="pitch-container">
+                        <h3 style="text-align: center; margin-bottom: 1.5rem; color: var(--accent-primary);">
+                            ${data.formation} Formation
+                        </h3>
+                        ${pitchHtml}
+                    </div>
+                    <div class="optimizer-summary">
+                        <div class="summary-title">Team Summary</div>
+                        <div class="summary-stat">
+                            <span class="summary-label">Formation</span>
+                            <span class="summary-value">${data.formation}</span>
+                        </div>
+                        <div class="summary-stat">
+                            <span class="summary-label">GW Range</span>
+                            <span class="summary-value">${data.gw_range}</span>
+                        </div>
+                        <div class="summary-stat">
+                            <span class="summary-label">Total xPts</span>
+                            <span class="summary-value" style="font-size: 1.25rem;">${data.total_xpts.toFixed(2)}</span>
+                        </div>
+                        <div class="summary-stat">
+                            <span class="summary-label">Budget Used</span>
+                            <span class="summary-value">£${data.budget_used.toFixed(1)}m</span>
+                        </div>
+                        <div class="summary-stat">
+                            <span class="summary-label">Budget Remaining</span>
+                            <span class="summary-value">£${data.budget_remaining.toFixed(1)}m</span>
+                        </div>
+                        <div style="margin-top: 1.5rem;">
+                            <div class="summary-title">Players</div>
+                            ${data.players.map(p => `
+                                <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;">
+                                    <span>
+                                        <span style="color: var(--text-muted); width: 35px; display: inline-block;">${p.position}</span>
+                                        ${p.name}
+                                    </span>
+                                    <span style="color: var(--accent-primary); font-family: 'JetBrains Mono', monospace;">
+                                        ${p.xpts.toFixed(1)}
+                                    </span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('optimizerResult').innerHTML = html;
+        }
+
+        function renderFixtures(fixtures) {
+            if (!fixtures || fixtures.length === 0) return '-';
+            return `
+                <div class="fixtures-row">
+                    ${fixtures.slice(0, 8).map(f => `
+                        <div class="fixture-badge fdr-${f.difficulty}" title="GW${f.gameweek}: ${f.is_home ? 'Home' : 'Away'} vs ${f.opponent}">
+                            <span class="gw">${f.gameweek}</span>
+                            <span class="opp">${f.is_home ? '' : '@'}${f.opponent}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function getFormClass(form) {
+            if (form >= 7) return 'stat-positive';
+            if (form >= 5) return '';
+            if (form >= 3) return 'stat-warning';
+            return 'stat-negative';
+        }
+
+        function getMinsClass(mins) {
+            if (mins >= 80) return 'stat-positive';
+            if (mins >= 60) return '';
+            if (mins >= 45) return 'stat-warning';
+            return 'stat-negative';
+        }
+
+        function getMinsColor(factor) {
+            if (factor >= 0.9) return 'var(--fdr-1)';
+            if (factor >= 0.7) return 'var(--fdr-2)';
+            if (factor >= 0.5) return 'var(--fdr-3)';
+            if (factor >= 0.3) return 'var(--fdr-4)';
+            return 'var(--fdr-5)';
+        }
+
+        function formatNumber(num) {
+            if (Math.abs(num) >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (Math.abs(num) >= 1000) return (num / 1000).toFixed(0) + 'K';
+            return num.toString();
+        }
+    </script>
+</body>
+</html>
