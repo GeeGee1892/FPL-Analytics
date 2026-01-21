@@ -971,6 +971,16 @@
         .planner-loading span { font-size: 1.1rem; color: var(--text-secondary); }
         .planner-loading .loading-sub { font-size: 0.85rem; color: var(--text-muted); margin: 0; }
         
+        .loading-progress { width: 200px; height: 4px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden; margin-top: 0.5rem; }
+        .loading-progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-primary), var(--accent-blue)); border-radius: 2px; transition: width 0.3s ease; animation: progressPulse 2s ease-in-out infinite; }
+        @keyframes progressPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        
+        .loading-steps { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; font-size: 0.85rem; }
+        .loading-step { color: var(--text-muted); opacity: 0.5; transition: all 0.3s ease; }
+        .loading-step.active { color: var(--accent-primary); opacity: 1; }
+        .loading-step.done { color: var(--fdr-1); opacity: 0.8; }
+        .loading-step.done::before { content: '✓ '; }
+        
         .planner-error { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 3rem 2rem; background: var(--surface); border-radius: 12px; margin-bottom: 1.5rem; border: 1px solid rgba(239, 68, 68, 0.3); }
         .planner-error .error-icon { font-size: 2.5rem; }
         .planner-error .error-message { color: #ef4444; text-align: center; }
@@ -1048,7 +1058,10 @@
         }
 
         /* STATS TAB STYLES */
-        .stats-loading { display: flex; align-items: center; justify-content: center; gap: 1rem; padding: 3rem; color: var(--text-muted); }
+        .stats-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 3rem; color: var(--text-muted); }
+        .stats-loading .loading-spinner { width: 40px; height: 40px; }
+        .stats-loading-text { font-size: 0.9rem; }
+        .stats-loading-sub { font-size: 0.8rem; color: var(--text-muted); opacity: 0.7; }
         
         .stats-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
         .stat-summary-card { background: var(--surface); border-radius: 12px; padding: 1.25rem; display: flex; align-items: center; gap: 1rem; }
@@ -1240,7 +1253,8 @@
                 <div id="statsPanel" class="rec-panel">
                     <div class="stats-loading" id="statsLoading">
                         <div class="loading-spinner"></div>
-                        <span>Loading season stats...</span>
+                        <span class="stats-loading-text">Loading season stats...</span>
+                        <span class="stats-loading-sub">Analyzing transfers, bench points, and chip usage</span>
                     </div>
                     
                     <div id="statsContent" style="display: none;">
@@ -1513,8 +1527,16 @@
 
             <div class="planner-loading" id="plannerLoading" style="display: none;">
                 <div class="loading-spinner"></div>
-                <span>Calculating optimal transfer plan...</span>
-                <p class="loading-sub">This may take 10-20 seconds</p>
+                <span id="plannerLoadingText">Calculating optimal transfer plan...</span>
+                <p class="loading-sub" id="plannerLoadingSubtext">This may take 10-20 seconds</p>
+                <div class="loading-progress">
+                    <div class="loading-progress-bar" id="plannerProgressBar"></div>
+                </div>
+                <div class="loading-steps" id="plannerSteps">
+                    <div class="loading-step" id="step1">📊 Fetching team data...</div>
+                    <div class="loading-step" id="step2">🧮 Analyzing transfers...</div>
+                    <div class="loading-step" id="step3">🎯 Finding optimal path...</div>
+                </div>
             </div>
 
             <div class="planner-error" id="plannerError" style="display: none;">
@@ -1825,17 +1847,33 @@
         let orChart = null;
         
         async function loadManagerStats(teamId) {
-            document.getElementById('statsLoading').style.display = 'flex';
-            document.getElementById('statsContent').style.display = 'none';
+            const loadingEl = document.getElementById('statsLoading');
+            const contentEl = document.getElementById('statsContent');
+            
+            loadingEl.style.display = 'flex';
+            loadingEl.innerHTML = `
+                <div class="loading-spinner"></div>
+                <span class="stats-loading-text">Loading season stats...</span>
+                <span class="stats-loading-sub">Analyzing transfers, bench points, and chip usage</span>
+            `;
+            contentEl.style.display = 'none';
             
             try {
                 const response = await fetch(`${API_BASE}/api/my-team/${teamId}/stats`);
-                if (!response.ok) throw new Error('Failed to load stats');
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || `Failed to load stats (${response.status})`);
+                }
                 const stats = await response.json();
                 renderManagerStats(stats);
             } catch (error) {
                 console.error('Failed to load stats:', error);
-                document.getElementById('statsLoading').innerHTML = `<span style="color: var(--accent-red)">Failed to load stats</span>`;
+                loadingEl.innerHTML = `
+                    <div style="color: var(--accent-red); font-size: 1.5rem;">❌</div>
+                    <span style="color: var(--accent-red);">Failed to load stats</span>
+                    <span class="stats-loading-sub">${error.message}</span>
+                    <button class="btn btn-secondary" onclick="loadManagerStats('${teamId}')" style="margin-top: 0.5rem;">🔄 Retry</button>
+                `;
             }
         }
         
@@ -2182,8 +2220,43 @@
             document.getElementById('plannerResult').style.display = 'none';
             document.getElementById('plannerError').style.display = 'none';
             
+            // Reset progress
+            const progressBar = document.getElementById('plannerProgressBar');
+            const steps = ['step1', 'step2', 'step3'];
+            progressBar.style.width = '0%';
+            steps.forEach(s => {
+                document.getElementById(s).className = 'loading-step';
+            });
+            
+            // Simulate progress animation
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 90) progress = 90;
+                progressBar.style.width = `${progress}%`;
+                
+                // Update steps based on progress
+                if (progress > 10) {
+                    document.getElementById('step1').className = 'loading-step active';
+                }
+                if (progress > 35) {
+                    document.getElementById('step1').className = 'loading-step done';
+                    document.getElementById('step2').className = 'loading-step active';
+                }
+                if (progress > 65) {
+                    document.getElementById('step2').className = 'loading-step done';
+                    document.getElementById('step3').className = 'loading-step active';
+                }
+            }, 500);
+            
             try {
                 const response = await fetch(url);
+                clearInterval(progressInterval);
+                progressBar.style.width = '100%';
+                steps.forEach(s => {
+                    document.getElementById(s).className = 'loading-step done';
+                });
+                
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({}));
                     throw new Error(errorData.detail || `HTTP ${response.status}`);
@@ -2197,11 +2270,14 @@
                 // Render results
                 renderPlanResults(data);
                 
-                // Hide loading, show results
-                document.getElementById('plannerLoading').style.display = 'none';
-                document.getElementById('plannerResult').style.display = 'block';
+                // Short delay to show complete progress
+                setTimeout(() => {
+                    document.getElementById('plannerLoading').style.display = 'none';
+                    document.getElementById('plannerResult').style.display = 'block';
+                }, 300);
                 
             } catch (error) {
+                clearInterval(progressInterval);
                 console.error('Failed to load plan:', error);
                 document.getElementById('plannerLoading').style.display = 'none';
                 document.getElementById('plannerError').style.display = 'flex';

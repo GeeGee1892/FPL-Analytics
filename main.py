@@ -1165,9 +1165,12 @@ async def get_manager_stats(manager_id: int):
     - Highest bench score
     - Wildcard net effect (5 GW comparison)
     """
-    data = await fetch_fpl_data()
-    history = await fetch_manager_history(manager_id)
-    transfers = await fetch_manager_transfers(manager_id)
+    try:
+        data = await fetch_fpl_data()
+        history = await fetch_manager_history(manager_id)
+        transfers = await fetch_manager_transfers(manager_id)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Failed to fetch data: {str(e)}")
     
     elements = {e["id"]: e for e in data["elements"]}
     teams = {t["id"]: t for t in data["teams"]}
@@ -1178,7 +1181,18 @@ async def get_manager_stats(manager_id: int):
     gw_history = history.get("current", [])
     
     if not gw_history:
-        return {"error": "No gameweek history found"}
+        # Return empty stats if no history
+        return {
+            "manager_id": manager_id,
+            "current_gw": current_gw,
+            "best_gw": None,
+            "highest_bench": {"gw": 0, "points": 0},
+            "or_progression": [],
+            "best_transfer": None,
+            "worst_transfer": None,
+            "wildcard_analysis": None,
+            "chips_used": [],
+        }
     
     # Find best GW (highest points) - include rank for that GW
     best_gw = max(gw_history, key=lambda x: x.get("points", 0))
@@ -1205,9 +1219,19 @@ async def get_manager_stats(manager_id: int):
     
     # Fetch histories in parallel (limit to avoid too many requests)
     player_histories = {}
-    for pid in list(transfer_player_ids)[:40]:  # Limit to 40 players
-        if pid:
-            player_histories[pid] = await fetch_player_history(pid)
+    player_ids_to_fetch = [pid for pid in list(transfer_player_ids)[:40] if pid]
+    
+    # Fetch histories concurrently
+    async def fetch_history_safe(pid):
+        try:
+            return pid, await fetch_player_history(pid)
+        except Exception:
+            return pid, {"history": []}
+    
+    if player_ids_to_fetch:
+        results = await asyncio.gather(*[fetch_history_safe(pid) for pid in player_ids_to_fetch])
+        for pid, hist in results:
+            player_histories[pid] = hist
     
     transfer_analysis = []
     for transfer in transfers:
@@ -1263,44 +1287,53 @@ async def get_manager_stats(manager_id: int):
         if chip.get("name") == "wildcard":
             wc_gw = chip.get("event", 0)
             
-            # Get picks before WC (GW before) and after WC
-            picks_before = await fetch_gw_picks(manager_id, wc_gw - 1) if wc_gw > 1 else None
-            picks_after = await fetch_gw_picks(manager_id, wc_gw)
-            
-            if picks_before and picks_after:
-                # Get player IDs before and after
-                team_before = {p["element"] for p in picks_before.get("picks", [])}
-                team_after = {p["element"] for p in picks_after.get("picks", [])}
+            try:
+                # Get picks before WC (GW before) and after WC
+                picks_before = await fetch_gw_picks(manager_id, wc_gw - 1) if wc_gw > 1 else None
+                picks_after = await fetch_gw_picks(manager_id, wc_gw)
                 
-                players_out = team_before - team_after
-                players_in = team_after - team_before
-                
-                # Calculate points over next 5 GWs for both sets
-                end_gw = min(wc_gw + 4, current_gw)
-                
-                pts_old_team = 0
-                pts_new_team = 0
-                
-                # Fetch histories for WC players
-                for pid in players_out:
-                    if pid not in player_histories:
-                        player_histories[pid] = await fetch_player_history(pid)
-                    pts_old_team += get_player_points_range(player_histories[pid], wc_gw, end_gw)
-                
-                for pid in players_in:
-                    if pid not in player_histories:
-                        player_histories[pid] = await fetch_player_history(pid)
-                    pts_new_team += get_player_points_range(player_histories[pid], wc_gw, end_gw)
-                
-                wildcard_analysis = {
-                    "gw": wc_gw,
-                    "players_out": len(players_out),
-                    "players_in": len(players_in),
-                    "pts_old_team_5gw": pts_old_team,
-                    "pts_new_team_5gw": pts_new_team,
-                    "net_pts": pts_new_team - pts_old_team,
-                    "gw_range": f"GW{wc_gw}-GW{end_gw}",
-                }
+                if picks_before and picks_after:
+                    # Get player IDs before and after
+                    team_before = {p["element"] for p in picks_before.get("picks", [])}
+                    team_after = {p["element"] for p in picks_after.get("picks", [])}
+                    
+                    players_out = team_before - team_after
+                    players_in = team_after - team_before
+                    
+                    # Calculate points over next 5 GWs for both sets
+                    end_gw = min(wc_gw + 4, current_gw)
+                    
+                    pts_old_team = 0
+                    pts_new_team = 0
+                    
+                    # Fetch histories for WC players not already fetched
+                    wc_players_to_fetch = []
+                    for pid in list(players_out | players_in):
+                        if pid not in player_histories:
+                            wc_players_to_fetch.append(pid)
+                    
+                    if wc_players_to_fetch:
+                        wc_results = await asyncio.gather(*[fetch_history_safe(pid) for pid in wc_players_to_fetch])
+                        for pid, hist in wc_results:
+                            player_histories[pid] = hist
+                    
+                    for pid in players_out:
+                        pts_old_team += get_player_points_range(player_histories.get(pid, {"history": []}), wc_gw, end_gw)
+                    
+                    for pid in players_in:
+                        pts_new_team += get_player_points_range(player_histories.get(pid, {"history": []}), wc_gw, end_gw)
+                    
+                    wildcard_analysis = {
+                        "gw": wc_gw,
+                        "players_out": len(players_out),
+                        "players_in": len(players_in),
+                        "pts_old_team_5gw": pts_old_team,
+                        "pts_new_team_5gw": pts_new_team,
+                        "net_pts": pts_new_team - pts_old_team,
+                        "gw_range": f"GW{wc_gw}-GW{end_gw}",
+                    }
+            except Exception as e:
+                logger.error(f"Failed to analyze wildcard: {e}")
             break  # Only analyze first wildcard
     
     return {
