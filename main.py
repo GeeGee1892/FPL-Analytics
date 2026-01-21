@@ -11,8 +11,8 @@ Enhanced with:
 import asyncio
 import re
 import json
-import sqlite3
 import httpx
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -22,13 +22,34 @@ from enum import Enum
 import math
 from collections import defaultdict
 from datetime import datetime
-from scipy import stats
 import os
 import logging
 
+# scipy is optional - graceful fallback if not available
+try:
+    from scipy import stats as scipy_stats
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
+    scipy_stats = None
+
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="FPL Assistant API", version="3.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown events."""
+    # Startup
+    try:
+        await refresh_fdr_data()
+        logger.info("FDR data initialized on startup")
+    except Exception as e:
+        logger.error(f"FDR startup refresh failed: {e}")
+    yield
+    # Shutdown (nothing to clean up)
+
+
+app = FastAPI(title="FPL Assistant API", version="3.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,6 +58,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ============ HELPER FUNCTIONS ============
+
+def percentileofscore(data: List[float], score: float) -> float:
+    """
+    Calculate percentile rank of a score relative to a list of scores.
+    Uses scipy if available, otherwise falls back to simple implementation.
+    """
+    if HAS_SCIPY and scipy_stats:
+        return scipy_stats.percentileofscore(data, score)
+    
+    # Simple fallback implementation
+    if not data:
+        return 50.0
+    sorted_data = sorted(data)
+    n = len(sorted_data)
+    count_below = sum(1 for x in sorted_data if x < score)
+    count_equal = sum(1 for x in sorted_data if x == score)
+    return 100.0 * (count_below + 0.5 * count_equal) / n
+
 
 # ============ CONSTANTS ============
 
@@ -357,12 +398,12 @@ async def refresh_fdr_data():
         for team_id, data in fdr_data.items():
             # Attack FDR: How hard to attack this team (based on their xGA)
             # Low xGA = hard to score against = HIGH attack_fdr
-            xga_percentile = stats.percentileofscore(all_form_xga, data['form_xga'])
+            xga_percentile = percentileofscore(all_form_xga, data['form_xga'])
             attack_fdr = max(1, min(10, int((100 - xga_percentile) / 10) + 1))
             
             # Defence FDR: How hard to defend against this team (based on their xG)
             # High xG = dangerous attack = HIGH defence_fdr
-            xg_percentile = stats.percentileofscore(all_form_xg, data['form_xg'])
+            xg_percentile = percentileofscore(all_form_xg, data['form_xg'])
             defence_fdr = max(1, min(10, int(xg_percentile / 10) + 1))
             
             data['attack_fdr'] = attack_fdr
@@ -1724,16 +1765,6 @@ async def get_transfer_plan(
         "free_transfers": free_transfers,
         "plan": plan,
     }
-
-
-@app.on_event("startup")
-async def startup_fdr_refresh():
-    """Initialize FDR data on startup."""
-    try:
-        await refresh_fdr_data()
-        logger.info("FDR data initialized on startup")
-    except Exception as e:
-        logger.error(f"FDR startup refresh failed: {e}")
 
 
 if __name__ == "__main__":
