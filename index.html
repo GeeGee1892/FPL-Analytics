@@ -1344,13 +1344,16 @@
         .advanced-section h4 { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem; }
         .advanced-help { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.75rem; }
         
+        /* Booked Transfers */
         .booked-transfers { display: flex; flex-direction: column; gap: 0.5rem; }
         .booked-transfer-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-        .book-gw-select { width: 60px; padding: 0.3rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
-        .book-player-input { width: 120px; padding: 0.3rem 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
-        .book-arrow { color: var(--text-muted); }
-        .booked-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; background: var(--bg-secondary); border-radius: 6px; font-size: 0.8rem; }
-        .booked-item .remove-btn { cursor: pointer; color: var(--text-muted); margin-left: 0.5rem; }
+        .book-gw-select { width: 70px; padding: 0.35rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
+        .book-player-input { width: 110px; padding: 0.35rem 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
+        .book-arrow { color: var(--text-muted); font-weight: bold; }
+        .booked-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; background: var(--bg-secondary); border-radius: 6px; font-size: 0.8rem; border: 1px solid var(--accent-primary); }
+        .booked-item .out { color: #ef4444; }
+        .booked-item .in { color: #10b981; }
+        .booked-item .remove-btn { cursor: pointer; color: var(--text-muted); margin-left: auto; padding: 0 0.25rem; }
         .booked-item .remove-btn:hover { color: #ef4444; }
         
         @media (max-width: 768px) {
@@ -2256,7 +2259,7 @@
                     
                     <div class="advanced-section">
                         <h4>📌 Book Transfers</h4>
-                        <p class="advanced-help">Force specific transfers in certain GWs</p>
+                        <p class="advanced-help">Force specific transfers in certain GWs (uses FT if available, takes hit if not)</p>
                         <div class="booked-transfers" id="bookedTransfers">
                             <div class="booked-transfer-row">
                                 <select id="bookTransferGw" class="book-gw-select">
@@ -3159,6 +3162,11 @@
             if (bbGw) url += `&bb_gw=${bbGw}`;
             if (fhGw) url += `&fh_gw=${fhGw}`;
             
+            // Add booked transfers if any
+            if (bookedTransfers.length > 0) {
+                url += `&booked_transfers=${encodeURIComponent(JSON.stringify(bookedTransfers))}`;
+            }
+            
             // Show loading, hide results and errors
             document.getElementById('plannerLoading').style.display = 'flex';
             document.getElementById('plannerResult').style.display = 'none';
@@ -3241,7 +3249,7 @@
             }
         }
         
-        // Booked transfers storage
+        // Booked transfers management
         let bookedTransfers = [];
         
         function addBookedTransfer() {
@@ -3250,7 +3258,7 @@
             const inPlayer = document.getElementById('bookTransferIn').value.trim();
             
             if (!gw || !outPlayer || !inPlayer) {
-                alert('Please fill in all fields');
+                alert('Please fill in all fields: GW, Player Out, and Player In');
                 return;
             }
             
@@ -3270,6 +3278,8 @@
         
         function renderBookedTransfers() {
             const list = document.getElementById('bookedTransfersList');
+            if (!list) return;
+            
             list.innerHTML = bookedTransfers.map((t, i) => `
                 <div class="booked-item">
                     <span>GW${t.gw}:</span>

@@ -219,6 +219,43 @@ EUROPEAN_TEAMS_UECL = {"Chelsea"}
 ROTATION_MANAGERS = {"Man City": 0.85, "Chelsea": 0.88, "Brighton": 0.90, "Newcastle": 0.92}
 STABLE_MANAGERS = {"Arsenal": 1.0, "Liverpool": 0.98, "Fulham": 1.0, "Bournemouth": 1.0, "Brentford": 0.98}
 
+# League averages for normalization (2024/25 PL stats)
+LEAGUE_AVG_GOALS_PER_GAME = 1.35  # ~2.7 total goals per match
+LEAGUE_AVG_CS_RATE = 0.27  # About 27% of teams keep clean sheets
+
+# Home advantage factors
+HOME_ATTACK_BOOST = 1.15  # Teams score ~15% more at home
+HOME_DEFENCE_BOOST = 1.10  # Teams concede ~10% less at home
+
+# Yellow/Red card expected points deduction per 90
+YELLOW_CARD_RATE_PENALTY = -0.15  # Avg ~0.15 yellows/90 for most players
+RED_CARD_RATE_PENALTY = -0.02  # Very rare
+
+# Own goal probability (very low)
+OWN_GOAL_PENALTY = -0.02  # ~2% chance per 90 for defenders
+
+# Admin manager ID - overrides from this account become global
+ADMIN_MANAGER_ID = 616495  # Gerti's manager ID for global overrides
+
+# Base CS probability by team tier (used when FDR data unavailable)
+# Based on 2024/25 data - top teams keep ~35% CS, bottom ~15%
+TEAM_BASE_CS_RATES = {
+    "Arsenal": 0.38, "Liverpool": 0.36, "Man City": 0.34, "Chelsea": 0.30,
+    "Aston Villa": 0.28, "Newcastle": 0.28, "Brighton": 0.26, "Tottenham": 0.25,
+    "Man Utd": 0.24, "Fulham": 0.24, "Bournemouth": 0.23, "West Ham": 0.22,
+    "Crystal Palace": 0.22, "Brentford": 0.21, "Wolves": 0.20, "Everton": 0.19,
+    "Nott'm Forest": 0.22, "Leicester": 0.18, "Ipswich": 0.16, "Southampton": 0.14,
+}
+
+# Base attack strength by team (xG per game)
+TEAM_BASE_XG = {
+    "Man City": 2.4, "Liverpool": 2.3, "Arsenal": 2.2, "Chelsea": 2.0,
+    "Tottenham": 1.9, "Newcastle": 1.8, "Aston Villa": 1.8, "Brighton": 1.7,
+    "Man Utd": 1.6, "West Ham": 1.5, "Bournemouth": 1.5, "Brentford": 1.5,
+    "Fulham": 1.4, "Crystal Palace": 1.4, "Wolves": 1.3, "Everton": 1.2,
+    "Nott'm Forest": 1.3, "Leicester": 1.3, "Ipswich": 1.1, "Southampton": 1.0,
+}
+
 # Team name mappings: FPL short_name -> (fpl_id, understat_name)
 TEAM_NAME_MAPPING = {
     "ARS": (1, "Arsenal"),
@@ -792,57 +829,112 @@ def calculate_saves_per_90(player: Dict) -> tuple[float, float]:
 
 def calculate_expected_bonus(player: Dict, position: int) -> tuple[float, float]:
     """
-    Calculate expected bonus points per 90 minutes.
+    Expert-level bonus point prediction.
     
     BPS (Bonus Point System) is heavily driven by:
-    - Goals scored (highest BPS impact)
-    - Assists
-    - Clean sheets (DEF/GKP)
-    - Key passes, tackles, saves
+    - Goals scored (+24 BPS for MID/FWD, +12 for DEF)
+    - Assists (+9 BPS)
+    - Clean sheets (+12 for DEF, +6 for MID)
+    - Key passes, tackles, saves, interceptions
+    - Penalties for cards, missed chances, errors
     
-    Returns: (bonus_per_90, expected_bonus_pts)
+    Top 3 BPS in each match get 3, 2, 1 bonus points respectively.
+    
+    Returns: (bonus_per_90_historical, expected_bonus_per_90)
     """
     total_minutes = int(player.get("minutes", 0) or 0)
     bonus = int(player.get("bonus", 0) or 0)
     bps = int(player.get("bps", 0) or 0)
     goals = int(player.get("goals_scored", 0) or 0)
     assists = int(player.get("assists", 0) or 0)
+    cs = int(player.get("clean_sheets", 0) or 0)
     
-    if total_minutes < 180:  # Need at least 2 games worth
-        # Use position-based baseline for new/low-minute players
-        baseline = {1: 0.3, 2: 0.4, 3: 0.5, 4: 0.6}.get(position, 0.4)
+    xG = float(player.get("expected_goals", 0) or 0)
+    xA = float(player.get("expected_assists", 0) or 0)
+    
+    if total_minutes < 180:  # Need at least 2 full games
+        # New/low-minute players - use position baseline
+        baseline = {1: 0.30, 2: 0.45, 3: 0.55, 4: 0.65}.get(position, 0.45)
         return baseline, baseline
     
     mins90 = total_minutes / 90.0
+    games_played = mins90 / 1  # Approximate
     
-    # Historical bonus rate
+    # Historical rates
     bonus_per_90 = bonus / mins90
-    
-    # xGI component - goals and assists drive bonus heavily
-    xG = float(player.get("expected_goals", 0) or 0)
-    xA = float(player.get("expected_assists", 0) or 0)
-    xGI_per_90 = (xG + xA) / mins90
-    
-    # Actual GI per 90 (for calibration)
-    actual_gi_per_90 = (goals + assists) / mins90
-    
-    # BPS per 90 gives us underlying performance
     bps_per_90 = bps / mins90
+    goals_per_90 = goals / mins90
+    assists_per_90 = assists / mins90
+    cs_per_90 = cs / mins90 if position in [1, 2] else 0
     
-    # Estimate bonus probability based on BPS ranking
-    # Top 3 BPS in a match get 3, 2, 1 bonus points
-    # Average BPS per 90 of ~25+ usually indicates regular bonus getter
+    # xGI per 90
+    xG90 = xG / mins90
+    xA90 = xA / mins90
+    xGI90 = xG90 + xA90
     
-    # Position-specific bonus baseline (some positions naturally get more)
-    position_baseline = {
-        1: 0.25,  # GKP - occasional bonus from saves/CS
-        2: 0.35,  # DEF - CS + defensive actions
-        3: 0.50,  # MID - balanced
-        4: 0.60,  # FWD - goals drive bonus heavily
-    }.get(position, 0.4)
+    # ==================== MODEL BONUS FROM UNDERLYING STATS ====================
+    # BPS-to-Bonus conversion: ~25-30 BPS typically needed for 3 bonus
+    # Goal involvement is the biggest driver
     
-    # Blend historical rate with xGI projection
-    # Players with high xGI will likely continue getting bonus
+    # Estimate BPS contribution from goals/assists/CS
+    goal_bps_contrib = goals_per_90 * (24 if position in [3, 4] else 12)
+    assist_bps_contrib = assists_per_90 * 9
+    cs_bps_contrib = cs_per_90 * (12 if position == 2 else (6 if position == 3 else 0))
+    
+    # Base BPS from other actions (tackles, key passes, saves, etc.)
+    # Estimated from typical position ranges
+    base_bps = {1: 8, 2: 10, 3: 8, 4: 5}.get(position, 8)
+    
+    estimated_bps = base_bps + goal_bps_contrib + assist_bps_contrib + cs_bps_contrib
+    
+    # Convert BPS to bonus probability
+    # Top scorers (30+ BPS) almost always get 3 bonus
+    # 20-30 BPS often gets 1-2 bonus
+    # <15 BPS rarely gets bonus
+    
+    if estimated_bps >= 35:
+        estimated_bonus = 2.5
+    elif estimated_bps >= 28:
+        estimated_bonus = 1.8
+    elif estimated_bps >= 22:
+        estimated_bonus = 1.2
+    elif estimated_bps >= 18:
+        estimated_bonus = 0.7
+    elif estimated_bps >= 14:
+        estimated_bonus = 0.4
+    else:
+        estimated_bonus = 0.2
+    
+    # ==================== BLEND HISTORICAL AND MODELED ====================
+    # If player has significant history, weight historical more
+    # If limited history, trust the model more
+    
+    if mins90 >= 15:  # ~15+ full games
+        # Trust historical rate more
+        final_bonus = 0.65 * bonus_per_90 + 0.35 * estimated_bonus
+    elif mins90 >= 8:
+        # Balanced blend
+        final_bonus = 0.50 * bonus_per_90 + 0.50 * estimated_bonus
+    else:
+        # Limited data - trust model more
+        final_bonus = 0.30 * bonus_per_90 + 0.70 * estimated_bonus
+    
+    # Adjust for xGI vs actual GI (regression to mean)
+    # If player is over/underperforming xGI, adjust expectations
+    actual_gi_per_90 = goals_per_90 + assists_per_90
+    if xGI90 > 0.1:
+        performance_ratio = actual_gi_per_90 / xGI90
+        if performance_ratio > 1.3:
+            # Overperforming - expect some regression
+            final_bonus *= 0.92
+        elif performance_ratio < 0.7:
+            # Underperforming - expect positive regression
+            final_bonus *= 1.08
+    
+    # Cap at realistic maximum
+    final_bonus = min(2.5, max(0.1, final_bonus))
+    
+    return round(bonus_per_90, 2), round(final_bonus, 2)
     xgi_bonus_factor = xGI_per_90 * 1.5  # Each xGI/90 adds ~1.5 expected bonus
     
     # Weight: 60% historical, 40% xGI-projected
@@ -868,13 +960,22 @@ def calculate_expected_minutes(
     manager_id: Optional[int] = None
 ) -> tuple[float, str]:
     """
-    Calculate expected minutes with smart edge case handling:
-    - Returning from absence (injury/AFCON/suspension): 0s in middle of 90s = trust recent
-    - Recency weighting: recent games count more than older games
-    - Consistent sub appearances: rotation risk
-    - Early substitutions: potential fitness concern
+    Expert-level expected minutes prediction.
+    
+    Factors considered:
+    1. Historical start rate and minutes per start
+    2. Recent form (last 6 GWs weighted heavily)
+    3. Injury/absence patterns
+    4. Manager rotation tendencies
+    5. Fixture congestion
+    6. Player importance to team
+    7. FPL news and chance_of_playing
+    
+    Returns: (expected_minutes, reason_code)
     """
     player_id = player.get("id")
+    
+    # Check explicit override first
     if override_minutes is not None:
         return override_minutes, "user_override"
     
@@ -886,175 +987,174 @@ def calculate_expected_minutes(
         else:
             return cached_override, "predicted"
     
+    # Extract player data
     total_minutes = int(player.get("minutes", 0) or 0)
     starts = int(player.get("starts", 0) or 0)
     chance_of_playing = player.get("chance_of_playing_next_round")
     status = player.get("status", "a")
-    position = player.get("element_type", 4)  # 1=GKP, 2=DEF, 3=MID, 4=FWD
+    news = player.get("news", "") or ""
+    position = player.get("element_type", 4)
+    price = player.get("now_cost", 50) / 10  # Price as proxy for importance
     
     available_gws = max(current_gw - 1, 1)
     
-    # Default: use season average
-    if starts == 0 or total_minutes < 90:
-        base_mins = 10.0
-        reason = "insufficient_data"
-    else:
-        mins_per_start = total_minutes / starts
-        start_rate = min(1.0, starts / available_gws)
-        
-        # KEY FIX: If player plays nearly full 90 every time they start (87+ mins/start),
-        # they're clearly first choice when fit. Don't penalize for missed games (injury).
-        # Palmer, Salah, etc. might miss games through injury but start every game when fit.
-        if mins_per_start >= 87:
-            # First choice when fit - trust their mins_per_start, assume they'll start
-            base_mins = mins_per_start
-            reason = "first_choice"
-        elif mins_per_start >= 80:
-            # Regular starter but occasionally subbed - slight discount
-            base_mins = mins_per_start * 0.95
-            reason = "regular_starter"
-        else:
-            # Rotation/sub risk - use full start_rate calculation
-            base_mins = mins_per_start * start_rate
-            reason = "season_average"
+    # ==================== UNAVAILABLE PLAYERS ====================
+    # Handle injured/suspended/unavailable status FIRST
+    if status == 'u':  # Unavailable
+        return 0, "unavailable"
     
-    # Analyze recent history for patterns
+    if status == 's':  # Suspended
+        return 0, "suspended"
+    
+    if status == 'i':  # Injured
+        if chance_of_playing is not None:
+            if chance_of_playing == 0:
+                return 0, "injured"
+            elif chance_of_playing <= 25:
+                return 10, "injury_doubt"
+            elif chance_of_playing <= 50:
+                return 30, "injury_50_50"
+            elif chance_of_playing <= 75:
+                return 55, "injury_likely"
+        else:
+            return 0, "injured"
+    
+    # ==================== DOUBTFUL PLAYERS ====================
+    if status == 'd':  # Doubtful
+        cop = chance_of_playing / 100 if chance_of_playing else 0.5
+        # Don't just multiply - model the binary: either plays full or doesn't play
+        if chance_of_playing and chance_of_playing >= 75:
+            return 75, "minor_doubt"
+        elif chance_of_playing and chance_of_playing >= 50:
+            return 50, "doubtful"
+        else:
+            return 25, "major_doubt"
+    
+    # ==================== INSUFFICIENT DATA ====================
+    if starts == 0:
+        # New signing or hasn't played - use price as proxy
+        if price >= 10:
+            return 70, "new_premium"  # Expensive = likely starter
+        elif price >= 7:
+            return 55, "new_mid_price"
+        elif price >= 5:
+            return 35, "new_budget"
+        else:
+            return 15, "new_fodder"
+    
+    if total_minutes < 90:
+        return 15, "insufficient_data"
+    
+    # ==================== BASE CALCULATION ====================
+    mins_per_start = total_minutes / starts
+    start_rate = min(1.0, starts / available_gws)
+    
+    # ==================== ANALYZE RECENT HISTORY ====================
+    recent_mins = []
     if player_history and player_history.get("history"):
         history = player_history["history"]
-        # Get last 10 GW appearances (sorted most recent first)
         recent = sorted(history, key=lambda x: x.get("round", 0), reverse=True)[:10]
-        
-        if len(recent) >= 3:
-            recent_mins = [h.get("minutes", 0) for h in recent]
-            
-            # === PATTERN 1: Absence then return (AFCON, injury, suspension) ===
-            # Look for pattern: playing full games now, had a gap of 0s, played before
-            # More lenient: allow easing back in (60+ mins counts as returned)
-            
-            # Count recent games where they played significant minutes (60+)
-            recent_playing = 0
-            for m in recent_mins[:4]:  # Last 4 games
-                if m >= 60:
-                    recent_playing += 1
-                elif m > 0 and m < 60:
-                    break  # Sub appearance breaks the streak
-                # 0s are OK (could be rest/rotation after return)
-            
-            # If playing regularly now (2+ of last 4 with 60+ mins)
-            if recent_playing >= 2:
-                # Look for absence period in games 3-9
-                mid_section = recent_mins[2:9] if len(recent_mins) > 2 else []
-                zeros_in_mid = sum(1 for m in mid_section if m == 0)
-                
-                # If there's a clear absence period (3+ zeros)
-                if zeros_in_mid >= 3:
-                    # Check games before the absence
-                    older_games = recent_mins[5:] if len(recent_mins) > 5 else []
-                    was_regular_before = sum(1 for m in older_games if m >= 60) >= 1
-                    
-                    # DEF/GKP or was regular starter before → trust return
-                    if was_regular_before or position in [1, 2]:
-                        base_mins = 87.0
-                        reason = "returned_starter"
-            
-            # === PATTERN 2: Recency-weighted average ===
-            # If no special pattern detected, use weighted recent average
-            # Weights: last 3 games = 60%, next 3 = 30%, older = 10%
-            if reason == "season_average" and len(recent_mins) >= 3:
-                # First, identify absence periods (consecutive 0s surrounded by playing time)
-                absence_indices = set()
-                i = 0
-                while i < len(recent_mins):
-                    if recent_mins[i] == 0:
-                        # Found a zero, check if it's part of an absence block
-                        block_start = i
-                        while i < len(recent_mins) and recent_mins[i] == 0:
-                            i += 1
-                        block_end = i
-                        
-                        # Check if this block is surrounded by playing time
-                        before_block = recent_mins[block_start - 1] if block_start > 0 else 0
-                        after_block = recent_mins[block_end] if block_end < len(recent_mins) else 0
-                        
-                        # If either side has 60+ mins, this is likely an absence
-                        if before_block >= 60 or after_block >= 60:
-                            for j in range(block_start, block_end):
-                                absence_indices.add(j)
-                    else:
-                        i += 1
-                
-                # Build weighted average excluding absence periods
-                weights = []
-                for i, m in enumerate(recent_mins):
-                    if i in absence_indices:
-                        continue  # Skip absence games
-                    
-                    if i < 3:
-                        w = 0.6 / 3
-                    elif i < 6:
-                        w = 0.3 / 3
-                    else:
-                        w = 0.1 / max(1, len(recent_mins) - 6)
-                    weights.append((m, w))
-                
-                if weights:
-                    total_weight = sum(w for _, w in weights)
-                    if total_weight > 0:
-                        weighted_avg = sum(m * w for m, w in weights) / total_weight
-                        # Blend with season average (70% recent, 30% season)
-                        base_mins = 0.7 * weighted_avg + 0.3 * base_mins
-                        reason = "recency_weighted"
-            
-            # === PATTERN 3: Consistent sub appearances ===
-            # 3+ sub appearances (15-45 mins) in last 6 with ≤1 full game = rotation
-            # BUT don't downgrade first_choice or regular_starter players
-            sub_appearances = sum(1 for m in recent_mins[:6] if 10 <= m <= 45)
-            full_appearances = sum(1 for m in recent_mins[:6] if m >= 75)
-            
-            if sub_appearances >= 3 and full_appearances <= 1 and reason not in ["first_choice", "regular_starter", "returned_starter"]:
-                base_mins = min(base_mins, 35.0)
-                reason = "rotation_risk"
-            
-            # === PATTERN 4: Consistently subbed early ===
-            # 2+ games subbed off between 45-65 mins = fitness/tactical concern
-            # BUT don't downgrade first_choice or regular_starter players
-            early_subs = sum(1 for m in recent_mins[:6] if 45 <= m <= 65)
-            if early_subs >= 2 and reason not in ["first_choice", "regular_starter", "returned_starter", "rotation_risk"]:
-                base_mins = base_mins * 0.8
-                reason = "early_sub"
+        recent_mins = [h.get("minutes", 0) for h in recent]
     
-    # === STATUS OVERRIDES (injury/suspension flags) ===
-    if status in ('i', 'u', 's'):
-        if chance_of_playing and chance_of_playing > 0:
-            base_mins = base_mins * (chance_of_playing / 100) * 0.5
-        else:
-            base_mins = 0
-        reason = "unavailable"
-    elif status == 'd' or (chance_of_playing is not None and chance_of_playing < 75):
-        cop = chance_of_playing / 100 if chance_of_playing else 0.5
-        base_mins = base_mins * cop
-        reason = "doubtful"
+    # ==================== PATTERN DETECTION ====================
+    reason = "calculated"
+    base_mins = mins_per_start
+    confidence = 0.8  # Default confidence
     
-    # === ROTATION MANAGER ADJUSTMENT ===
-    # Only apply to players with season_average/recency_weighted AND not clearly nailed
-    # Skip for first_choice and regular_starter - they don't get rotated
-    if reason in ["season_average", "recency_weighted"] and team_name in ROTATION_MANAGERS:
-        # Check if player is truly nailed - high start rate + plays full games when starting
-        start_rate = starts / available_gws if available_gws > 0 else 0
-        mins_per_start = total_minutes / starts if starts > 0 else 0
+    if len(recent_mins) >= 4:
+        # Last 4 games analysis
+        last_4 = recent_mins[:4]
+        last_4_avg = sum(last_4) / 4
+        last_4_starts = sum(1 for m in last_4 if m >= 60)
+        last_4_zeros = sum(1 for m in last_4 if m == 0)
+        last_4_subs = sum(1 for m in last_4 if 0 < m < 60)
         
-        # Truly nailed players: start 90%+ of available games AND play 85+ mins per start
-        # These are the talismans (Palmer, Salah, Haaland) who don't get rotated
-        is_truly_nailed = start_rate >= 0.90 and mins_per_start >= 85
+        # Pattern 1: NAILED STARTER (plays 85+ mins when starting, rarely misses)
+        if mins_per_start >= 85 and last_4_starts >= 3:
+            base_mins = 88
+            reason = "nailed"
+            confidence = 0.95
         
-        if not is_truly_nailed:
-            rotation_factor = ROTATION_MANAGERS[team_name]
-            base_mins = base_mins * rotation_factor
-            reason = "rotation_adjusted"
-        else:
-            reason = "nailed_starter"
+        # Pattern 2: ROTATION RISK (inconsistent starts)
+        elif last_4_starts <= 1 and (last_4_subs >= 2 or last_4_zeros >= 2):
+            base_mins = min(45, last_4_avg * 1.1)  # Slightly optimistic but capped
+            reason = "rotation_risk"
+            confidence = 0.6
+        
+        # Pattern 3: REGULAR STARTER (plays most games, sometimes subbed)
+        elif last_4_starts >= 2 and mins_per_start >= 75:
+            base_mins = last_4_avg * 0.4 + mins_per_start * 0.6  # Blend recent and season
+            reason = "regular_starter"
+            confidence = 0.85
+        
+        # Pattern 4: IMPACT SUB (regularly comes off bench)
+        elif last_4_subs >= 3:
+            avg_sub_mins = sum(m for m in last_4 if 0 < m < 60) / max(1, last_4_subs)
+            base_mins = avg_sub_mins * 0.8  # Slight discount
+            reason = "impact_sub"
+            confidence = 0.7
+        
+        # Pattern 5: RETURNING FROM ABSENCE
+        # If recent games show 0s followed by starts
+        if last_4_zeros >= 2 and last_4_starts >= 1:
+            # Check if the starts are more recent than the zeros
+            first_start_idx = next((i for i, m in enumerate(last_4) if m >= 60), 4)
+            if first_start_idx <= 1:  # Recently started again
+                # Was this player a regular before absence?
+                older_mins = recent_mins[4:] if len(recent_mins) > 4 else []
+                if older_mins and sum(1 for m in older_mins if m >= 60) >= 2:
+                    base_mins = 80  # Trust the return
+                    reason = "returned_starter"
+                    confidence = 0.75
+        
+        # Pattern 6: FIRST CHOICE WHEN FIT
+        # High mins/start but not high start rate (injuries)
+        if mins_per_start >= 87 and start_rate < 0.8:
+            if last_4_starts >= 2:  # Currently fit and playing
+                base_mins = 87
+                reason = "first_choice"
+                confidence = 0.9
     
-    return round(min(90, max(0, base_mins)), 1), reason
+    # ==================== MANAGER ROTATION ADJUSTMENT ====================
+    # Only apply if not already flagged as rotation risk or nailed
+    if reason in ["calculated", "regular_starter"] and team_name in ROTATION_MANAGERS:
+        rotation_factor = ROTATION_MANAGERS[team_name]
+        # Premium players (>£8m) are less likely to be rotated
+        if price >= 8:
+            rotation_factor = min(1.0, rotation_factor + 0.08)
+        base_mins = base_mins * rotation_factor
+        reason = f"{reason}_rotation_adj"
+    
+    # ==================== STABLE MANAGER BOOST ====================
+    if reason in ["calculated", "regular_starter", "first_choice"] and team_name in STABLE_MANAGERS:
+        stability_factor = STABLE_MANAGERS[team_name]
+        base_mins = min(90, base_mins * stability_factor)
+    
+    # ==================== FIXTURE CONGESTION ====================
+    # Check for midweek games (European/cup) that might cause rotation
+    # This would need fixture data analysis - simplified here
+    if team_name in EUROPEAN_TEAMS_UCL:
+        # UCL teams rest players more in "easy" league games
+        base_mins = base_mins * 0.95
+    
+    # ==================== POSITION-SPECIFIC ADJUSTMENTS ====================
+    if position == 1:  # GKP
+        # Goalkeepers almost never rotate unless injured
+        if reason not in ["injured", "doubtful", "unavailable", "suspended"]:
+            if starts >= 5 and mins_per_start >= 85:
+                base_mins = max(base_mins, 88)
+                reason = "gkp_nailed"
+    
+    # ==================== PRICE-BASED SANITY CHECK ====================
+    # Expensive players are bought to play
+    if price >= 12 and base_mins < 70 and reason not in ["injured", "unavailable", "suspended", "rotation_risk"]:
+        base_mins = max(base_mins, 75)
+        reason = f"{reason}_premium"
+    
+    # ==================== FINAL BOUNDS ====================
+    final_mins = round(min(90, max(0, base_mins)), 1)
+    
+    return final_mins, reason
 
 
 def get_dgw_adjustment(
@@ -1142,81 +1242,231 @@ def calculate_expected_points(
     override_minutes: Optional[float] = None
 ) -> Dict:
     """
-    Enhanced expected points using position-specific FDR from Understat xG data.
-    Now includes bonus point prediction.
+    Expert-level expected points calculation.
+    
+    Components for each fixture:
+    1. Appearance points (2 for 60+ mins, 1 for <60)
+    2. Clean sheet points (GKP/DEF=4, MID=1) × fixture-specific CS probability
+    3. Goal points (GKP/DEF=6, MID=5, FWD=4) × fixture-adjusted xG
+    4. Assist points (3) × fixture-adjusted xA
+    5. Bonus points (BPS-based prediction)
+    6. Save points (GKP only)
+    7. DEFCON points (DEF/MID)
+    8. Deductions: Yellow cards, own goals
+    
+    CS probability is calculated per fixture based on:
+    - Team's base defensive strength
+    - Opponent's attacking strength
+    - Home/away adjustment
+    
+    xGI is adjusted per fixture based on:
+    - Opponent's defensive weakness
+    - Home/away boost
     """
     total_minutes = int(player.get("minutes", 0) or 0)
     xG = float(player.get("expected_goals", 0) or 0)
     xA = float(player.get("expected_assists", 0) or 0)
     xGC = float(player.get("expected_goals_conceded", 0) or 0)
     points_per_game = float(player.get("points_per_game", 0) or 0)
+    yellow_cards = int(player.get("yellow_cards", 0) or 0)
+    red_cards = int(player.get("red_cards", 0) or 0)
+    own_goals = int(player.get("own_goals", 0) or 0)
     
     team_id = player["team"]
     team_name = teams_dict.get(team_id, {}).get("name", "")
     
+    # Get expected minutes
     exp_mins, mins_reason = calculate_expected_minutes(
         player, current_gw, team_name, all_fixtures or [], events or [],
         player_history, override_minutes
     )
     
-    minutes_factor = exp_mins / 90.0
-    
+    # Calculate per-90 rates
     mins90 = max(total_minutes / 90.0, 0.1)
     xG90 = xG / mins90
     xA90 = xA / mins90
     xGC90 = xGC / mins90
+    yellow_per_90 = yellow_cards / mins90 if mins90 > 1 else 0.1
+    og_per_90 = own_goals / mins90 if mins90 > 1 else 0.01
     
-    cs_prob = math.exp(-max(0.0, xGC90))
-    
+    # Calculate component stats
     defcon_per_90, defcon_prob, defcon_pts_total = calculate_defcon_per_90(player, position)
     saves_per_90, save_pts_per_90 = calculate_saves_per_90(player) if position == 1 else (0, 0)
     bonus_per_90, expected_bonus = calculate_expected_bonus(player, position)
     
-    app_pts = 2.0
+    # Get team's base CS rate
+    team_base_cs = TEAM_BASE_CS_RATES.get(team_name, 0.22)
     
-    if position == 1:  # GKP
-        base90 = app_pts + (4.0 * cs_prob) + save_pts_per_90 + expected_bonus
-    elif position == 2:  # DEF
-        defcon_pts = defcon_prob * DEFCON_POINTS
-        base90 = app_pts + (4.0 * cs_prob) + (6.0 * xG90) + (3.0 * xA90) + defcon_pts + expected_bonus
-    elif position == 3:  # MID
-        defcon_pts = defcon_prob * DEFCON_POINTS
-        base90 = app_pts + (1.0 * cs_prob) + (5.0 * xG90) + (3.0 * xA90) + defcon_pts + expected_bonus
-    else:  # FWD
-        base90 = app_pts + (4.0 * xG90) + (3.0 * xA90) + expected_bonus
+    # Points per goal/assist by position
+    goal_pts = {1: 6, 2: 6, 3: 5, 4: 4}.get(position, 4)
+    cs_pts = {1: 4, 2: 4, 3: 1, 4: 0}.get(position, 0)
     
-    base90 = 0.6 * base90 + 0.4 * points_per_game
-    
-    # Apply fixture difficulty using weighted decay - near-term matters more
+    # ==================== FIXTURE-BY-FIXTURE CALCULATION ====================
     horizon = upcoming_fixtures[:8]
-    if not horizon:
-        total = base90
-    else:
-        total = 0
-        weights_used = FIXTURE_WEIGHTS[:len(horizon)]
-        total_weight = sum(weights_used)
-        
-        for i, fix in enumerate(horizon):
-            weight = weights_used[i] / total_weight  # Normalize to sum to 1
-            opponent_id = fix.get("opponent_id")
-            is_home = fix.get("is_home", True)
-            
-            # Get position-specific FDR
-            if cache.fdr_data and opponent_id in cache.fdr_data:
-                fdr = get_fixture_fdr(opponent_id, is_home, position)
-            else:
-                # Fallback to FPL difficulty mapped to 1-10
-                fpl_diff = fix.get("difficulty", 3)
-                fdr = FPL_FDR_TO_10.get(fpl_diff, 5)
-            
-            multiplier = FDR_MULTIPLIERS_10.get(fdr, 1.0)
-            total += base90 * multiplier * weight * len(horizon)
     
-    expected_pts = total * minutes_factor
+    if not horizon:
+        # No fixtures - use base rates
+        app_pts = 2.0 if exp_mins >= 60 else (1.0 if exp_mins > 0 else 0)
+        cs_prob = team_base_cs
+        base_xpts = app_pts + (cs_pts * cs_prob) + (goal_pts * xG90) + (3 * xA90) + expected_bonus
+        
+        if position == 1:
+            base_xpts += save_pts_per_90
+        if position in [2, 3]:
+            base_xpts += defcon_prob * DEFCON_POINTS
+        
+        # Deductions
+        base_xpts -= yellow_per_90 * 1.0  # -1 per yellow
+        if position in [1, 2]:
+            base_xpts -= og_per_90 * 2.0  # -2 per OG
+        
+        minutes_factor = exp_mins / 90.0
+        total_xpts = base_xpts * minutes_factor
+        
+        return {
+            "xpts": round(total_xpts, 2),
+            "xpts_per_90": round(base_xpts, 2),
+            "expected_minutes": exp_mins,
+            "minutes_reason": mins_reason,
+            "minutes_factor": round(minutes_factor, 3),
+            "defcon_per_90": defcon_per_90,
+            "defcon_prob": defcon_prob,
+            "defcon_pts_total": defcon_pts_total,
+            "saves_per_90": saves_per_90,
+            "save_pts_per_90": save_pts_per_90,
+            "bonus_per_90": bonus_per_90,
+            "expected_bonus": expected_bonus,
+            "xGC_per_90": round(xGC90, 2),
+            "cs_prob": round(cs_prob, 2),
+            "xG_per_90": round(xG90, 2),
+            "xA_per_90": round(xA90, 2),
+        }
+    
+    # Calculate weighted xPts across fixtures
+    weights_used = FIXTURE_WEIGHTS[:len(horizon)]
+    total_weight = sum(weights_used)
+    
+    total_xpts = 0
+    avg_cs_prob = 0
+    
+    for i, fix in enumerate(horizon):
+        weight = weights_used[i] / total_weight
+        opponent_id = fix.get("opponent_id")
+        is_home = fix.get("is_home", True)
+        opponent_name = teams_dict.get(opponent_id, {}).get("name", "")
+        
+        # ==================== FIXTURE-SPECIFIC CS PROBABILITY ====================
+        # CS prob = Team's defensive ability vs Opponent's attacking ability
+        
+        # Get opponent's attacking strength
+        if cache.fdr_data and opponent_id in cache.fdr_data:
+            opp_attack_fdr = cache.fdr_data[opponent_id].get("attack_fdr", 5)
+            opp_xg_per_game = cache.fdr_data[opponent_id].get("form_xg", LEAGUE_AVG_GOALS_PER_GAME)
+        else:
+            opp_xg_per_game = TEAM_BASE_XG.get(opponent_name, LEAGUE_AVG_GOALS_PER_GAME)
+            opp_attack_fdr = 5  # Neutral
+        
+        # Adjust for home/away
+        if is_home:
+            # Playing at home - opponent's attack is weaker
+            opp_xg_adjusted = opp_xg_per_game * 0.90
+        else:
+            # Playing away - opponent's attack is stronger (at their home)
+            opp_xg_adjusted = opp_xg_per_game * 1.10
+        
+        # CS probability using Poisson: P(0 goals) = e^(-lambda)
+        # Lambda = expected goals conceded by our team this fixture
+        # Base it on: opponent's xG adjusted by our defensive strength
+        team_def_factor = team_base_cs / LEAGUE_AVG_CS_RATE  # How much better/worse than average
+        
+        # If opponent creates 1.5 xG normally, and we're 20% better defensively
+        expected_goals_against = opp_xg_adjusted / team_def_factor
+        fixture_cs_prob = math.exp(-expected_goals_against)
+        fixture_cs_prob = min(0.60, max(0.05, fixture_cs_prob))  # Bound between 5-60%
+        
+        avg_cs_prob += fixture_cs_prob * weight
+        
+        # ==================== FIXTURE-SPECIFIC xGI ====================
+        # Adjust player's xG/xA based on opponent's defensive weakness
+        
+        if cache.fdr_data and opponent_id in cache.fdr_data:
+            opp_def_fdr = cache.fdr_data[opponent_id].get("defence_fdr", 5)
+        else:
+            # Estimate from CS rate (lower CS = weaker defence)
+            opp_cs_rate = TEAM_BASE_CS_RATES.get(opponent_name, 0.22)
+            # Convert to FDR: 10% CS = weak (FDR 3), 35% CS = strong (FDR 8)
+            opp_def_fdr = 3 + (opp_cs_rate / 0.35) * 5
+            opp_def_fdr = min(10, max(1, opp_def_fdr))
+        
+        # FDR multiplier for attacking returns
+        # Easier defence = more goals expected
+        attack_multiplier = FDR_MULTIPLIERS_10.get(round(opp_def_fdr), 1.0)
+        
+        # Home boost for attacking
+        if is_home:
+            attack_multiplier *= HOME_ATTACK_BOOST
+        
+        fixture_xG90 = xG90 * attack_multiplier
+        fixture_xA90 = xA90 * attack_multiplier
+        
+        # ==================== FIXTURE-SPECIFIC BONUS ====================
+        # Bonus correlates with goals/assists, so adjust for fixture
+        fixture_bonus = expected_bonus * attack_multiplier
+        
+        # ==================== CALCULATE FIXTURE xPTS ====================
+        # Appearance points (assume 60+ mins for simplicity in per-90 calc)
+        fixture_app_pts = 2.0
+        
+        # Goal and assist points
+        fixture_goal_pts = goal_pts * fixture_xG90
+        fixture_assist_pts = 3 * fixture_xA90
+        
+        # CS points
+        fixture_cs_pts = cs_pts * fixture_cs_prob
+        
+        # Bonus
+        fixture_bonus_pts = fixture_bonus
+        
+        # Saves (GKP) - more saves against stronger attacks
+        fixture_save_pts = save_pts_per_90 * (1 + (opp_attack_fdr - 5) * 0.05) if position == 1 else 0
+        
+        # DEFCON
+        fixture_defcon_pts = (defcon_prob * DEFCON_POINTS) if position in [2, 3] else 0
+        
+        # Deductions
+        fixture_yellow_deduction = yellow_per_90 * 1.0
+        fixture_og_deduction = (og_per_90 * 2.0) if position in [1, 2] else 0
+        
+        # Total for this fixture (per 90)
+        fixture_xpts_per_90 = (
+            fixture_app_pts +
+            fixture_goal_pts +
+            fixture_assist_pts +
+            fixture_cs_pts +
+            fixture_bonus_pts +
+            fixture_save_pts +
+            fixture_defcon_pts -
+            fixture_yellow_deduction -
+            fixture_og_deduction
+        )
+        
+        # Add to weighted total
+        total_xpts += fixture_xpts_per_90 * weight
+    
+    # Scale by number of fixtures in horizon
+    total_xpts_per_90 = total_xpts * len(horizon)
+    
+    # Blend with historical PPG (20% PPG, 80% model)
+    # PPG provides regression to mean for model uncertainty
+    blended_per_90 = 0.80 * (total_xpts_per_90 / max(1, len(horizon))) + 0.20 * points_per_game
+    
+    # Apply minutes factor
+    minutes_factor = exp_mins / 90.0
+    final_xpts = total_xpts_per_90 * minutes_factor
     
     return {
-        "xpts": round(expected_pts, 2),
-        "xpts_per_90": round(base90, 2),
+        "xpts": round(final_xpts, 2),
+        "xpts_per_90": round(blended_per_90, 2),
         "expected_minutes": exp_mins,
         "minutes_reason": mins_reason,
         "minutes_factor": round(minutes_factor, 3),
@@ -1228,7 +1478,7 @@ def calculate_expected_points(
         "bonus_per_90": bonus_per_90,
         "expected_bonus": expected_bonus,
         "xGC_per_90": round(xGC90, 2),
-        "cs_prob": round(cs_prob, 2),
+        "cs_prob": round(avg_cs_prob, 2),
         "xG_per_90": round(xG90, 2),
         "xA_per_90": round(xA90, 2),
     }
@@ -1334,23 +1584,41 @@ def get_player_upcoming_fixtures(
 
 @app.post("/api/minutes-override")
 async def set_minutes_override_endpoint(override: MinutesOverride):
-    """Set expected minutes override for a player. Optionally scoped to a manager."""
+    """
+    Set expected minutes override for a player.
+    
+    If manager_id is ADMIN_MANAGER_ID (616495), the override becomes GLOBAL 
+    and applies to all users. Otherwise, it's scoped to that manager only.
+    """
+    # Admin overrides are global (manager_id=None in storage)
+    if override.manager_id == ADMIN_MANAGER_ID:
+        effective_manager_id = None  # Global override
+        scope = "global"
+    else:
+        effective_manager_id = override.manager_id
+        scope = "local"
+    
     cache.set_minutes_override(
         player_id=override.player_id,
         minutes=override.expected_minutes,
-        manager_id=override.manager_id
+        manager_id=effective_manager_id
     )
     return {
         "status": "ok",
         "player_id": override.player_id,
         "expected_minutes": override.expected_minutes,
-        "manager_id": override.manager_id
+        "manager_id": override.manager_id,
+        "scope": scope
     }
 
 
 @app.delete("/api/minutes-override/{player_id}")
 async def remove_minutes_override_endpoint(player_id: int, manager_id: Optional[int] = None):
-    """Remove minutes override for a player."""
+    """Remove minutes override for a player. Admin deletions remove global overrides."""
+    # Admin deletions target global overrides
+    if manager_id == ADMIN_MANAGER_ID:
+        manager_id = None
+    
     deleted = cache.delete_minutes_override(player_id, manager_id)
     return {"status": "ok", "player_id": player_id, "deleted": deleted}
 
@@ -2910,6 +3178,44 @@ class TransferPath:
         self.ft = max(self.ft - 1, 0)
 
 
+def find_player_by_name(name: str, players: List[Dict], squad_ids: set = None) -> Optional[Dict]:
+    """
+    Find a player by name (case-insensitive, partial match).
+    
+    Args:
+        name: Player name to search for
+        players: List of player dicts
+        squad_ids: If provided, only match players in this set of IDs
+    
+    Returns: Player dict or None
+    """
+    name_lower = name.lower().strip()
+    
+    # Try exact web_name match first
+    for p in players:
+        if squad_ids and p["id"] not in squad_ids:
+            continue
+        if p.get("web_name", "").lower() == name_lower:
+            return p
+    
+    # Try partial web_name match
+    for p in players:
+        if squad_ids and p["id"] not in squad_ids:
+            continue
+        if name_lower in p.get("web_name", "").lower():
+            return p
+    
+    # Try full name match
+    for p in players:
+        if squad_ids and p["id"] not in squad_ids:
+            continue
+        full_name = f"{p.get('first_name', '')} {p.get('second_name', '')}".lower()
+        if name_lower in full_name:
+            return p
+    
+    return None
+
+
 def solve_transfer_plan(
     squad: List[Dict],
     bank: float,
@@ -2922,16 +3228,43 @@ def solve_transfer_plan(
     start_gw: int,
     horizon: int,
     chip_gws: Dict[str, int],  # {chip_name: gw} - user specified chip GWs
-    max_hits: int = 1
+    max_hits: int = 1,
+    booked_transfers: List[Dict] = None  # [{gw: int, out: str, in: str}]
 ) -> Dict:
     """
     Tree-based solver for optimal transfer path.
     
     Explores paths: roll FT, use FT for best transfer, take hit for additional transfer.
     Prunes paths that fall too far behind.
+    
+    booked_transfers: List of forced transfers by GW. Names are matched to player IDs.
     """
     end_gw = min(start_gw + horizon, 39)
     gw_info = detect_dgw_bgw(fixtures, events, start_gw, end_gw)
+    
+    # Parse booked transfers - match names to player IDs
+    booked_by_gw = {}
+    if booked_transfers:
+        squad_ids = {p["id"] for p in squad}
+        for bt in booked_transfers:
+            gw = bt.get("gw")
+            out_name = bt.get("out", "")
+            in_name = bt.get("in", "")
+            
+            if not gw or not out_name or not in_name:
+                continue
+            
+            # Find the players
+            out_player = find_player_by_name(out_name, list(elements.values()), squad_ids)
+            in_player = find_player_by_name(in_name, all_players)
+            
+            if out_player and in_player:
+                if gw not in booked_by_gw:
+                    booked_by_gw[gw] = []
+                booked_by_gw[gw].append({
+                    "out": out_player,
+                    "in": in_player
+                })
     
     # Initialize root path
     root = TransferPath(squad, bank, free_transfers)
@@ -2961,52 +3294,116 @@ def solve_transfer_plan(
                 chip_this_gw = chip_name
                 break
         
+        # Check for booked transfers in this GW
+        booked_this_gw = booked_by_gw.get(gw, [])
+        
         for path in paths:
-            # Option 1: Roll FT (if beneficial or no good transfers)
-            roll_path = path.copy()
-            roll_path.roll_transfer(gw)
-            gw_xpts = evaluate_squad_xpts(roll_path.squad, gw, fixtures, teams_dict, elements, events, chip_this_gw)
-            roll_path.total_xpts = sum(
-                evaluate_squad_xpts(roll_path.squad, g, fixtures, teams_dict, elements, events,
-                                   chip_gws.get(g))
-                for g in range(start_gw, end_gw)
-            )
-            new_paths.append(roll_path)
-            
-            # Get transfer candidates
-            candidates = get_transfer_candidates(
-                path.squad, all_players, teams_dict, fixtures, gw, end_gw - gw, path.bank, limit=3
-            )
-            
-            if path.ft > 0 and candidates:
-                # Option 2: Use FT for best transfer
-                for i, transfer in enumerate(candidates[:3]):  # Top 3 transfers
-                    ft_path = path.copy()
-                    ft_path.use_ft()
-                    ft_path.apply_transfer(transfer, gw, is_hit=False)
-                    ft_path.total_xpts = sum(
-                        evaluate_squad_xpts(ft_path.squad, g, fixtures, teams_dict, elements, events,
-                                           chip_gws.get(g))
-                        for g in range(start_gw, end_gw)
-                    )
-                    new_paths.append(ft_path)
+            # If there are booked transfers, apply them first
+            if booked_this_gw:
+                booked_path = path.copy()
+                for booked in booked_this_gw:
+                    out_player = booked["out"]
+                    in_player = booked["in"]
                     
-                    # Option 3: Take hit for second transfer (if allowed)
-                    if max_hits > 0 and path.hits < max_hits and len(candidates) > 1:
-                        for j, second_transfer in enumerate(candidates[i+1:i+3]):  # Next 2
-                            if second_transfer["out"]["id"] == transfer["in"]["id"]:
-                                continue
-                            if second_transfer["in"]["id"] == transfer["out"]["id"]:
-                                continue
-                            
-                            hit_path = ft_path.copy()
-                            hit_path.apply_transfer(second_transfer, gw, is_hit=True)
-                            hit_path.total_xpts = sum(
-                                evaluate_squad_xpts(hit_path.squad, g, fixtures, teams_dict, elements, events,
-                                                   chip_gws.get(g))
-                                for g in range(start_gw, end_gw)
-                            ) - 4  # -4 for hit
-                            new_paths.append(hit_path)
+                    # Check if out_player is still in squad
+                    squad_ids = {p["id"] for p in booked_path.squad}
+                    if out_player["id"] not in squad_ids:
+                        continue  # Player already transferred out
+                    
+                    # Build transfer dict
+                    position_id = out_player.get("element_type", in_player.get("element_type", 0))
+                    upcoming = get_player_upcoming_fixtures(in_player["team"], fixtures, gw, end_gw, teams_dict)
+                    stats = calculate_expected_points(in_player, position_id, gw - 1, upcoming, teams_dict, fixtures, events)
+                    
+                    transfer = {
+                        "out": {
+                            "id": out_player["id"],
+                            "name": out_player.get("web_name", ""),
+                            "team_id": out_player.get("team"),
+                            "position_id": out_player.get("element_type"),
+                            "price": out_player.get("now_cost", 0) / 10,
+                        },
+                        "in": {
+                            "id": in_player["id"],
+                            "name": in_player.get("web_name", ""),
+                            "team_id": in_player.get("team"),
+                            "position_id": in_player.get("element_type"),
+                            "price": in_player.get("now_cost", 0) / 10,
+                            "xpts": stats["xpts"],
+                            "form": float(in_player.get("form", 0) or 0),
+                            "minutes": in_player.get("minutes", 0),
+                        },
+                        "xpts_gain": 0,  # Booked - not optimized
+                        "is_booked": True
+                    }
+                    
+                    # Use FT if available, otherwise take hit
+                    if booked_path.ft > 0:
+                        booked_path.use_ft()
+                        booked_path.apply_transfer(transfer, gw, is_hit=False)
+                    else:
+                        booked_path.apply_transfer(transfer, gw, is_hit=True)
+                
+                # Recalculate total xPts after booked transfers
+                booked_path.total_xpts = sum(
+                    evaluate_squad_xpts(booked_path.squad, g, fixtures, teams_dict, elements, events,
+                                       chip_gws.get(g))
+                    for g in range(start_gw, end_gw)
+                ) - (booked_path.hits * 4)
+                new_paths.append(booked_path)
+                
+                # Still allow rolling FT if any left (for future GWs)
+                if booked_path.ft > 0:
+                    roll_booked = booked_path.copy()
+                    roll_booked.roll_transfer(gw)
+                    new_paths.append(roll_booked)
+            else:
+                # No booked transfers - normal optimization
+                # Option 1: Roll FT (if beneficial or no good transfers)
+                roll_path = path.copy()
+                roll_path.roll_transfer(gw)
+                gw_xpts = evaluate_squad_xpts(roll_path.squad, gw, fixtures, teams_dict, elements, events, chip_this_gw)
+                roll_path.total_xpts = sum(
+                    evaluate_squad_xpts(roll_path.squad, g, fixtures, teams_dict, elements, events,
+                                       chip_gws.get(g))
+                    for g in range(start_gw, end_gw)
+                )
+                new_paths.append(roll_path)
+                
+                # Get transfer candidates
+                candidates = get_transfer_candidates(
+                    path.squad, all_players, teams_dict, fixtures, gw, end_gw - gw, path.bank, limit=3
+                )
+                
+                if path.ft > 0 and candidates:
+                    # Option 2: Use FT for best transfer
+                    for i, transfer in enumerate(candidates[:3]):  # Top 3 transfers
+                        ft_path = path.copy()
+                        ft_path.use_ft()
+                        ft_path.apply_transfer(transfer, gw, is_hit=False)
+                        ft_path.total_xpts = sum(
+                            evaluate_squad_xpts(ft_path.squad, g, fixtures, teams_dict, elements, events,
+                                               chip_gws.get(g))
+                            for g in range(start_gw, end_gw)
+                        )
+                        new_paths.append(ft_path)
+                        
+                        # Option 3: Take hit for second transfer (if allowed)
+                        if max_hits > 0 and path.hits < max_hits and len(candidates) > 1:
+                            for j, second_transfer in enumerate(candidates[i+1:i+3]):  # Next 2
+                                if second_transfer["out"]["id"] == transfer["in"]["id"]:
+                                    continue
+                                if second_transfer["in"]["id"] == transfer["out"]["id"]:
+                                    continue
+                                
+                                hit_path = ft_path.copy()
+                                hit_path.apply_transfer(second_transfer, gw, is_hit=True)
+                                hit_path.total_xpts = sum(
+                                    evaluate_squad_xpts(hit_path.squad, g, fixtures, teams_dict, elements, events,
+                                                       chip_gws.get(g))
+                                    for g in range(start_gw, end_gw)
+                                ) - 4  # -4 for hit
+                                new_paths.append(hit_path)
         
         # Prune: keep top 20 paths by xPts
         new_paths.sort(key=lambda p: -p.total_xpts)
@@ -3200,14 +3597,24 @@ async def get_transfer_plan(
     tc_gw: Optional[int] = Query(None, ge=1, le=38),
     bb_gw: Optional[int] = Query(None, ge=1, le=38),
     fh_gw: Optional[int] = Query(None, ge=1, le=38),
+    booked_transfers: Optional[str] = Query(None, description="JSON array of booked transfers [{gw, out, in}]"),
 ):
     """
     Multi-gameweek transfer planner.
     
     Returns optimal transfer path over horizon GWs.
     User can specify which GWs to use chips (or leave for auto-suggestion).
+    booked_transfers: JSON string like '[{"gw":23,"out":"Salah","in":"Palmer"}]'
     """
     await refresh_fdr_data()
+    
+    # Parse booked transfers JSON
+    parsed_booked = []
+    if booked_transfers:
+        try:
+            parsed_booked = json.loads(booked_transfers)
+        except:
+            pass  # Ignore invalid JSON
     
     data = await fetch_fpl_data()
     fixtures = await fetch_fixtures()
@@ -3303,6 +3710,7 @@ async def get_transfer_plan(
         horizon=horizon,
         chip_gws=chip_gws,
         max_hits=max_hits,
+        booked_transfers=parsed_booked,
     )
     
     return {
@@ -3312,6 +3720,7 @@ async def get_transfer_plan(
         "available_chips": {CHIP_DISPLAY.get(k, k): v for k, v in available_chips.items()},
         "chip_schedule": {CHIP_DISPLAY.get(k, k): v for k, v in chip_gws.items()},
         "chip_suggestions": chip_suggestions,
+        "booked_transfers": parsed_booked,
         "gw_info": gw_info,
         "bank": bank,
         "free_transfers": free_transfers,
