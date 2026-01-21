@@ -1,11 +1,14 @@
 """
-FPL Assistant Backend - FastAPI v3.1
+FPL Assistant Backend - FastAPI v3.2
 Enhanced with:
 - Composite FDR model (1-10 scale) using Understat xG data
 - Position-specific FDR: attack_fdr for FWD/MID, defence_fdr for DEF/GKP
 - DEFCON per 90 for DEF/MID
 - Saves per 90 for GKP
 - Expected Minutes with override capability
+- Shared HTTP client for connection pooling
+- Dynamic season detection
+- Rate limiting with exponential backoff
 """
 
 import asyncio
@@ -17,13 +20,14 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from enum import Enum
 import math
 from collections import defaultdict
 from datetime import datetime
 import os
 import logging
+import random
 
 # scipy is optional - graceful fallback if not available
 try:
@@ -36,25 +40,118 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def get_current_season() -> str:
+    """
+    Derive the current FPL season dynamically.
+    FPL season runs Aug-May, so:
+    - Before August: previous year's season (e.g., Jan 2025 -> "2024")
+    - August onwards: current year's season (e.g., Sep 2025 -> "2025")
+    """
+    now = datetime.now()
+    if now.month < 8:  # Before August
+        return str(now.year - 1)
+    return str(now.year)
+
+
+# Global HTTP client (initialized in lifespan)
+http_client: Optional[httpx.AsyncClient] = None
+
+
+async def get_http_client() -> httpx.AsyncClient:
+    """Get the shared HTTP client, creating one if needed."""
+    global http_client
+    if http_client is None:
+        http_client = httpx.AsyncClient(
+            timeout=30.0,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+            headers={"User-Agent": "FPL-Assistant/3.2"}
+        )
+    return http_client
+
+
+async def fetch_with_retry(
+    url: str,
+    max_retries: int = 3,
+    base_delay: float = 1.0
+) -> httpx.Response:
+    """
+    Fetch URL with exponential backoff retry logic.
+    Handles rate limiting (429) and transient errors.
+    """
+    client = await get_http_client()
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            response = await client.get(url)
+            
+            if response.status_code == 429:
+                # Rate limited - wait and retry
+                retry_after = int(response.headers.get("Retry-After", base_delay * (2 ** attempt)))
+                logger.warning(f"Rate limited on {url}, waiting {retry_after}s")
+                await asyncio.sleep(retry_after)
+                continue
+            
+            response.raise_for_status()
+            return response
+            
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (500, 502, 503, 504):
+                # Server error - retry with backoff
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                logger.warning(f"Server error {e.response.status_code} on {url}, retry in {delay:.1f}s")
+                await asyncio.sleep(delay)
+                last_error = e
+                continue
+            raise
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
+            delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+            logger.warning(f"Connection error on {url}, retry in {delay:.1f}s: {e}")
+            await asyncio.sleep(delay)
+            last_error = e
+            continue
+    
+    if last_error:
+        raise last_error
+    raise HTTPException(status_code=503, detail="Failed after max retries")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
-    # Startup
+    global http_client
+    
+    # Startup - create shared HTTP client
+    http_client = httpx.AsyncClient(
+        timeout=30.0,
+        limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+        headers={"User-Agent": "FPL-Assistant/3.2"}
+    )
+    
     try:
         await refresh_fdr_data()
         logger.info("FDR data initialized on startup")
     except Exception as e:
         logger.error(f"FDR startup refresh failed: {e}")
+    
     yield
-    # Shutdown (nothing to clean up)
+    
+    # Shutdown - close HTTP client
+    if http_client:
+        await http_client.aclose()
+        http_client = None
 
 
-app = FastAPI(title="FPL Assistant API", version="3.1.0", lifespan=lifespan)
+app = FastAPI(title="FPL Assistant API", version="3.2.0", lifespan=lifespan)
+
+# CORS configuration - fixed for security
+# In production, replace "*" with specific origins like ["https://yourdomain.com"]
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=False,  # Set to True only with specific origins, not "*"
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -160,6 +257,120 @@ class Position(str, Enum):
 class MinutesOverride(BaseModel):
     player_id: int
     expected_minutes: float
+    manager_id: Optional[int] = None  # Optional for backwards compatibility
+
+
+# ============ RESPONSE SCHEMAS ============
+# These provide contract stability between frontend and backend
+
+class PlayerRanking(BaseModel):
+    """Schema for a player in rankings response."""
+    id: int
+    name: str
+    team: str
+    team_id: int
+    position: str
+    price: float
+    ownership: float
+    form: float
+    total_points: int
+    minutes: int
+    xpts: float
+    xpts_per_90: float
+    xpts_per_cost: float
+    exp_mins: float
+    mins_reason: str
+    fixture_ticker: str
+    avg_fdr: float
+    
+    class Config:
+        extra = "allow"  # Allow additional fields
+
+
+class SquadPlayer(BaseModel):
+    """Schema for a player in squad response."""
+    id: int
+    name: str
+    team: str
+    team_id: int
+    position: str
+    price: float
+    selling_price: float
+    is_captain: bool
+    is_vice_captain: bool
+    multiplier: int
+    xpts_single_gw: float
+    exp_mins: float
+    fixture_ticker: str
+    
+    class Config:
+        extra = "allow"
+
+
+class TransferAction(BaseModel):
+    """Schema for a transfer action in planner."""
+    type: str  # "transfer" or "roll"
+    player_out: Optional[Dict] = None
+    player_in: Optional[Dict] = None
+    gain: Optional[float] = None
+    is_hit: bool = False
+
+
+class GwTimeline(BaseModel):
+    """Schema for a gameweek in planner timeline."""
+    gw: int
+    actions: List[Dict]
+    chip: Optional[str] = None
+    is_dgw: bool = False
+    starting_xi: Optional[List[Dict]] = None
+    bench: Optional[List[Dict]] = None
+    captain: Optional[Dict] = None
+    vice_captain: Optional[Dict] = None
+    gw_xpts: Optional[float] = None
+    
+    class Config:
+        extra = "allow"
+
+
+class TransferPlan(BaseModel):
+    """Schema for transfer plan response."""
+    total_xpts: float
+    baseline_xpts: float
+    xpts_gain: float
+    total_hits: int
+    hit_cost: int
+    net_xpts_gain: float
+    transfers_by_gw: Dict[int, int]
+    timeline: List[GwTimeline]
+    
+    class Config:
+        extra = "allow"
+
+
+class ChipStatus(BaseModel):
+    """Schema for chip availability."""
+    WC: bool
+    FH: bool
+    BB: bool
+    TC: bool
+
+
+class PlannerResponse(BaseModel):
+    """Full planner API response schema."""
+    manager_id: int
+    current_gw: int
+    planning_horizon: str
+    available_chips: Dict[str, bool]
+    chip_schedule: Dict[str, int]
+    chip_suggestions: List[Dict]
+    gw_info: Dict[int, Dict]
+    bank: float
+    free_transfers: int
+    ft_disclaimer: str
+    plan: TransferPlan
+    
+    class Config:
+        extra = "allow"
 
 
 # ============ CACHE ============
@@ -172,10 +383,42 @@ class DataCache:
         self.last_update: Optional[datetime] = None
         self.fixtures_last_update: Optional[datetime] = None
         self.cache_duration = 300
-        self.minutes_overrides: Dict[int, float] = {}
+        # Minutes overrides scoped by (manager_id, player_id) - None manager_id for global
+        self.minutes_overrides: Dict[Tuple[Optional[int], int], float] = {}
         # FDR cache
         self.fdr_data: Dict[int, Dict] = {}  # team_id -> {attack_fdr, defence_fdr, form_xg, form_xga, ...}
         self.fdr_last_update: Optional[datetime] = None
+        # Predicted minutes from external sources (e.g., FPL Review)
+        self.predicted_minutes: Dict[int, float] = {}  # player_id -> predicted_minutes
+        self.predicted_minutes_last_update: Optional[datetime] = None
+    
+    def get_minutes_override(self, player_id: int, manager_id: Optional[int] = None) -> Optional[float]:
+        """Get minutes override, checking manager-specific first, then global, then predicted."""
+        # Check manager-specific override first
+        if manager_id is not None and (manager_id, player_id) in self.minutes_overrides:
+            return self.minutes_overrides[(manager_id, player_id)]
+        # Fall back to global override
+        if (None, player_id) in self.minutes_overrides:
+            return self.minutes_overrides[(None, player_id)]
+        # Fall back to predicted minutes (from FPL Review etc.)
+        if player_id in self.predicted_minutes:
+            return self.predicted_minutes[player_id]
+        return None
+    
+    def set_minutes_override(self, player_id: int, minutes: float, manager_id: Optional[int] = None):
+        """Set minutes override, scoped by manager_id."""
+        self.minutes_overrides[(manager_id, player_id)] = minutes
+    
+    def delete_minutes_override(self, player_id: int, manager_id: Optional[int] = None) -> bool:
+        """Delete minutes override. Returns True if deleted."""
+        key = (manager_id, player_id)
+        if key in self.minutes_overrides:
+            del self.minutes_overrides[key]
+            return True
+        return False
+    
+    def predicted_minutes_is_stale(self) -> bool:
+        return self.predicted_minutes_last_update is None or (datetime.now() - self.predicted_minutes_last_update).seconds > 3600  # 1 hour
 
     def is_stale(self) -> bool:
         return self.last_update is None or (datetime.now() - self.last_update).seconds > self.cache_duration
@@ -195,50 +438,46 @@ cache = DataCache()
 async def fetch_fpl_data():
     if not cache.is_stale() and cache.bootstrap_data:
         return cache.bootstrap_data
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.get(f"{FPL_BASE_URL}/bootstrap-static/")
-            response.raise_for_status()
-            cache.bootstrap_data = response.json()
-            cache.last_update = datetime.now()
+    try:
+        response = await fetch_with_retry(f"{FPL_BASE_URL}/bootstrap-static/")
+        cache.bootstrap_data = response.json()
+        cache.last_update = datetime.now()
+        return cache.bootstrap_data
+    except Exception as e:
+        if cache.bootstrap_data:
             return cache.bootstrap_data
-        except Exception as e:
-            if cache.bootstrap_data:
-                return cache.bootstrap_data
-            raise HTTPException(status_code=503, detail=f"FPL API unavailable: {str(e)}")
+        raise HTTPException(status_code=503, detail=f"FPL API unavailable: {str(e)}")
 
 
 async def fetch_fixtures():
     if cache.fixtures_data and not cache.fixtures_is_stale():
         return cache.fixtures_data
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.get(f"{FPL_BASE_URL}/fixtures/")
-            response.raise_for_status()
-            cache.fixtures_data = response.json()
-            cache.fixtures_last_update = datetime.now()
-            return cache.fixtures_data
-        except Exception as e:
-            raise HTTPException(status_code=503, detail=f"FPL API unavailable: {str(e)}")
+    try:
+        response = await fetch_with_retry(f"{FPL_BASE_URL}/fixtures/")
+        cache.fixtures_data = response.json()
+        cache.fixtures_last_update = datetime.now()
+        return cache.fixtures_data
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"FPL API unavailable: {str(e)}")
 
 
 async def fetch_manager_team(manager_id: int, gameweek: int):
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            manager_resp = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/")
-            manager_resp.raise_for_status()
-            manager_data = manager_resp.json()
-            picks_resp = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/event/{gameweek}/picks/")
-            picks_resp.raise_for_status()
-            picks_data = picks_resp.json()
-            transfers_resp = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/transfers/")
-            transfers_resp.raise_for_status()
-            transfers_data = transfers_resp.json()
-            return {"manager": manager_data, "picks": picks_data, "transfers": transfers_data}
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise HTTPException(status_code=404, detail="Manager not found or no team for this gameweek")
-            raise HTTPException(status_code=503, detail=f"FPL API error: {str(e)}")
+    try:
+        client = await get_http_client()
+        manager_resp = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/")
+        manager_resp.raise_for_status()
+        manager_data = manager_resp.json()
+        picks_resp = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/event/{gameweek}/picks/")
+        picks_resp.raise_for_status()
+        picks_data = picks_resp.json()
+        transfers_resp = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/transfers/")
+        transfers_resp.raise_for_status()
+        transfers_data = transfers_resp.json()
+        return {"manager": manager_data, "picks": picks_data, "transfers": transfers_data}
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Manager not found or no team for this gameweek")
+        raise HTTPException(status_code=503, detail=f"FPL API error: {str(e)}")
 
 
 def get_current_gameweek(events: List[Dict]) -> int:
@@ -275,13 +514,13 @@ class UnderstatScraper:
         if wait_time > 0:
             await asyncio.sleep(wait_time)
         
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(url, headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            })
-            response.raise_for_status()
-            self.last_request = asyncio.get_event_loop().time()
-            return response.text
+        client = await get_http_client()
+        response = await client.get(url, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        response.raise_for_status()
+        self.last_request = asyncio.get_event_loop().time()
+        return response.text
     
     def _extract_json(self, html: str, var_name: str) -> Optional[list]:
         pattern = rf"var {var_name}\s*=\s*JSON\.parse\('(.+?)'\)"
@@ -297,7 +536,10 @@ class UnderstatScraper:
             logger.error(f"Failed to parse Understat JSON: {e}")
             return None
     
-    async def fetch_league_matches(self, season: str = "2024") -> List[dict]:
+    async def fetch_league_matches(self, season: Optional[str] = None) -> List[dict]:
+        """Fetch league matches from Understat. Season derived automatically if not provided."""
+        if season is None:
+            season = get_current_season()
         url = f"{self.BASE_URL}/league/EPL/{season}"
         try:
             html = await self._fetch_page(url)
@@ -342,10 +584,10 @@ async def _do_fdr_refresh():
     """Actually perform the FDR data refresh."""
     logger.info("Refreshing FDR data from Understat...")
     
-    # Fetch all matches with timeout
+    # Fetch all matches with timeout (using dynamic season)
     try:
         matches = await asyncio.wait_for(
-            understat_scraper.fetch_league_matches("2024"),
+            understat_scraper.fetch_league_matches(),  # Uses get_current_season() internally
             timeout=10.0
         )
     except asyncio.TimeoutError:
@@ -527,14 +769,21 @@ def calculate_expected_minutes(
     fixtures: List[Dict],
     events: List[Dict],
     player_history: Optional[Dict] = None,
-    override_minutes: Optional[float] = None
+    override_minutes: Optional[float] = None,
+    manager_id: Optional[int] = None
 ) -> tuple[float, str]:
     player_id = player.get("id")
     if override_minutes is not None:
         return override_minutes, "user_override"
     
-    if player_id in cache.minutes_overrides:
-        return cache.minutes_overrides[player_id], "user_override"
+    # Check cache for override (manager-specific or global)
+    cached_override = cache.get_minutes_override(player_id, manager_id)
+    if cached_override is not None:
+        # Determine if it's a user override or predicted
+        if (manager_id, player_id) in cache.minutes_overrides or (None, player_id) in cache.minutes_overrides:
+            return cached_override, "user_override"
+        else:
+            return cached_override, "predicted"
     
     total_minutes = int(player.get("minutes", 0) or 0)
     starts = int(player.get("starts", 0) or 0)
@@ -699,21 +948,91 @@ def get_player_upcoming_fixtures(
 # ============ MINUTES OVERRIDE ENDPOINTS ============
 
 @app.post("/api/minutes-override")
-async def set_minutes_override(override: MinutesOverride):
-    cache.minutes_overrides[override.player_id] = override.expected_minutes
-    return {"status": "ok", "player_id": override.player_id, "expected_minutes": override.expected_minutes}
+async def set_minutes_override_endpoint(override: MinutesOverride):
+    """Set expected minutes override for a player. Optionally scoped to a manager."""
+    cache.set_minutes_override(
+        player_id=override.player_id,
+        minutes=override.expected_minutes,
+        manager_id=override.manager_id
+    )
+    return {
+        "status": "ok",
+        "player_id": override.player_id,
+        "expected_minutes": override.expected_minutes,
+        "manager_id": override.manager_id
+    }
 
 
 @app.delete("/api/minutes-override/{player_id}")
-async def remove_minutes_override(player_id: int):
-    if player_id in cache.minutes_overrides:
-        del cache.minutes_overrides[player_id]
-    return {"status": "ok", "player_id": player_id}
+async def remove_minutes_override_endpoint(player_id: int, manager_id: Optional[int] = None):
+    """Remove minutes override for a player."""
+    deleted = cache.delete_minutes_override(player_id, manager_id)
+    return {"status": "ok", "player_id": player_id, "deleted": deleted}
 
 
 @app.get("/api/minutes-overrides")
-async def get_minutes_overrides():
-    return {"overrides": cache.minutes_overrides}
+async def get_minutes_overrides_endpoint(manager_id: Optional[int] = None):
+    """Get all minutes overrides, optionally filtered by manager."""
+    if manager_id is not None:
+        # Return only manager-specific overrides
+        overrides = {
+            pid: mins for (mid, pid), mins in cache.minutes_overrides.items()
+            if mid == manager_id
+        }
+    else:
+        # Return all overrides with their scope
+        overrides = {
+            f"{mid or 'global'}:{pid}": mins
+            for (mid, pid), mins in cache.minutes_overrides.items()
+        }
+    return {"overrides": overrides}
+
+
+class BulkMinutesImport(BaseModel):
+    """Bulk import predicted minutes from external sources."""
+    predictions: Dict[int, float]  # player_id -> predicted_minutes
+    source: Optional[str] = "manual"
+
+
+@app.post("/api/predicted-minutes/bulk")
+async def import_predicted_minutes(data: BulkMinutesImport):
+    """
+    Bulk import predicted minutes from external sources like FPL Review.
+    These will be used as fallback when no user override exists.
+    """
+    count = 0
+    for player_id, minutes in data.predictions.items():
+        if 0 <= minutes <= 90:
+            cache.predicted_minutes[player_id] = minutes
+            count += 1
+    
+    cache.predicted_minutes_last_update = datetime.now()
+    
+    return {
+        "status": "ok",
+        "imported": count,
+        "source": data.source,
+        "updated_at": cache.predicted_minutes_last_update.isoformat()
+    }
+
+
+@app.get("/api/predicted-minutes")
+async def get_predicted_minutes():
+    """Get all predicted minutes currently cached."""
+    return {
+        "predictions": cache.predicted_minutes,
+        "count": len(cache.predicted_minutes),
+        "last_update": cache.predicted_minutes_last_update.isoformat() if cache.predicted_minutes_last_update else None,
+        "is_stale": cache.predicted_minutes_is_stale()
+    }
+
+
+@app.delete("/api/predicted-minutes")
+async def clear_predicted_minutes():
+    """Clear all predicted minutes."""
+    cache.predicted_minutes.clear()
+    cache.predicted_minutes_last_update = None
+    return {"status": "ok", "message": "All predicted minutes cleared"}
 
 
 # ============ FDR ENDPOINTS ============
@@ -1147,36 +1466,36 @@ async def get_fixture_ratings(horizon: int = Query(8, ge=1, le=15)):
 
 async def fetch_manager_transfers(manager_id: int) -> List[Dict]:
     """Fetch all transfers made by a manager this season."""
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/transfers/")
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"Failed to fetch transfers: {e}")
-            return []
+    try:
+        client = await get_http_client()
+        response = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/transfers/")
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logger.error(f"Failed to fetch transfers: {e}")
+        return []
 
 
 async def fetch_player_history(player_id: int) -> Dict:
     """Fetch player's GW-by-GW history."""
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.get(f"{FPL_BASE_URL}/element-summary/{player_id}/")
-            response.raise_for_status()
-            return response.json()
-        except Exception:
-            return {"history": []}
+    try:
+        client = await get_http_client()
+        response = await client.get(f"{FPL_BASE_URL}/element-summary/{player_id}/")
+        response.raise_for_status()
+        return response.json()
+    except Exception:
+        return {"history": []}
 
 
 async def fetch_gw_picks(manager_id: int, gw: int) -> Optional[Dict]:
     """Fetch picks for a specific gameweek."""
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/event/{gw}/picks/")
-            response.raise_for_status()
-            return response.json()
-        except Exception:
-            return None
+    try:
+        client = await get_http_client()
+        response = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/event/{gw}/picks/")
+        response.raise_for_status()
+        return response.json()
+    except Exception:
+        return None
 
 
 def get_player_gw_points(player_history: Dict, gw: int) -> int:
@@ -1320,13 +1639,15 @@ async def get_manager_stats(manager_id: int):
         best_transfer = transfer_analysis[0]
         worst_transfer = transfer_analysis[-1]
     
-    # Wildcard analysis - compare 5 GW pts before vs after
-    wildcard_analysis = None
+    # Wildcard analysis - WC1 (<GW20) and WC2 (>=GW20) separately
+    wc1_analysis = None
+    wc2_analysis = None
     chips_used = history.get("chips", [])
     
     for chip in chips_used:
         if chip.get("name") == "wildcard":
             wc_gw = chip.get("event", 0)
+            is_wc2 = wc_gw >= 20
             
             try:
                 # Get picks before WC (GW before) and after WC
@@ -1364,7 +1685,7 @@ async def get_manager_stats(manager_id: int):
                     for pid in players_in:
                         pts_new_team += get_player_points_range(player_histories.get(pid, {"history": []}), wc_gw, end_gw)
                     
-                    wildcard_analysis = {
+                    wc_data = {
                         "gw": wc_gw,
                         "players_out": len(players_out),
                         "players_in": len(players_in),
@@ -1373,97 +1694,180 @@ async def get_manager_stats(manager_id: int):
                         "net_pts": pts_new_team - pts_old_team,
                         "gw_range": f"GW{wc_gw}-GW{end_gw}",
                     }
+                    
+                    if is_wc2:
+                        wc2_analysis = wc_data
+                    else:
+                        wc1_analysis = wc_data
+                        
             except Exception as e:
                 logger.error(f"Failed to analyze wildcard: {e}")
-            break  # Only analyze first wildcard
     
-    # Triple Captain Analysis
-    tc_analysis = None
-    for chip in chips_used:
-        if chip.get("name") == "3xc":
-            tc_gw = chip.get("event", 0)
-            try:
-                tc_picks = await fetch_gw_picks(manager_id, tc_gw)
-                if tc_picks:
-                    # Find the captain
-                    for pick in tc_picks.get("picks", []):
-                        if pick.get("is_captain"):
-                            captain_id = pick.get("element")
-                            captain = elements.get(captain_id, {})
-                            captain_history = player_histories.get(captain_id)
-                            
-                            if not captain_history:
-                                captain_history = await fetch_player_history(captain_id)
-                            
-                            # Get captain's points that GW
-                            captain_pts = get_player_gw_points(captain_history, tc_gw)
-                            
-                            tc_analysis = {
-                                "gw": tc_gw,
-                                "player": captain.get("web_name", "Unknown"),
-                                "captain_pts": captain_pts,
-                                "extra_pts": captain_pts * 2,  # TC gives 3x, captain gives 2x, so extra = pts * 2
-                            }
-                            break
-            except Exception as e:
-                logger.error(f"Failed to analyze TC: {e}")
-            break
+    # Triple Captain Analysis - TC1 (<GW20) and TC2 (>=GW20)
+    tc1_analysis = None
+    tc2_analysis = None
+    tc_uses = [c for c in chips_used if c.get("name") == "3xc"]
     
-    # Bench Boost Analysis
-    bb_analysis = None
-    for chip in chips_used:
-        if chip.get("name") == "bboost":
-            bb_gw = chip.get("event", 0)
-            # Find bench points for that GW
-            for gw_data in gw_history:
-                if gw_data.get("event") == bb_gw:
-                    bb_analysis = {
-                        "gw": bb_gw,
-                        "bench_pts": gw_data.get("points_on_bench", 0),
-                    }
-                    break
-            break
+    for chip in tc_uses:
+        tc_gw = chip.get("event", 0)
+        is_tc2 = tc_gw >= 20
+        
+        try:
+            tc_picks = await fetch_gw_picks(manager_id, tc_gw)
+            if tc_picks:
+                # Find the captain
+                for pick in tc_picks.get("picks", []):
+                    if pick.get("is_captain"):
+                        captain_id = pick.get("element")
+                        captain = elements.get(captain_id, {})
+                        captain_history = player_histories.get(captain_id)
+                        
+                        if not captain_history:
+                            captain_history = await fetch_player_history(captain_id)
+                        
+                        # Get captain's points that GW
+                        captain_pts = get_player_gw_points(captain_history, tc_gw)
+                        
+                        tc_data = {
+                            "gw": tc_gw,
+                            "player": captain.get("web_name", "Unknown"),
+                            "captain_pts": captain_pts,
+                            "extra_pts": captain_pts * 2,  # TC gives 3x, captain gives 2x, so extra = pts * 2
+                        }
+                        
+                        if is_tc2:
+                            tc2_analysis = tc_data
+                        else:
+                            tc1_analysis = tc_data
+                        break
+        except Exception as e:
+            logger.error(f"Failed to analyze TC: {e}")
     
-    # Free Hit Analysis
-    freehit_analysis = None
-    for chip in chips_used:
-        if chip.get("name") == "freehit":
-            fh_gw = chip.get("event", 0)
-            try:
-                # Compare FH team points vs what previous team would have scored
-                fh_picks = await fetch_gw_picks(manager_id, fh_gw)
-                prev_picks = await fetch_gw_picks(manager_id, fh_gw - 1) if fh_gw > 1 else None
+    # Bench Boost Analysis - BB1 (<GW20) and BB2 (>=GW20)
+    bb1_analysis = None
+    bb2_analysis = None
+    bb_uses = [c for c in chips_used if c.get("name") == "bboost"]
+    
+    for chip in bb_uses:
+        bb_gw = chip.get("event", 0)
+        is_bb2 = bb_gw >= 20
+        
+        # Find bench points for that GW
+        for gw_data in gw_history:
+            if gw_data.get("event") == bb_gw:
+                bb_data = {
+                    "gw": bb_gw,
+                    "bench_pts": gw_data.get("points_on_bench", 0),
+                }
                 
-                if fh_picks and prev_picks:
-                    # Get FH GW points (manager's actual points that GW)
-                    fh_pts = 0
-                    for gw_data in gw_history:
-                        if gw_data.get("event") == fh_gw:
-                            fh_pts = gw_data.get("points", 0)
-                            break
-                    
-                    # Calculate what previous team would have scored
-                    prev_team_ids = {p["element"] for p in prev_picks.get("picks", [])[:11]}  # Starting XI
-                    prev_team_pts = 0
-                    
-                    for pid in prev_team_ids:
-                        hist = player_histories.get(pid)
-                        if not hist:
-                            try:
-                                hist = await fetch_player_history(pid)
-                            except:
-                                hist = {"history": []}
-                        prev_team_pts += get_player_gw_points(hist, fh_gw)
-                    
-                    freehit_analysis = {
-                        "gw": fh_gw,
-                        "fh_pts": fh_pts,
-                        "prev_team_pts": prev_team_pts,
-                        "net_pts": fh_pts - prev_team_pts,
-                    }
-            except Exception as e:
-                logger.error(f"Failed to analyze FH: {e}")
-            break
+                if is_bb2:
+                    bb2_analysis = bb_data
+                else:
+                    bb1_analysis = bb_data
+                break
+    
+    # Free Hit Analysis - FH1 (<GW20) and FH2 (>=GW20)
+    fh1_analysis = None
+    fh2_analysis = None
+    fh_uses = [c for c in chips_used if c.get("name") == "freehit"]
+    
+    for chip in fh_uses:
+        fh_gw = chip.get("event", 0)
+        is_fh2 = fh_gw >= 20
+        
+        try:
+            # Compare FH team points vs what previous team would have scored
+            fh_picks = await fetch_gw_picks(manager_id, fh_gw)
+            prev_picks = await fetch_gw_picks(manager_id, fh_gw - 1) if fh_gw > 1 else None
+            
+            if fh_picks and prev_picks:
+                # Get FH GW points (manager's actual points that GW)
+                fh_pts = 0
+                for gw_data in gw_history:
+                    if gw_data.get("event") == fh_gw:
+                        fh_pts = gw_data.get("points", 0)
+                        break
+                
+                # Calculate what previous team would have scored
+                prev_team_ids = {p["element"] for p in prev_picks.get("picks", [])[:11]}  # Starting XI
+                prev_team_pts = 0
+                
+                for pid in prev_team_ids:
+                    hist = player_histories.get(pid)
+                    if not hist:
+                        try:
+                            hist = await fetch_player_history(pid)
+                        except:
+                            hist = {"history": []}
+                    prev_team_pts += get_player_gw_points(hist, fh_gw)
+                
+                fh_data = {
+                    "gw": fh_gw,
+                    "fh_pts": fh_pts,
+                    "prev_team_pts": prev_team_pts,
+                    "net_pts": fh_pts - prev_team_pts,
+                }
+                
+                if is_fh2:
+                    fh2_analysis = fh_data
+                else:
+                    fh1_analysis = fh_data
+        except Exception as e:
+            logger.error(f"Failed to analyze FH: {e}")
+    
+    # Best Differential - highest points from lowest-owned player at time of selection
+    # We look at all GWs and find the player who scored most points relative to low ownership
+    best_differential = None
+    
+    try:
+        for gw_data in gw_history:
+            gw_num = gw_data.get("event", 0)
+            if gw_num < 1:
+                continue
+            
+            # Get the picks for this GW
+            gw_picks = await fetch_gw_picks(manager_id, gw_num)
+            if not gw_picks:
+                continue
+            
+            picks = gw_picks.get("picks", [])
+            for pick in picks:
+                pid = pick.get("element")
+                element = elements.get(pid, {})
+                
+                # Get ownership at GW start (approximation - use current minus GW increase)
+                # Better: fetch the player's history to get ownership_gw
+                player_hist = player_histories.get(pid)
+                if not player_hist and pid:
+                    try:
+                        player_hist = await fetch_player_history(pid)
+                        player_histories[pid] = player_hist
+                    except:
+                        continue
+                
+                # Find ownership and points for this specific GW
+                for ph in player_hist.get("history", []):
+                    if ph.get("round") == gw_num:
+                        gw_pts = ph.get("total_points", 0)
+                        # Use value change as proxy for ownership 
+                        # Better: FPL API doesn't give historical ownership, so use current as approximation
+                        ownership = float(element.get("selected_by_percent", 0) or 0)
+                        
+                        # Differential threshold: below 10% ownership
+                        if ownership < 10 and gw_pts > 0:
+                            diff_score = gw_pts / max(ownership, 0.1)  # Points per ownership %
+                            
+                            if best_differential is None or gw_pts > best_differential["pts"]:
+                                best_differential = {
+                                    "player": element.get("web_name", "Unknown"),
+                                    "team": teams.get(element.get("team"), {}).get("short_name", "???"),
+                                    "gw": gw_num,
+                                    "pts": gw_pts,
+                                    "ownership": round(ownership, 1),
+                                }
+                        break
+    except Exception as e:
+        logger.error(f"Failed to calculate best differential: {e}")
     
     return {
         "manager_id": manager_id,
@@ -1477,10 +1881,15 @@ async def get_manager_stats(manager_id: int):
         "or_progression": or_progression,
         "best_transfer": best_transfer,
         "worst_transfer": worst_transfer,
-        "wildcard_analysis": wildcard_analysis,
-        "tc_analysis": tc_analysis,
-        "bb_analysis": bb_analysis,
-        "freehit_analysis": freehit_analysis,
+        "wc1_analysis": wc1_analysis,
+        "wc2_analysis": wc2_analysis,
+        "fh1_analysis": fh1_analysis,
+        "fh2_analysis": fh2_analysis,
+        "tc1_analysis": tc1_analysis,
+        "tc2_analysis": tc2_analysis,
+        "bb1_analysis": bb1_analysis,
+        "bb2_analysis": bb2_analysis,
+        "best_differential": best_differential,
         "chips_used": chips_used,
     }
 
@@ -1573,13 +1982,13 @@ CHIP_DISPLAY = {"wildcard": "WC", "freehit": "FH", "bboost": "BB", "3xc": "TC"}
 
 async def fetch_manager_history(manager_id: int) -> Dict:
     """Fetch manager history including chips used."""
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/history/")
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            raise HTTPException(status_code=503, detail=f"Failed to fetch manager history: {str(e)}")
+    try:
+        client = await get_http_client()
+        response = await client.get(f"{FPL_BASE_URL}/entry/{manager_id}/history/")
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Failed to fetch manager history: {str(e)}")
 
 
 def get_available_chips(history: Dict, current_gw: int) -> Dict[str, bool]:
@@ -1608,8 +2017,31 @@ def get_available_chips(history: Dict, current_gw: int) -> Dict[str, bool]:
     return available
 
 
-def detect_dgw_bgw(fixtures: List[Dict], events: List[Dict], horizon_start: int, horizon_end: int) -> Dict[int, Dict]:
-    """Detect Double and Blank gameweeks in horizon."""
+def detect_dgw_bgw(
+    fixtures: List[Dict],
+    events: List[Dict],
+    horizon_start: int,
+    horizon_end: int,
+    team_ids: Optional[List[int]] = None
+) -> Dict[int, Dict]:
+    """
+    Detect Double and Blank gameweeks in horizon.
+    
+    Args:
+        fixtures: List of fixture data
+        events: List of event data
+        horizon_start: First GW to check
+        horizon_end: Last GW to check
+        team_ids: List of team IDs to check for BGW. If None, derives from fixtures.
+    """
+    # Derive team_ids from fixtures if not provided
+    if team_ids is None:
+        all_teams = set()
+        for fix in fixtures:
+            all_teams.add(fix.get("team_h"))
+            all_teams.add(fix.get("team_a"))
+        team_ids = [t for t in all_teams if t is not None]
+    
     gw_info = {}
     
     for gw in range(horizon_start, horizon_end + 1):
@@ -1620,7 +2052,7 @@ def detect_dgw_bgw(fixtures: List[Dict], events: List[Dict], horizon_start: int,
                 team_fixtures[fix["team_a"]] += 1
         
         dgw_teams = [t for t, count in team_fixtures.items() if count >= 2]
-        bgw_teams = [t for t in range(1, 21) if team_fixtures.get(t, 0) == 0]
+        bgw_teams = [t for t in team_ids if team_fixtures.get(t, 0) == 0]
         
         gw_info[gw] = {
             "is_dgw": len(dgw_teams) > 0,
@@ -1873,14 +2305,32 @@ class TransferPath:
             "selling_price": transfer["in"]["price"],
             "xpts": transfer["in"]["xpts"],
             "form": transfer["in"]["form"],
+            "minutes": transfer["in"].get("minutes", 0),
         })
         self.bank += transfer["out"]["selling_price"] - transfer["in"]["price"]
         
+        # Store full player data for timeline building
         action = {
             "type": "transfer",
             "gw": gw,
-            "out": transfer["out"]["name"],
-            "in": transfer["in"]["name"],
+            "out": {
+                "id": transfer["out"]["id"],
+                "name": transfer["out"]["name"],
+                "team_id": transfer["out"].get("team_id", 0),
+                "position_id": transfer["out"].get("position_id", 0),
+                "price": transfer["out"].get("price", 0),
+                "selling_price": transfer["out"].get("selling_price", 0),
+            },
+            "in": {
+                "id": transfer["in"]["id"],
+                "name": transfer["in"]["name"],
+                "team_id": transfer["in"]["team_id"],
+                "position_id": transfer["in"]["position_id"],
+                "price": transfer["in"]["price"],
+                "xpts": transfer["in"]["xpts"],
+                "form": transfer["in"]["form"],
+                "minutes": transfer["in"].get("minutes", 0),
+            },
             "xpts_gain": transfer["xpts_gain"],
             "is_hit": is_hit,
         }
@@ -2281,6 +2731,7 @@ async def get_transfer_plan(
         "gw_info": gw_info,
         "bank": bank,
         "free_transfers": free_transfers,
+        "ft_disclaimer": "FT count is estimated from recent transfer history. Verify before confirming transfers.",
         "plan": plan,
     }
 
