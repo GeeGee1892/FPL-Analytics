@@ -1377,6 +1377,94 @@ async def get_manager_stats(manager_id: int):
                 logger.error(f"Failed to analyze wildcard: {e}")
             break  # Only analyze first wildcard
     
+    # Triple Captain Analysis
+    tc_analysis = None
+    for chip in chips_used:
+        if chip.get("name") == "3xc":
+            tc_gw = chip.get("event", 0)
+            try:
+                tc_picks = await fetch_gw_picks(manager_id, tc_gw)
+                if tc_picks:
+                    # Find the captain
+                    for pick in tc_picks.get("picks", []):
+                        if pick.get("is_captain"):
+                            captain_id = pick.get("element")
+                            captain = elements.get(captain_id, {})
+                            captain_history = player_histories.get(captain_id)
+                            
+                            if not captain_history:
+                                captain_history = await fetch_player_history(captain_id)
+                            
+                            # Get captain's points that GW
+                            captain_pts = get_player_gw_points(captain_history, tc_gw)
+                            
+                            tc_analysis = {
+                                "gw": tc_gw,
+                                "player": captain.get("web_name", "Unknown"),
+                                "captain_pts": captain_pts,
+                                "extra_pts": captain_pts * 2,  # TC gives 3x, captain gives 2x, so extra = pts * 2
+                            }
+                            break
+            except Exception as e:
+                logger.error(f"Failed to analyze TC: {e}")
+            break
+    
+    # Bench Boost Analysis
+    bb_analysis = None
+    for chip in chips_used:
+        if chip.get("name") == "bboost":
+            bb_gw = chip.get("event", 0)
+            # Find bench points for that GW
+            for gw_data in gw_history:
+                if gw_data.get("event") == bb_gw:
+                    bb_analysis = {
+                        "gw": bb_gw,
+                        "bench_pts": gw_data.get("points_on_bench", 0),
+                    }
+                    break
+            break
+    
+    # Free Hit Analysis
+    freehit_analysis = None
+    for chip in chips_used:
+        if chip.get("name") == "freehit":
+            fh_gw = chip.get("event", 0)
+            try:
+                # Compare FH team points vs what previous team would have scored
+                fh_picks = await fetch_gw_picks(manager_id, fh_gw)
+                prev_picks = await fetch_gw_picks(manager_id, fh_gw - 1) if fh_gw > 1 else None
+                
+                if fh_picks and prev_picks:
+                    # Get FH GW points (manager's actual points that GW)
+                    fh_pts = 0
+                    for gw_data in gw_history:
+                        if gw_data.get("event") == fh_gw:
+                            fh_pts = gw_data.get("points", 0)
+                            break
+                    
+                    # Calculate what previous team would have scored
+                    prev_team_ids = {p["element"] for p in prev_picks.get("picks", [])[:11]}  # Starting XI
+                    prev_team_pts = 0
+                    
+                    for pid in prev_team_ids:
+                        hist = player_histories.get(pid)
+                        if not hist:
+                            try:
+                                hist = await fetch_player_history(pid)
+                            except:
+                                hist = {"history": []}
+                        prev_team_pts += get_player_gw_points(hist, fh_gw)
+                    
+                    freehit_analysis = {
+                        "gw": fh_gw,
+                        "fh_pts": fh_pts,
+                        "prev_team_pts": prev_team_pts,
+                        "net_pts": fh_pts - prev_team_pts,
+                    }
+            except Exception as e:
+                logger.error(f"Failed to analyze FH: {e}")
+            break
+    
     return {
         "manager_id": manager_id,
         "current_gw": current_gw,
@@ -1390,6 +1478,9 @@ async def get_manager_stats(manager_id: int):
         "best_transfer": best_transfer,
         "worst_transfer": worst_transfer,
         "wildcard_analysis": wildcard_analysis,
+        "tc_analysis": tc_analysis,
+        "bb_analysis": bb_analysis,
+        "freehit_analysis": freehit_analysis,
         "chips_used": chips_used,
     }
 

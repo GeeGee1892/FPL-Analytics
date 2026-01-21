@@ -455,19 +455,107 @@
             width: 70px;
         }
 
-        /* ===== MANAGER CARD ===== */
-        .manager-card {
+        /* ===== COMPACT TEAM BANNER ===== */
+        .team-banner {
+            background: linear-gradient(135deg, var(--bg-card) 0%, rgba(0, 212, 170, 0.05) 100%);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 0.6rem 1rem;
+            margin-bottom: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        }
+        .team-banner-left {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+        .team-banner-name {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
+        }
+        .team-banner-name .team {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--accent-primary);
+        }
+        .team-banner-name .manager {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .team-banner-stats {
+            display: flex;
+            gap: 1.5rem;
+        }
+        .team-banner-stat {
+            text-align: center;
+        }
+        .team-banner-stat .value {
+            font-size: 1rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+        }
+        .team-banner-stat .label {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+        .team-banner .btn-sm {
+            padding: 0.35rem 0.75rem;
+            font-size: 0.75rem;
+        }
+
+        /* ===== THIN GW OPTIMIZER HEADER ===== */
+        .gw-optimizer-header {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
             margin-bottom: 1rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            flex-wrap: wrap;
+        }
+        .optimizer-title {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        .gw-badge {
+            background: var(--accent-primary);
+            color: var(--bg-primary);
+            padding: 0.25rem 0.6rem;
+            border-radius: 5px;
+            font-weight: 700;
+            font-size: 0.8rem;
+        }
+        .optimizer-summary {
+            display: flex;
             gap: 1rem;
         }
+        .optimizer-stat {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .optimizer-stat .value {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            color: var(--accent-primary);
+        }
+        .optimizer-stat .label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* Legacy manager-card hidden */
+        .manager-card { display: none; }
 
         .manager-info h2 {
             font-size: 1.1rem;
@@ -903,59 +991,7 @@
                 linear-gradient(to top, rgba(0, 212, 170, 0.05) 0%, transparent 20%);
         }
 
-        /* GW Optimizer Styles */
-        .gw-optimizer-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.5rem;
-            padding: 1rem 1.5rem;
-            background: linear-gradient(135deg, rgba(0, 212, 170, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
-            border-radius: 12px;
-            border: 1px solid rgba(0, 212, 170, 0.2);
-        }
-        
-        .optimizer-title {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            font-size: 1.25rem;
-            font-weight: 600;
-        }
-        
-        .gw-badge {
-            background: var(--accent-primary);
-            color: var(--bg-primary);
-            padding: 0.4rem 0.8rem;
-            border-radius: 6px;
-            font-size: 0.9rem;
-            font-weight: 700;
-            font-family: 'JetBrains Mono', monospace;
-        }
-        
-        .optimizer-summary {
-            display: flex;
-            gap: 2rem;
-        }
-        
-        .optimizer-stat {
-            text-align: center;
-        }
-        
-        .optimizer-stat .value {
-            font-size: 1.5rem;
-            font-weight: 700;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--accent-primary);
-        }
-        
-        .optimizer-stat .label {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
+        /* GW Optimizer Grid */
         .optimizer-grid {
             display: grid;
             grid-template-columns: 1fr 320px;
@@ -1615,6 +1651,68 @@
         .chip-used-gw { font-size: 0.8rem; color: var(--text-muted); }
         .no-chips { color: var(--text-muted); font-style: italic; }
 
+        /* Chip Analysis Buttons */
+        .chip-analysis-section { margin-bottom: 1.5rem; }
+        .chip-analysis-section h3 { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.75rem; }
+        .chip-buttons-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.75rem;
+        }
+        @media (max-width: 768px) {
+            .chip-buttons-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        .chip-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 0.75rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: default;
+        }
+        .chip-btn.used {
+            animation: chipPulse 2s ease-in-out infinite;
+            border-color: var(--accent-primary);
+            background: linear-gradient(135deg, rgba(0, 212, 170, 0.1) 0%, var(--bg-card) 100%);
+        }
+        .chip-btn.unused {
+            opacity: 0.5;
+        }
+        @keyframes chipPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(0, 212, 170, 0.4); }
+            50% { box-shadow: 0 0 0 6px rgba(0, 212, 170, 0); }
+        }
+        .chip-btn-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        .chip-btn-header .chip-status {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+        }
+        .chip-btn.used .chip-status {
+            color: var(--accent-primary);
+        }
+        .chip-btn-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+        }
+        .chip-btn.used .chip-btn-value {
+            color: var(--accent-primary);
+        }
+        .chip-btn-value.positive { color: #10b981 !important; }
+        .chip-btn-value.negative { color: #ef4444 !important; }
+        .chip-btn-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
         @media (max-width: 768px) {
             .stats-summary-grid { grid-template-columns: repeat(2, 1fr); }
             .wildcard-analysis { grid-template-columns: 1fr; text-align: center; }
@@ -1700,15 +1798,6 @@
     <main class="main-content">
         <!-- MY TEAM SECTION -->
         <section id="my-team" class="section active">
-            <!-- Minimized team header (shown after loading) -->
-            <div class="team-header-mini" id="teamHeaderMini" style="display: none;">
-                <div class="team-header-info">
-                    <span class="team-header-name" id="teamHeaderName">Team Name</span>
-                    <span class="team-header-id" id="teamHeaderId">ID: --</span>
-                </div>
-                <button class="btn btn-sm" onclick="showTeamInput()">✏️ Change Team</button>
-            </div>
-            
             <!-- Full input section (shown initially or when changing team) -->
             <div class="team-input-section" id="teamInputSection">
                 <div class="team-input-title">🚀 Enter Your FPL Team ID</div>
@@ -1723,7 +1812,26 @@
             </div>
 
             <div id="myTeamContent" style="display: none;">
-                <div class="manager-card" id="managerCard"></div>
+                <!-- Compact Team Banner -->
+                <div class="team-banner" id="teamBanner">
+                    <div class="team-banner-left">
+                        <div class="team-banner-name">
+                            <span class="team" id="bannerTeamName">Team Name</span>
+                            <span class="manager" id="bannerManagerName">Manager Name</span>
+                        </div>
+                        <div class="team-banner-stats">
+                            <div class="team-banner-stat">
+                                <div class="value" id="bannerTotalPts">-</div>
+                                <div class="label">Points</div>
+                            </div>
+                            <div class="team-banner-stat">
+                                <div class="value" id="bannerOR">-</div>
+                                <div class="label">Rank</div>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn btn-sm" onclick="showTeamInput()">✏️ Change</button>
+                </div>
 
                 <div class="rec-tabs">
                     <button class="rec-tab active" data-panel="squad">⚡ GW Optimizer</button>
@@ -1739,7 +1847,7 @@
                         <div class="optimizer-summary" id="optimizerSummary">
                             <div class="optimizer-stat">
                                 <span class="value" id="optimizerTotalXpts">--</span>
-                                <span class="label">Total xPts</span>
+                                <span class="label">xPts</span>
                             </div>
                         </div>
                     </div>
@@ -1773,6 +1881,33 @@
                     </div>
                     
                     <div id="statsContent" style="display: none;">
+                        <!-- Chip Analysis Buttons -->
+                        <div class="chip-analysis-section">
+                            <h3>🎫 Chip Performance</h3>
+                            <div class="chip-buttons-grid" id="chipButtonsGrid">
+                                <div class="chip-btn unused" id="chipBtnWC" data-chip="wildcard">
+                                    <div class="chip-btn-header"><span class="chip-badge wc">WC</span><span class="chip-status">Not Used</span></div>
+                                    <div class="chip-btn-value">-</div>
+                                    <div class="chip-btn-label">net pts (5 GW)</div>
+                                </div>
+                                <div class="chip-btn unused" id="chipBtnFH" data-chip="freehit">
+                                    <div class="chip-btn-header"><span class="chip-badge fh">FH</span><span class="chip-status">Not Used</span></div>
+                                    <div class="chip-btn-value">-</div>
+                                    <div class="chip-btn-label">vs prev team</div>
+                                </div>
+                                <div class="chip-btn unused" id="chipBtnTC" data-chip="3xc">
+                                    <div class="chip-btn-header"><span class="chip-badge tc">TC</span><span class="chip-status">Not Used</span></div>
+                                    <div class="chip-btn-value">-</div>
+                                    <div class="chip-btn-label">extra pts</div>
+                                </div>
+                                <div class="chip-btn unused" id="chipBtnBB" data-chip="bboost">
+                                    <div class="chip-btn-header"><span class="chip-badge bb">BB</span><span class="chip-status">Not Used</span></div>
+                                    <div class="chip-btn-value">-</div>
+                                    <div class="chip-btn-label">bench pts</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Summary Cards - 4 cards -->
                         <div class="stats-summary-grid">
                             <div class="stat-summary-card best">
@@ -1809,25 +1944,11 @@
                             </div>
                         </div>
 
-                        <!-- Wildcard Analysis -->
-                        <div class="stats-section wildcard-section" id="wildcardSection" style="display: none;">
-                            <h3>🃏 Wildcard Analysis</h3>
-                            <div class="wildcard-analysis" id="wildcardAnalysis"></div>
-                        </div>
-
                         <!-- OR Graph -->
                         <div class="stats-section">
                             <h3>📈 Overall Rank Progression</h3>
                             <div class="or-chart-container">
                                 <canvas id="orChart"></canvas>
-                            </div>
-                        </div>
-
-                        <!-- Chips Used -->
-                        <div class="stats-section">
-                            <h3>🎫 Chips Used</h3>
-                            <div class="chips-used-grid" id="chipsUsedGrid">
-                                <span class="no-chips">No chips used yet</span>
                             </div>
                         </div>
                     </div>
@@ -2134,46 +2255,36 @@
             
             // Show content area with loading state
             document.getElementById('myTeamContent').style.display = 'block';
-            document.getElementById('managerCard').innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading team...</div>';
+            document.getElementById('teamBanner').style.opacity = '0.5';
 
             try {
                 const teamResponse = await fetch(`${API_BASE}/api/my-team/${teamId}`);
                 if (!teamResponse.ok) throw new Error('Team not found');
                 myTeamData = await teamResponse.json();
                 
-                // Hide full input, show minimized header
+                // Hide full input
                 document.getElementById('teamInputSection').style.display = 'none';
-                document.getElementById('teamHeaderMini').style.display = 'flex';
-                document.getElementById('teamHeaderName').textContent = myTeamData.manager.team_name;
-                document.getElementById('teamHeaderId').textContent = `ID: ${teamId}`;
+                document.getElementById('teamBanner').style.opacity = '1';
                 
-                renderManagerCard(myTeamData);
+                // Update compact banner
+                const m = myTeamData.manager;
+                document.getElementById('bannerTeamName').textContent = m.team_name || 'My Team';
+                document.getElementById('bannerManagerName').textContent = m.name || 'Manager';
+                document.getElementById('bannerTotalPts').textContent = m.total_points?.toLocaleString() || '-';
+                document.getElementById('bannerOR').textContent = formatRank(m.overall_rank);
+                
                 renderOptimizedSquad(myTeamData);
                 
                 // Load stats in background
                 loadManagerStats(teamId);
             } catch (error) {
-                document.getElementById('managerCard').innerHTML = `<div class="empty-state"><div class="empty-state-icon">❌</div><p>${error.message}</p></div>`;
+                document.getElementById('teamBanner').innerHTML = `<div class="empty-state"><div class="empty-state-icon">❌</div><p>${error.message}</p></div>`;
             }
         }
         
         function showTeamInput() {
-            document.getElementById('teamHeaderMini').style.display = 'none';
             document.getElementById('teamInputSection').style.display = 'block';
             document.getElementById('teamIdInput').focus();
-        }
-
-        function renderManagerCard(data) {
-            const m = data.manager;
-            document.getElementById('managerCard').innerHTML = `
-                <div class="manager-info">
-                    <h2>${m.name}</h2>
-                </div>
-                <div class="manager-stats">
-                    <div class="manager-stat"><div class="value">${m.total_points?.toLocaleString() || '-'}</div><div class="label">Total Points</div></div>
-                    <div class="manager-stat"><div class="value">${formatRank(m.overall_rank)}</div><div class="label">Overall Rank</div></div>
-                </div>
-            `;
         }
         
         function formatRank(rank) {
@@ -2352,50 +2463,102 @@
             document.getElementById('highestBenchPts').textContent = `${stats.highest_bench?.points || 0} pts`;
             document.getElementById('highestBenchGw').textContent = `GW ${stats.highest_bench?.gw || '-'}`;
             
-            // Wildcard Analysis
-            if (stats.wildcard_analysis) {
-                const wc = stats.wildcard_analysis;
-                const netClass = wc.net_pts >= 0 ? 'positive' : 'negative';
-                const netSign = wc.net_pts >= 0 ? '+' : '';
-                
-                document.getElementById('wildcardSection').style.display = 'block';
-                document.getElementById('wildcardAnalysis').innerHTML = `
-                    <div class="wildcard-team">
-                        <div class="wildcard-team-label">Players Out (${wc.players_out})</div>
-                        <div class="wildcard-team-pts old">${wc.pts_old_team_5gw} pts</div>
-                    </div>
-                    <div class="wildcard-vs">vs</div>
-                    <div class="wildcard-team">
-                        <div class="wildcard-team-label">Players In (${wc.players_in})</div>
-                        <div class="wildcard-team-pts new">${wc.pts_new_team_5gw} pts</div>
-                    </div>
-                    <div class="wildcard-net" style="grid-column: 1 / -1;">
-                        <div class="wildcard-net-label">Net Effect (${wc.gw_range})</div>
-                        <div class="wildcard-net-value ${netClass}">${netSign}${wc.net_pts} pts</div>
-                        <div class="wildcard-range">WC played GW${wc.gw}</div>
-                    </div>
-                `;
-            } else {
-                document.getElementById('wildcardSection').style.display = 'none';
-            }
+            // Chip Analysis Buttons
+            renderChipButtons(stats);
             
             // OR Chart
             renderORChart(stats.or_progression);
             
-            // Chips used
-            if (stats.chips_used?.length > 0) {
-                const chipNames = { 'wildcard': 'WC', '3xc': 'TC', 'bboost': 'BB', 'freehit': 'FH' };
-                const chipColors = { 'wildcard': 'wc', '3xc': 'tc', 'bboost': 'bb', 'freehit': 'fh' };
-                document.getElementById('chipsUsedGrid').innerHTML = stats.chips_used.map(c => `
-                    <div class="chip-used-item">
-                        <span class="chip-badge ${chipColors[c.name] || ''}">${chipNames[c.name] || c.name}</span>
-                        <span class="chip-used-gw">GW ${c.event}</span>
-                    </div>
-                `).join('');
-            }
-            
             document.getElementById('statsLoading').style.display = 'none';
             document.getElementById('statsContent').style.display = 'block';
+        }
+        
+        function renderChipButtons(stats) {
+            const chipsUsed = stats.chips_used || [];
+            const chipMap = {};
+            chipsUsed.forEach(c => { chipMap[c.name] = c; });
+            
+            // Wildcard
+            const wcBtn = document.getElementById('chipBtnWC');
+            if (stats.wildcard_analysis) {
+                const wc = stats.wildcard_analysis;
+                wcBtn.classList.remove('unused');
+                wcBtn.classList.add('used');
+                wcBtn.querySelector('.chip-status').textContent = `GW ${wc.gw}`;
+                const sign = wc.net_pts >= 0 ? '+' : '';
+                wcBtn.querySelector('.chip-btn-value').textContent = `${sign}${wc.net_pts}`;
+                wcBtn.querySelector('.chip-btn-value').className = `chip-btn-value ${wc.net_pts >= 0 ? 'positive' : 'negative'}`;
+            } else {
+                wcBtn.classList.add('unused');
+                wcBtn.classList.remove('used');
+                wcBtn.querySelector('.chip-status').textContent = 'Not Used';
+                wcBtn.querySelector('.chip-btn-value').textContent = '-';
+            }
+            
+            // Free Hit
+            const fhBtn = document.getElementById('chipBtnFH');
+            if (stats.freehit_analysis) {
+                const fh = stats.freehit_analysis;
+                fhBtn.classList.remove('unused');
+                fhBtn.classList.add('used');
+                fhBtn.querySelector('.chip-status').textContent = `GW ${fh.gw}`;
+                const sign = fh.net_pts >= 0 ? '+' : '';
+                fhBtn.querySelector('.chip-btn-value').textContent = `${sign}${fh.net_pts}`;
+                fhBtn.querySelector('.chip-btn-value').className = `chip-btn-value ${fh.net_pts >= 0 ? 'positive' : 'negative'}`;
+            } else if (chipMap['freehit']) {
+                fhBtn.classList.remove('unused');
+                fhBtn.classList.add('used');
+                fhBtn.querySelector('.chip-status').textContent = `GW ${chipMap['freehit'].event}`;
+                fhBtn.querySelector('.chip-btn-value').textContent = '?';
+            } else {
+                fhBtn.classList.add('unused');
+                fhBtn.classList.remove('used');
+                fhBtn.querySelector('.chip-status').textContent = 'Not Used';
+                fhBtn.querySelector('.chip-btn-value').textContent = '-';
+            }
+            
+            // Triple Captain
+            const tcBtn = document.getElementById('chipBtnTC');
+            if (stats.tc_analysis) {
+                const tc = stats.tc_analysis;
+                tcBtn.classList.remove('unused');
+                tcBtn.classList.add('used');
+                tcBtn.querySelector('.chip-status').textContent = `GW ${tc.gw}`;
+                tcBtn.querySelector('.chip-btn-value').textContent = `+${tc.extra_pts}`;
+                tcBtn.querySelector('.chip-btn-value').className = 'chip-btn-value positive';
+                tcBtn.querySelector('.chip-btn-label').textContent = tc.player || 'extra pts';
+            } else if (chipMap['3xc']) {
+                tcBtn.classList.remove('unused');
+                tcBtn.classList.add('used');
+                tcBtn.querySelector('.chip-status').textContent = `GW ${chipMap['3xc'].event}`;
+                tcBtn.querySelector('.chip-btn-value').textContent = '?';
+            } else {
+                tcBtn.classList.add('unused');
+                tcBtn.classList.remove('used');
+                tcBtn.querySelector('.chip-status').textContent = 'Not Used';
+                tcBtn.querySelector('.chip-btn-value').textContent = '-';
+            }
+            
+            // Bench Boost
+            const bbBtn = document.getElementById('chipBtnBB');
+            if (stats.bb_analysis) {
+                const bb = stats.bb_analysis;
+                bbBtn.classList.remove('unused');
+                bbBtn.classList.add('used');
+                bbBtn.querySelector('.chip-status').textContent = `GW ${bb.gw}`;
+                bbBtn.querySelector('.chip-btn-value').textContent = `+${bb.bench_pts}`;
+                bbBtn.querySelector('.chip-btn-value').className = 'chip-btn-value positive';
+            } else if (chipMap['bboost']) {
+                bbBtn.classList.remove('unused');
+                bbBtn.classList.add('used');
+                bbBtn.querySelector('.chip-status').textContent = `GW ${chipMap['bboost'].event}`;
+                bbBtn.querySelector('.chip-btn-value').textContent = '?';
+            } else {
+                bbBtn.classList.add('unused');
+                bbBtn.classList.remove('used');
+                bbBtn.querySelector('.chip-status').textContent = 'Not Used';
+                bbBtn.querySelector('.chip-btn-value').textContent = '-';
+            }
         }
         
         function renderORChart(progression) {
