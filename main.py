@@ -76,13 +76,6 @@ class DataCache:
         self.last_update: Optional[datetime] = None
         self.cache_duration = 300  # 5 minutes
 
-        self.fixtures_last_update: Optional[datetime] = None
-
-    def fixtures_is_stale(self) -> bool:
-        if self.fixtures_last_update is None:
-            return True
-        return (datetime.now() - self.fixtures_last_update).seconds > self.cache_duration
-
     def is_stale(self) -> bool:
         if self.last_update is None:
             return True
@@ -109,7 +102,7 @@ async def fetch_fpl_data():
 
 async def fetch_fixtures():
     """Fetch fixture data"""
-    if cache.fixtures_data and not cache.fixtures_is_stale():
+    if cache.fixtures_data:
         return cache.fixtures_data
 
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -117,7 +110,6 @@ async def fetch_fixtures():
             response = await client.get(f"{FPL_BASE_URL}/fixtures/")
             response.raise_for_status()
             cache.fixtures_data = response.json()
-            cache.fixtures_last_update = datetime.now()
             return cache.fixtures_data
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"FPL API unavailable: {str(e)}")
@@ -176,27 +168,11 @@ def calculate_minutes_factor(
     # Start ratio reveals if player is regularly selected
     available_gws = max(current_gw - 1, 1)
     start_ratio = starts / available_gws
-    # Clamp to 1.0 to avoid DGW/reschedule artifacts
-    start_ratio = min(1.0, start_ratio)
     
     # Check current availability
     is_available = status == 'a' and (chance_of_playing is None or chance_of_playing >= 75)
     is_doubtful = status == 'd' or (chance_of_playing is not None and 25 <= chance_of_playing < 75)
     is_out = status in ('i', 'u', 's') or (chance_of_playing is not None and chance_of_playing < 25)
-
-    # Small sample: avoid over-trusting mins_per_start thresholds
-    if starts < 3:
-        if is_out:
-            base, reason = 0.25, "small_sample_out"
-        elif is_doubtful:
-            base, reason = 0.55, "small_sample_doubtful"
-        else:
-            base, reason = 0.75, "small_sample_available"
-        if chance_of_playing is not None:
-            cp = max(0, min(100, chance_of_playing)) / 100
-            base *= 0.5 + 0.5 * cp
-        return round(base, 3), reason
-
     
     # NAILED STARTER: High mins per start (80+) = plays full games when selected
     if mins_per_start >= 80:
@@ -254,72 +230,83 @@ def calculate_expected_points(
     teams_dict: Dict
 ) -> tuple[float, float, str]:
     """
-    Expected points projection (horizon = len(upcoming_fixtures[:8])).
-
-    Key changes vs v1:
-    - Uses per-90 rates (avoids inflating sub-heavy players by dividing by starts).
-    - Uses Poisson clean-sheet probability: cs_prob = exp(-xGC_match).
-    - Sums per-fixture xPts (fixture count matters; DGWs naturally add value).
-    - Applies minutes_factor once (removes extra nailed 1.1 multiplier).
+    Calculate expected points with REFINED minutes analysis
+    Distinguishes between rotation risk and injury absence
+    
+    Returns: (expected_pts, minutes_factor, minutes_reason)
     """
-    total_minutes = int(player.get("minutes", 0) or 0)
-    starts = int(player.get("starts", 0) or 0)
-    chance_of_playing = player.get("chance_of_playing_next_round", None)
+    # Get player stats
+    total_minutes = player.get("minutes", 0)
+    starts = player.get("starts", 0)
+    chance_of_playing = player.get("chance_of_playing_next_round")
     status = player.get("status", "a")
-
+    
+    # Get base stats from FPL API
     xG = float(player.get("expected_goals", 0) or 0)
     xA = float(player.get("expected_assists", 0) or 0)
+    xGI = float(player.get("expected_goal_involvements", 0) or 0)
     xGC = float(player.get("expected_goals_conceded", 0) or 0)
-
+    
+    form = float(player.get("form", 0) or 0)
     points_per_game = float(player.get("points_per_game", 0) or 0)
-
+    
+    # Calculate minutes factor using NEW algorithm
     minutes_factor, minutes_reason = calculate_minutes_factor(
-        total_minutes=total_minutes,
-        starts=starts,
-        current_gw=current_gw,
-        chance_of_playing=chance_of_playing,
-        status=status
+        total_minutes, starts, current_gw, chance_of_playing, status
     )
-
-    # Convert season totals to per-90.
-    mins90 = max(total_minutes / 90.0, 0.1)
-    xG90 = xG / mins90
-    xA90 = xA / mins90
-    xGC90 = xGC / mins90  # expected goals conceded per 90 while on pitch
-
-    # Base xPts per 90 (before fixtures/minutes factor)
-    # Appearance baseline: assume 60+ mins if selected (minutes_factor will reduce for rotation/sub risk).
-    app_pts = 2.0
-
-    # Poisson clean sheet probability (approx).
-    cs_prob = math.exp(-max(0.0, xGC90))
-
+    
+    games_played = max(starts, 1)
+    
+    # Base expected points per 90
     if position == 1:  # GKP
-        base90 = app_pts + 4.0 * cs_prob + 0.5
+        base_xpts = (
+            2 +  # Appearance
+            (max(0, 1 - xGC / max(games_played, 1)) * 4) +  # Clean sheet potential
+            0.5  # Save points estimate
+        )
     elif position == 2:  # DEF
-        base90 = app_pts + 4.0 * cs_prob + (6.0 * xG90) + (3.0 * xA90)
+        base_xpts = (
+            2 +  # Appearance
+            (max(0, 1 - xGC / max(games_played, 1)) * 4) +  # Clean sheet potential
+            xG * 6 / max(games_played, 1) +  # Goals
+            xA * 3 / max(games_played, 1)   # Assists
+        )
     elif position == 3:  # MID
-        base90 = app_pts + 1.0 * cs_prob + (5.0 * xG90) + (3.0 * xA90)
+        base_xpts = (
+            2 +  # Appearance
+            xG * 5 / max(games_played, 1) +  # Goals
+            xA * 3 / max(games_played, 1) +  # Assists
+            (max(0, 1 - xGC / max(games_played, 1)) * 1)  # Clean sheet (1 point)
+        )
     else:  # FWD
-        base90 = app_pts + (4.0 * xG90) + (3.0 * xA90)
-
-    # Blend with actual PPG for stability (keep your 40/60 idea).
-    base90 = 0.6 * base90 + 0.4 * points_per_game
-
-    # Sum fixtures (max 8).
-    horizon = upcoming_fixtures[:8]
-    if not horizon:
-        total = base90
-    else:
-        total = 0.0
-        for fix in horizon:
+        base_xpts = (
+            2 +  # Appearance
+            xG * 4 / max(games_played, 1) +  # Goals
+            xA * 3 / max(games_played, 1)   # Assists
+        )
+    
+    # Blend with actual performance
+    if points_per_game > 0:
+        base_xpts = (base_xpts * 0.4 + points_per_game * 0.6)
+    
+    # Apply fixture difficulty
+    if upcoming_fixtures:
+        fixture_multiplier = 0
+        for fix in upcoming_fixtures[:8]:  # Max 8 GWs
             fdr = fix.get("difficulty", 3)
-            mult = FDR_MULTIPLIERS.get(fdr, 1.0)
-            total += base90 * mult
-
-    expected_pts = total * minutes_factor
+            fixture_multiplier += FDR_MULTIPLIERS.get(fdr, 1.0)
+        fixture_multiplier /= len(upcoming_fixtures[:8])
+    else:
+        fixture_multiplier = 1.0
+    
+    # Apply minutes factor
+    expected_pts = base_xpts * minutes_factor * fixture_multiplier
+    
+    # Bonus for truly nailed starters
+    if minutes_reason == "nailed_starter":
+        expected_pts *= 1.1
+    
     return round(expected_pts, 2), minutes_factor, minutes_reason
-
 
 def get_player_upcoming_fixtures(
     player_team: int,
@@ -354,12 +341,24 @@ def get_player_upcoming_fixtures(
     
     return sorted(upcoming, key=lambda x: x["gameweek"])
 
+@app.get("/api")
+async def api_root():
+    """Simple API heartbeat"""
+    return {"message": "FPL Analytics API", "docs": "/docs"}
+
 @app.get("/")
 async def root():
-    """Serve the frontend"""
-    frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "index.html")
+    """Serve the frontend (index.html) from the same directory as this file."""
+    base_dir = os.path.dirname(__file__)
+    # Prefer index.html (Render Static Site convention)
+    frontend_path = os.path.join(base_dir, "index.html")
     if os.path.exists(frontend_path):
         return FileResponse(frontend_path)
+    # Fallback: if you kept the patched filename
+    patched_path = os.path.join(base_dir, "index_patched.html")
+    if os.path.exists(patched_path):
+        return FileResponse(patched_path)
+    # If no frontend is bundled, keep the API response
     return {"message": "FPL Analytics API", "docs": "/docs"}
 
 @app.get("/api/bootstrap")
@@ -393,8 +392,7 @@ async def get_rankings(
     current_gw = get_current_gameweek(events)
     
     # Adjust gw_start to be at least current gameweek
-    # NOTE: allow historical windows if gw_start < current_gw (requires element-summary aggregation to be truly accurate)
-    effective_gw_start = gw_start
+    effective_gw_start = max(gw_start, current_gw)
     effective_gw_end = min(gw_end, 38)
     
     position_id = POSITION_ID_MAP[position.value]
@@ -971,10 +969,10 @@ async def get_transfer_recommendations(
     }
 
 # Serve static files
-frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
-if os.path.exists(frontend_dir):
-    app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
-
+# Serve static assets if present.
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
