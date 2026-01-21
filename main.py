@@ -768,6 +768,7 @@ async def get_rankings(
     min_minutes: int = Query(MIN_MINUTES_DEFAULT, ge=0),
     min_price: float = Query(0, ge=0),
     max_price: float = Query(20, ge=0, le=20),
+    max_ownership: float = Query(100, ge=0, le=100),
     limit: int = Query(50, ge=1, le=200),
     sort_by: str = Query("xpts", pattern="^(xpts|price|form|ownership|defcon_per_90|saves_per_90|expected_minutes|total_points)$"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$")
@@ -795,8 +796,13 @@ async def get_rankings(
         
         total_minutes = player.get("minutes", 0)
         price = player["now_cost"] / 10
+        ownership = float(player.get("selected_by_percent", 0) or 0)
         
         if total_minutes < min_minutes or price < min_price or price > max_price:
+            continue
+        
+        # Filter by max ownership (for differentials)
+        if ownership > max_ownership:
             continue
         
         upcoming = get_player_upcoming_fixtures(player["team"], fixtures, gw_start, gw_end, teams)
@@ -1908,11 +1914,129 @@ def solve_transfer_plan(
     # Find best path
     best_path = max(paths, key=lambda p: p.total_xpts)
     
-    # Build timeline
+    # Build timeline with per-GW squad snapshots
     timeline = []
+    current_squad = squad.copy()
+    
     for gw in range(start_gw, end_gw):
         gw_actions = [a for a in best_path.actions if a.get("gw") == gw]
         chip = chip_gws.get(gw)
+        
+        # Apply transfers for this GW to get the squad state
+        for action in gw_actions:
+            if action["type"] == "transfer":
+                # Remove the out player and add the in player
+                current_squad = [p for p in current_squad if p["id"] != action["out"]["id"]]
+                current_squad.append({
+                    "id": action["in"]["id"],
+                    "name": action["in"]["name"],
+                    "team_id": action["in"].get("team_id", 0),
+                    "position_id": action["in"].get("position_id", 0),
+                    "price": action["in"].get("price", 0),
+                    "selling_price": action["in"].get("price", 0),
+                    "xpts": action["in"].get("xpts", 0),
+                    "form": action["in"].get("form", 0),
+                    "minutes": action["in"].get("minutes", 0),
+                })
+        
+        # Calculate xPts for each player for this specific GW
+        squad_with_gw_xpts = []
+        for player in current_squad:
+            element = elements.get(player["id"], {})
+            position_id = player.get("position_id") or element.get("element_type", 0)
+            team_id = player.get("team_id") or element.get("team", 0)
+            
+            upcoming = get_player_upcoming_fixtures(team_id, fixtures, gw, gw + 1, teams_dict)
+            if upcoming:
+                stats = calculate_expected_points(element, position_id, gw, upcoming, teams_dict, fixtures, events)
+                gw_xpts = stats.get("xpts", 0) / max(len(upcoming), 1)  # Single GW xPts
+            else:
+                gw_xpts = player.get("xpts", 0) / horizon if horizon > 0 else 0
+            
+            squad_with_gw_xpts.append({
+                "id": player["id"],
+                "name": player.get("name", element.get("web_name", "?")),
+                "team": teams_dict.get(team_id, {}).get("short_name", "???"),
+                "position": POSITION_MAP.get(position_id, "?"),
+                "position_id": position_id,
+                "xpts": round(gw_xpts, 1),
+                "price": player.get("price", element.get("now_cost", 0) / 10),
+            })
+        
+        # Sort by position for lineup selection, then by xPts
+        squad_with_gw_xpts.sort(key=lambda p: (p["position_id"], -p["xpts"]))
+        
+        # Select starting XI (best by xPts, respecting position constraints)
+        gkps = [p for p in squad_with_gw_xpts if p["position_id"] == 1]
+        defs = [p for p in squad_with_gw_xpts if p["position_id"] == 2]
+        mids = [p for p in squad_with_gw_xpts if p["position_id"] == 3]
+        fwds = [p for p in squad_with_gw_xpts if p["position_id"] == 4]
+        
+        # Sort each position by xPts
+        defs.sort(key=lambda p: -p["xpts"])
+        mids.sort(key=lambda p: -p["xpts"])
+        fwds.sort(key=lambda p: -p["xpts"])
+        
+        # Standard formation logic: pick best 11 while respecting min/max constraints
+        # Min: 1 GKP, 3 DEF, 2 MID, 1 FWD
+        starting_xi = []
+        bench = []
+        
+        # Always 1 GKP
+        if gkps:
+            starting_xi.append(gkps[0])
+            if len(gkps) > 1:
+                bench.extend(gkps[1:])
+        
+        # Pick best outfield players (10 spots)
+        outfield = defs + mids + fwds
+        outfield.sort(key=lambda p: -p["xpts"])
+        
+        # Ensure minimums: 3 DEF, 2 MID, 1 FWD
+        def_count = mid_count = fwd_count = 0
+        remaining = []
+        
+        for p in outfield:
+            if p["position_id"] == 2 and def_count < 3:
+                starting_xi.append(p)
+                def_count += 1
+            elif p["position_id"] == 3 and mid_count < 2:
+                starting_xi.append(p)
+                mid_count += 1
+            elif p["position_id"] == 4 and fwd_count < 1:
+                starting_xi.append(p)
+                fwd_count += 1
+            else:
+                remaining.append(p)
+        
+        # Fill remaining spots (up to 11 total) with best remaining players
+        # Respecting max: 5 DEF, 5 MID, 3 FWD
+        remaining.sort(key=lambda p: -p["xpts"])
+        for p in remaining:
+            if len(starting_xi) >= 11:
+                bench.append(p)
+            else:
+                pos_in_xi = len([x for x in starting_xi if x["position_id"] == p["position_id"]])
+                max_pos = {2: 5, 3: 5, 4: 3}.get(p["position_id"], 1)
+                if pos_in_xi < max_pos:
+                    starting_xi.append(p)
+                else:
+                    bench.append(p)
+        
+        # Sort starting XI by position for display
+        starting_xi.sort(key=lambda p: (p["position_id"], -p["xpts"]))
+        
+        # Sort bench by xPts (optimal bench order)
+        bench.sort(key=lambda p: -p["xpts"])
+        
+        # Captain is highest xPts in starting XI
+        captain = max(starting_xi, key=lambda p: p["xpts"]) if starting_xi else None
+        vice_captain = sorted(starting_xi, key=lambda p: -p["xpts"])[1] if len(starting_xi) > 1 else None
+        
+        # Calculate total GW xPts
+        gw_total_xpts = sum(p["xpts"] for p in starting_xi)
+        if captain:
+            gw_total_xpts += captain["xpts"]  # Captain counted twice
         
         timeline.append({
             "gw": gw,
@@ -1921,6 +2045,11 @@ def solve_transfer_plan(
             "is_dgw": gw_info[gw]["is_dgw"],
             "is_bgw": gw_info[gw]["is_bgw"],
             "dgw_count": gw_info[gw]["dgw_count"],
+            "starting_xi": starting_xi,
+            "bench": bench,
+            "captain": captain,
+            "vice_captain": vice_captain,
+            "gw_xpts": round(gw_total_xpts, 1),
         })
     
     return {
@@ -1940,7 +2069,7 @@ def solve_transfer_plan(
 @app.get("/api/planner/{manager_id}")
 async def get_transfer_plan(
     manager_id: int,
-    horizon: int = Query(5, ge=1, le=8),
+    horizon: int = Query(3, ge=1, le=6),
     max_hits: int = Query(1, ge=0, le=3),
     wc_gw: Optional[int] = Query(None, ge=1, le=38),
     tc_gw: Optional[int] = Query(None, ge=1, le=38),

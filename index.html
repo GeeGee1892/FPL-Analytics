@@ -219,6 +219,55 @@
         }
 
         /* ===== TEAM INPUT ===== */
+        .team-header-mini {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 0.75rem 1.25rem;
+            margin-bottom: 1rem;
+        }
+        
+        .team-header-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .team-header-name {
+            font-weight: 600;
+            font-size: 1rem;
+            color: var(--text-primary);
+        }
+        
+        .team-header-id {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            background: var(--bg-tertiary);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+        
+        .btn-sm {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.8rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .btn-sm:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            border-color: var(--accent-primary);
+        }
+
         .team-input-section {
             background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-tertiary) 100%);
             border: 1px solid var(--border-color);
@@ -408,22 +457,22 @@
 
         /* ===== MANAGER CARD ===== */
         .manager-card {
-            background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-tertiary) 100%);
+            background: var(--bg-card);
             border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 1.5rem 2rem;
-            margin-bottom: 1.5rem;
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 1rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
-            gap: 1.5rem;
+            gap: 1rem;
         }
 
         .manager-info h2 {
-            font-size: 1.4rem;
-            font-weight: 700;
-            margin-bottom: 0.25rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 0;
         }
 
         .manager-info .team-name {
@@ -434,7 +483,7 @@
 
         .manager-stats {
             display: flex;
-            gap: 2.5rem;
+            gap: 2rem;
         }
 
         .manager-stat {
@@ -442,19 +491,17 @@
         }
 
         .manager-stat .value {
-            font-size: 1.6rem;
+            font-size: 1.25rem;
             font-weight: 700;
             font-family: 'JetBrains Mono', monospace;
-            background: var(--gradient-1);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: var(--accent-primary);
         }
 
         .manager-stat .label {
-            font-size: 0.7rem;
+            font-size: 0.65rem;
             color: var(--text-muted);
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.5px;
         }
 
         /* ===== REC TABS ===== */
@@ -1213,6 +1260,271 @@
         .plan-stat-label { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; }
         .plan-stat-value { font-size: 1.75rem; font-weight: 700; color: var(--text); }
         
+        /* Horizon Slider */
+        .slider-group { min-width: 150px; }
+        .horizon-slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--bg-tertiary);
+            outline: none;
+            -webkit-appearance: none;
+            margin-top: 0.5rem;
+        }
+        .horizon-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--accent-primary);
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        .horizon-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--accent-primary);
+            cursor: pointer;
+            border: none;
+        }
+        
+        /* GW Planner Tabs */
+        .gw-planner-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        .gw-tab {
+            padding: 0.75rem 1.25rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 80px;
+        }
+        .gw-tab:hover { border-color: var(--accent-primary); }
+        .gw-tab.active {
+            background: linear-gradient(135deg, rgba(0, 212, 170, 0.15) 0%, var(--bg-card) 100%);
+            border-color: var(--accent-primary);
+        }
+        .gw-tab .gw-num {
+            font-weight: 700;
+            font-size: 1rem;
+            color: var(--text-primary);
+        }
+        .gw-tab .gw-xpts {
+            font-size: 0.75rem;
+            color: var(--accent-primary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .gw-tab .gw-badge-row {
+            display: flex;
+            gap: 0.25rem;
+            margin-top: 0.25rem;
+        }
+        .gw-tab .mini-badge {
+            font-size: 0.6rem;
+            padding: 0.1rem 0.3rem;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+        .gw-tab .mini-badge.dgw { background: #10b981; color: #fff; }
+        .gw-tab .mini-badge.transfer { background: var(--accent-primary); color: var(--bg-primary); }
+        .gw-tab .mini-badge.hit { background: #ef4444; color: #fff; }
+        
+        /* GW Detail Panel */
+        .gw-detail-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+        .gw-detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .gw-detail-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        .gw-detail-xpts {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-primary);
+        }
+        
+        /* Transfers section in detail */
+        .gw-transfers-section {
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+        }
+        .gw-transfers-section h4 {
+            margin-bottom: 0.75rem;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+        .gw-transfer-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.5rem 0;
+        }
+        .gw-transfer-item .out { color: #ef4444; }
+        .gw-transfer-item .arrow { color: var(--text-muted); }
+        .gw-transfer-item .in { color: var(--accent-primary); font-weight: 600; }
+        .gw-transfer-item .hit-badge {
+            font-size: 0.7rem;
+            padding: 0.15rem 0.4rem;
+            background: #ef4444;
+            color: #fff;
+            border-radius: 3px;
+            margin-left: auto;
+        }
+        
+        /* Squad grid in detail */
+        .gw-squad-grid {
+            display: grid;
+            grid-template-columns: 1fr 280px;
+            gap: 1.5rem;
+        }
+        @media (max-width: 900px) {
+            .gw-squad-grid { grid-template-columns: 1fr; }
+        }
+        
+        .gw-lineup-section h4, .gw-sidebar-section h4 {
+            margin-bottom: 0.75rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .gw-lineup-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .gw-lineup-row {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: center;
+        }
+        .gw-player-card {
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            padding: 0.5rem 0.75rem;
+            min-width: 90px;
+            text-align: center;
+            position: relative;
+        }
+        .gw-player-card.captain {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, var(--bg-tertiary) 100%);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+        .gw-player-card .name { font-size: 0.85rem; font-weight: 600; }
+        .gw-player-card .team { font-size: 0.7rem; color: var(--text-muted); }
+        .gw-player-card .xpts {
+            font-size: 0.8rem;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-primary);
+            margin-top: 0.25rem;
+        }
+        .gw-player-card .captain-badge {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 18px;
+            height: 18px;
+            background: #f59e0b;
+            color: #000;
+            border-radius: 50%;
+            font-size: 0.65rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .gw-sidebar-section {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .gw-captain-pick {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, var(--bg-tertiary) 100%);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            border-radius: 8px;
+            padding: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .gw-captain-pick .badge {
+            width: 28px;
+            height: 28px;
+            background: #f59e0b;
+            color: #000;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.8rem;
+        }
+        .gw-captain-pick .info { flex: 1; }
+        .gw-captain-pick .name { font-weight: 600; font-size: 0.9rem; }
+        .gw-captain-pick .meta { font-size: 0.75rem; color: var(--text-muted); }
+        .gw-captain-pick .xpts {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: var(--accent-primary);
+        }
+        
+        .gw-bench-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        .gw-bench-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.6rem;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+        .gw-bench-item .order {
+            width: 20px;
+            height: 20px;
+            background: var(--bg-hover);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+        .gw-bench-item .name { flex: 1; }
+        .gw-bench-item .xpts {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        
         .chip-suggestions { background: var(--surface); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; border-left: 4px solid var(--primary); }
         .chip-suggestions h3 { font-size: 1rem; margin-bottom: 1rem; }
         .chip-suggestion { display: flex; align-items: center; gap: 1rem; padding: 0.75rem; background: var(--surface-raised); border-radius: 8px; margin-bottom: 0.5rem; }
@@ -1381,9 +1693,6 @@
             <button class="nav-tab" data-section="fixtures">
                 <span class="nav-icon">📅</span> Fixtures
             </button>
-            <button class="nav-tab" data-section="differentials">
-                <span class="nav-icon">💎</span> Differentials
-            </button>
             
         </div>
     </nav>
@@ -1391,6 +1700,16 @@
     <main class="main-content">
         <!-- MY TEAM SECTION -->
         <section id="my-team" class="section active">
+            <!-- Minimized team header (shown after loading) -->
+            <div class="team-header-mini" id="teamHeaderMini" style="display: none;">
+                <div class="team-header-info">
+                    <span class="team-header-name" id="teamHeaderName">Team Name</span>
+                    <span class="team-header-id" id="teamHeaderId">ID: --</span>
+                </div>
+                <button class="btn btn-sm" onclick="showTeamInput()">✏️ Change Team</button>
+            </div>
+            
+            <!-- Full input section (shown initially or when changing team) -->
             <div class="team-input-section" id="teamInputSection">
                 <div class="team-input-title">🚀 Enter Your FPL Team ID</div>
                 <div class="team-input-subtitle">Get AI-powered stats, transfer suggestions, optimal captain picks, and season analysis</div>
@@ -1536,6 +1855,10 @@
                     </div>
                 </div>
                 <div class="control-group">
+                    <label>Max Own%</label>
+                    <input type="number" id="maxOwnership" value="100" min="0" max="100" step="5" title="Set to 5-10% to find differentials">
+                </div>
+                <div class="control-group">
                     <label>Min Minutes</label>
                     <input type="number" id="minMinutes" value="400" min="0" step="50">
                 </div>
@@ -1588,7 +1911,7 @@
         <section id="fixtures" class="section">
             <div class="controls-panel">
                 <div class="control-group">
-                    <label>Horizon (GWs)</label>
+                    <label>Horizon</label>
                     <input type="number" id="fixtureHorizon" value="8" min="1" max="15">
                 </div>
                 <div class="control-group">
@@ -1601,65 +1924,11 @@
             </div>
         </section>
 
-        <!-- DIFFERENTIALS SECTION -->
-        <section id="differentials" class="section">
-            <div class="controls-panel">
-                <div class="control-group">
-                    <label>Max Ownership %</label>
-                    <input type="number" id="maxOwnership" value="10" min="0" max="100" step="0.5">
-                </div>
-                <div class="control-group">
-                    <label>Min Form</label>
-                    <input type="number" id="minForm" value="4" min="0" max="15" step="0.5">
-                </div>
-                <div class="control-group">
-                    <label>Price Range (£m)</label>
-                    <div class="price-range">
-                        <input type="number" id="diffMinPrice" value="4.0" min="3.5" max="15" step="0.5">
-                        <span style="color: var(--text-muted)">to</span>
-                        <input type="number" id="diffMaxPrice" value="15.0" min="3.5" max="15" step="0.5">
-                    </div>
-                </div>
-                <div class="control-group">
-                    <label>&nbsp;</label>
-                    <button class="btn btn-primary" onclick="loadDifferentials()">🔄 Find</button>
-                </div>
-            </div>
-
-            <div class="table-container">
-                <div class="table-header">
-                    <div class="table-title">
-                        <span>💎 Differentials</span>
-                        <span class="table-count" id="diffCount">0 players</span>
-                    </div>
-                </div>
-                <div class="table-scroll">
-                    <table class="data-table" id="diffTable">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Player</th>
-                                <th>Pos</th>
-                                <th data-sort="diff_score" class="sorted">Score <span class="sort-icon">▼</span></th>
-                                <th data-sort="xpts">xPts <span class="sort-icon">▼</span></th>
-                                <th data-sort="expected_minutes">ExpMins <span class="sort-icon">▼</span></th>
-                                <th data-sort="form">Form <span class="sort-icon">▼</span></th>
-                                <th data-sort="price">Price <span class="sort-icon">▼</span></th>
-                                <th data-sort="ownership">Own% <span class="sort-icon">▼</span></th>
-                                <th>Fixtures</th>
-                            </tr>
-                        </thead>
-                        <tbody id="diffBody"></tbody>
-                    </table>
-                </div>
-            </div>
-        </section>
-
         <!-- PLANNER SECTION -->
         <section id="planner" class="section">
             <div class="planner-header">
                 <h2>🧠 Multi-GW Transfer Planner</h2>
-                <p class="planner-subtitle">Optimize your transfers across multiple gameweeks with chip timing</p>
+                <p class="planner-subtitle">Optimize your transfers, lineup, and captain picks across multiple gameweeks</p>
             </div>
 
             <div class="planner-setup" id="plannerSetup">
@@ -1668,13 +1937,9 @@
                         <label>Team ID</label>
                         <input type="number" id="plannerTeamId" placeholder="e.g. 1234567">
                     </div>
-                    <div class="control-group">
-                        <label>Horizon (GWs)</label>
-                        <select id="plannerHorizon">
-                            <option value="3">3 GWs</option>
-                            <option value="5" selected>5 GWs</option>
-                            <option value="8">8 GWs</option>
-                        </select>
+                    <div class="control-group slider-group">
+                        <label>Horizon: <span id="horizonValue">3</span> GW's</label>
+                        <input type="range" id="plannerHorizon" min="1" max="6" value="3" class="horizon-slider" oninput="document.getElementById('horizonValue').textContent = this.value">
                     </div>
                     <div class="control-group">
                         <label>Max Hits</label>
@@ -1695,7 +1960,7 @@
                     <div class="chips-grid" id="availableChipsGrid"></div>
                     
                     <h3>🎯 Schedule Chips (Optional)</h3>
-                    <p class="chips-help">Leave blank for auto-suggestions, or specify GWs to use chips</p>
+                    <p class="chips-help">Leave blank for auto-suggestions, or specify GW's to use chips</p>
                     <div class="chip-schedule-grid">
                         <div class="chip-schedule-item" id="wcSchedule" style="display: none;">
                             <span class="chip-badge wc">WC</span>
@@ -1765,15 +2030,11 @@
                     <div id="chipSuggestionsList"></div>
                 </div>
 
-                <div class="plan-timeline">
-                    <h3>📅 Transfer Timeline</h3>
-                    <div class="timeline-container" id="planTimeline"></div>
-                </div>
-
-                <div class="plan-transfers">
-                    <h3>🔄 Recommended Transfers</h3>
-                    <div class="transfers-list" id="planTransfersList"></div>
-                </div>
+                <!-- GW Tabs for detailed view -->
+                <div class="gw-planner-tabs" id="gwPlannerTabs"></div>
+                
+                <!-- Per-GW Detail Panel -->
+                <div class="gw-detail-panel" id="gwDetailPanel"></div>
             </div>
         </section>
 
@@ -1787,7 +2048,6 @@
         let savedTeamId = localStorage.getItem('fpl_team_id');
         let myTeamData = null;
         let rankingsData = [];
-        let diffData = [];
         let currentSort = { field: 'xpts', order: 'desc' };
 
         document.addEventListener('DOMContentLoaded', async () => {
@@ -1820,10 +2080,7 @@
 
             // Sortable headers
             document.querySelectorAll('#rankingsTable th[data-sort]').forEach(th => {
-                th.addEventListener('click', () => sortTable('rankings', th.dataset.sort));
-            });
-            document.querySelectorAll('#diffTable th[data-sort]').forEach(th => {
-                th.addEventListener('click', () => sortTable('diff', th.dataset.sort));
+                th.addEventListener('click', () => sortTable(th.dataset.sort));
             });
 
             await loadBootstrap();
@@ -1833,7 +2090,7 @@
             }
         });
 
-        function sortTable(table, field) {
+        function sortTable(field) {
             if (currentSort.field === field) {
                 currentSort.order = currentSort.order === 'desc' ? 'asc' : 'desc';
             } else {
@@ -1841,7 +2098,7 @@
                 currentSort.order = 'desc';
             }
 
-            const tableEl = document.getElementById(table === 'rankings' ? 'rankingsTable' : 'diffTable');
+            const tableEl = document.getElementById('rankingsTable');
             tableEl.querySelectorAll('th').forEach(th => {
                 th.classList.remove('sorted');
                 if (th.dataset.sort === field) {
@@ -1850,11 +2107,7 @@
                 }
             });
 
-            if (table === 'rankings') {
-                loadRankings();
-            } else {
-                loadDifferentials();
-            }
+            loadRankings();
         }
 
         async function loadBootstrap() {
@@ -1877,7 +2130,9 @@
             const teamId = document.getElementById('teamIdInput').value;
             if (!teamId) return alert('Please enter your FPL Team ID');
             localStorage.setItem('fpl_team_id', teamId);
-            savedTeamId = teamId;  // Update the saved variable
+            savedTeamId = teamId;
+            
+            // Show content area with loading state
             document.getElementById('myTeamContent').style.display = 'block';
             document.getElementById('managerCard').innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading team...</div>';
 
@@ -1885,6 +2140,13 @@
                 const teamResponse = await fetch(`${API_BASE}/api/my-team/${teamId}`);
                 if (!teamResponse.ok) throw new Error('Team not found');
                 myTeamData = await teamResponse.json();
+                
+                // Hide full input, show minimized header
+                document.getElementById('teamInputSection').style.display = 'none';
+                document.getElementById('teamHeaderMini').style.display = 'flex';
+                document.getElementById('teamHeaderName').textContent = myTeamData.manager.team_name;
+                document.getElementById('teamHeaderId').textContent = `ID: ${teamId}`;
+                
                 renderManagerCard(myTeamData);
                 renderOptimizedSquad(myTeamData);
                 
@@ -1894,21 +2156,31 @@
                 document.getElementById('managerCard').innerHTML = `<div class="empty-state"><div class="empty-state-icon">❌</div><p>${error.message}</p></div>`;
             }
         }
+        
+        function showTeamInput() {
+            document.getElementById('teamHeaderMini').style.display = 'none';
+            document.getElementById('teamInputSection').style.display = 'block';
+            document.getElementById('teamIdInput').focus();
+        }
 
         function renderManagerCard(data) {
             const m = data.manager;
             document.getElementById('managerCard').innerHTML = `
                 <div class="manager-info">
                     <h2>${m.name}</h2>
-                    <div class="team-name">${m.team_name}</div>
                 </div>
                 <div class="manager-stats">
                     <div class="manager-stat"><div class="value">${m.total_points?.toLocaleString() || '-'}</div><div class="label">Total Points</div></div>
-                    <div class="manager-stat"><div class="value">${m.overall_rank?.toLocaleString() || '-'}</div><div class="label">Overall Rank</div></div>
-                    <div class="manager-stat"><div class="value">£${data.bank.toFixed(1)}m</div><div class="label">Bank</div></div>
-                    <div class="manager-stat"><div class="value">${data.free_transfers}</div><div class="label">FTs</div></div>
+                    <div class="manager-stat"><div class="value">${formatRank(m.overall_rank)}</div><div class="label">Overall Rank</div></div>
                 </div>
             `;
+        }
+        
+        function formatRank(rank) {
+            if (!rank) return '-';
+            if (rank >= 1000000) return (rank / 1000000).toFixed(1) + 'M';
+            if (rank >= 1000) return (rank / 1000).toFixed(0) + 'K';
+            return rank.toLocaleString();
         }
 
         function renderOptimizedSquad(data) {
@@ -2212,6 +2484,7 @@
             const minMinutes = document.getElementById('minMinutes').value;
             const minPrice = document.getElementById('rankMinPrice').value;
             const maxPrice = document.getElementById('rankMaxPrice').value;
+            const maxOwnership = document.getElementById('maxOwnership').value;
 
             document.getElementById('rankingsBody').innerHTML = `<tr><td colspan="11" class="loading"><div class="loading-spinner"></div><span style="margin-left: 0.5rem">Loading ${currentPosition} rankings...</span></td></tr>`;
             
@@ -2220,7 +2493,7 @@
             table.className = `data-table pos-${currentPosition.toLowerCase()}`;
 
             try {
-                const response = await fetch(`${API_BASE}/api/rankings/${currentPosition}?gw_start=${gwStart}&gw_end=${gwEnd}&min_minutes=${minMinutes}&min_price=${minPrice}&max_price=${maxPrice}&sort_by=${currentSort.field}&sort_order=${currentSort.order}`);
+                const response = await fetch(`${API_BASE}/api/rankings/${currentPosition}?gw_start=${gwStart}&gw_end=${gwEnd}&min_minutes=${minMinutes}&min_price=${minPrice}&max_price=${maxPrice}&max_ownership=${maxOwnership}&sort_by=${currentSort.field}&sort_order=${currentSort.order}`);
                 const data = await response.json();
                 rankingsData = data.players;
                 document.getElementById('rankingsTitle').textContent = `${currentPosition} Rankings (${data.gw_range})`;
@@ -2311,40 +2584,6 @@
                 document.getElementById('fixturesGrid').innerHTML = html;
             } catch (error) {
                 console.error('Failed to load fixtures:', error);
-            }
-        }
-
-        async function loadDifferentials() {
-            const maxOwnership = document.getElementById('maxOwnership').value;
-            const minForm = document.getElementById('minForm').value;
-            const minPrice = document.getElementById('diffMinPrice').value;
-            const maxPrice = document.getElementById('diffMaxPrice').value;
-
-            document.getElementById('diffBody').innerHTML = '<tr><td colspan="10" class="loading"><div class="loading-spinner"></div></td></tr>';
-
-            try {
-                const response = await fetch(`${API_BASE}/api/differentials?max_ownership=${maxOwnership}&min_form=${minForm}&min_price=${minPrice}&max_price=${maxPrice}&sort_by=${currentSort.field}&sort_order=${currentSort.order}`);
-                const data = await response.json();
-                diffData = data.players;
-                document.getElementById('diffCount').textContent = `${data.players.length} players`;
-
-                const html = data.players.map((p, i) => `
-                    <tr>
-                        <td>${i + 1}</td>
-                        <td><div class="player-info"><span class="player-name">${p.name}</span><span class="player-team">${p.team}</span></div></td>
-                        <td>${p.position}</td>
-                        <td class="stat-value stat-highlight">${p.diff_score.toFixed(1)}</td>
-                        <td class="stat-value">${p.xpts.toFixed(1)}</td>
-                        <td class="stat-value">${p.expected_minutes.toFixed(0)}</td>
-                        <td class="stat-value">${p.form.toFixed(1)}</td>
-                        <td class="stat-value">£${p.price.toFixed(1)}</td>
-                        <td class="stat-value">${p.ownership.toFixed(1)}%</td>
-                        <td>${renderFixtures(p.fixtures)}</td>
-                    </tr>
-                `).join('');
-                document.getElementById('diffBody').innerHTML = html || '<tr><td colspan="10" class="empty-state">No differentials found</td></tr>';
-            } catch (error) {
-                console.error('Failed to load differentials:', error);
             }
         }
 
@@ -2474,7 +2713,11 @@
             document.getElementById('fhSchedule').style.display = chips.FH ? 'flex' : 'none';
         }
         
+        let plannerData = null;
+        let selectedGwIndex = 0;
+        
         function renderPlanResults(data) {
+            plannerData = data;
             const plan = data.plan;
             
             // Summary stats
@@ -2497,65 +2740,152 @@
                 document.getElementById('chipSuggestions').style.display = 'none';
             }
             
-            // Timeline
-            const timeline = document.getElementById('planTimeline');
-            timeline.innerHTML = plan.timeline.map(gw => {
-                const hasTransfer = gw.actions.some(a => a.type === 'transfer');
-                const hasChip = gw.chip;
-                const classes = ['timeline-gw'];
-                if (hasTransfer) classes.push('has-transfer');
-                if (hasChip) classes.push('has-chip');
-                if (gw.is_dgw) classes.push('is-dgw');
+            // GW Tabs
+            const tabsHtml = plan.timeline.map((gw, i) => {
+                const transfers = gw.actions.filter(a => a.type === 'transfer');
+                const hits = transfers.filter(t => t.is_hit).length;
                 
-                let actionsHtml = '';
-                if (gw.actions.length === 0 || gw.actions.every(a => a.type === 'roll')) {
-                    actionsHtml = '<div class="timeline-action roll">Roll FT</div>';
-                } else {
-                    actionsHtml = gw.actions.filter(a => a.type === 'transfer').map(a => `
-                        <div class="timeline-action transfer ${a.is_hit ? 'hit' : ''}">
-                            ${a.out} → ${a.in}
-                            ${a.is_hit ? '<span class="plan-transfer-hit">(-4)</span>' : ''}
-                        </div>
-                    `).join('');
-                }
+                let badges = '';
+                if (gw.is_dgw) badges += '<span class="mini-badge dgw">DGW</span>';
+                if (transfers.length > 0) badges += `<span class="mini-badge transfer">${transfers.length}T</span>`;
+                if (hits > 0) badges += `<span class="mini-badge hit">-${hits * 4}</span>`;
                 
                 return `
-                    <div class="${classes.join(' ')}">
-                        <div class="timeline-gw-header">
-                            <span class="timeline-gw-num">GW${gw.gw}</span>
-                            ${hasChip ? `<span class="timeline-gw-chip">${gw.chip}</span>` : ''}
-                            ${gw.is_dgw ? `<span class="timeline-gw-dgw">DGW</span>` : ''}
-                        </div>
-                        ${actionsHtml}
+                    <div class="gw-tab ${i === 0 ? 'active' : ''}" onclick="selectPlannerGw(${i})">
+                        <span class="gw-num">GW${gw.gw}</span>
+                        <span class="gw-xpts">${gw.gw_xpts || '-'} xPts</span>
+                        ${badges ? `<div class="gw-badge-row">${badges}</div>` : ''}
                     </div>
                 `;
             }).join('');
+            document.getElementById('gwPlannerTabs').innerHTML = tabsHtml;
             
-            // Transfers list
-            const transfersList = document.getElementById('planTransfersList');
-            if (plan.transfers.length === 0) {
-                transfersList.innerHTML = '<div class="empty-state">No transfers recommended - rolling FTs is optimal</div>';
-            } else {
-                transfersList.innerHTML = plan.transfers.map(t => `
-                    <div class="plan-transfer-card">
-                        <div class="plan-transfer-player">
-                            <span class="plan-transfer-name">${t.out}</span>
-                            <span class="plan-transfer-meta">OUT</span>
-                        </div>
-                        <span class="plan-transfer-arrow">→</span>
-                        <div class="plan-transfer-player">
-                            <span class="plan-transfer-name">${t.in}</span>
-                            <span class="plan-transfer-meta">IN</span>
-                        </div>
-                        <div class="plan-transfer-gain">
-                            <div class="plan-transfer-gain-value">+${t.xpts_gain.toFixed(1)}</div>
-                            <div class="plan-transfer-gain-label">xPts gain</div>
-                            <div class="plan-transfer-gw">GW${t.gw}</div>
-                            ${t.is_hit ? '<div class="plan-transfer-hit">-4 hit</div>' : ''}
+            // Show first GW detail
+            selectedGwIndex = 0;
+            renderGwDetail(0);
+        }
+        
+        function selectPlannerGw(index) {
+            selectedGwIndex = index;
+            
+            // Update tab active states
+            document.querySelectorAll('.gw-tab').forEach((tab, i) => {
+                tab.classList.toggle('active', i === index);
+            });
+            
+            renderGwDetail(index);
+        }
+        
+        function renderGwDetail(index) {
+            if (!plannerData) return;
+            const gw = plannerData.plan.timeline[index];
+            if (!gw) return;
+            
+            const transfers = gw.actions.filter(a => a.type === 'transfer');
+            const starting = gw.starting_xi || [];
+            const bench = gw.bench || [];
+            const captain = gw.captain;
+            const viceCaptain = gw.vice_captain;
+            
+            // Group starting XI by position
+            const gkps = starting.filter(p => p.position === 'GKP');
+            const defs = starting.filter(p => p.position === 'DEF');
+            const mids = starting.filter(p => p.position === 'MID');
+            const fwds = starting.filter(p => p.position === 'FWD');
+            
+            const renderPlayer = (p, isCaptain = false) => `
+                <div class="gw-player-card ${isCaptain ? 'captain' : ''}">
+                    <div class="name">${p.name}</div>
+                    <div class="team">${p.team}</div>
+                    <div class="xpts">${p.xpts} xPts</div>
+                    ${isCaptain ? '<div class="captain-badge">C</div>' : ''}
+                </div>
+            `;
+            
+            // Transfers section
+            let transfersHtml = '';
+            if (transfers.length > 0) {
+                transfersHtml = `
+                    <div class="gw-transfers-section">
+                        <h4>🔄 Transfers Made</h4>
+                        ${transfers.map(t => `
+                            <div class="gw-transfer-item">
+                                <span class="out">${t.out}</span>
+                                <span class="arrow">→</span>
+                                <span class="in">${t.in}</span>
+                                ${t.is_hit ? '<span class="hit-badge">-4 hit</span>' : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
+            // Build HTML
+            const html = `
+                <div class="gw-detail-header">
+                    <div class="gw-detail-title">
+                        GW${gw.gw} Optimal Lineup
+                        ${gw.chip ? `<span class="chip-badge ${gw.chip.toLowerCase()}" style="margin-left: 0.5rem">${gw.chip}</span>` : ''}
+                        ${gw.is_dgw ? '<span class="mini-badge dgw" style="margin-left: 0.5rem">DGW</span>' : ''}
+                    </div>
+                    <div class="gw-detail-xpts">${gw.gw_xpts} xPts</div>
+                </div>
+                
+                ${transfersHtml}
+                
+                <div class="gw-squad-grid">
+                    <div class="gw-lineup-section">
+                        <h4>Starting XI</h4>
+                        <div class="gw-lineup-grid">
+                            <div class="gw-lineup-row">${gkps.map(p => renderPlayer(p, captain && p.id === captain.id)).join('')}</div>
+                            <div class="gw-lineup-row">${defs.map(p => renderPlayer(p, captain && p.id === captain.id)).join('')}</div>
+                            <div class="gw-lineup-row">${mids.map(p => renderPlayer(p, captain && p.id === captain.id)).join('')}</div>
+                            <div class="gw-lineup-row">${fwds.map(p => renderPlayer(p, captain && p.id === captain.id)).join('')}</div>
                         </div>
                     </div>
-                `).join('');
-            }
+                    
+                    <div class="gw-sidebar-section">
+                        <div>
+                            <h4>👑 Captain</h4>
+                            ${captain ? `
+                                <div class="gw-captain-pick">
+                                    <div class="badge">C</div>
+                                    <div class="info">
+                                        <div class="name">${captain.name}</div>
+                                        <div class="meta">${captain.team} · ${captain.position}</div>
+                                    </div>
+                                    <div class="xpts">${(captain.xpts * 2).toFixed(1)}</div>
+                                </div>
+                            ` : '<div class="empty-state">No captain</div>'}
+                            ${viceCaptain ? `
+                                <div class="gw-captain-pick" style="margin-top: 0.5rem; background: var(--bg-tertiary); border-color: var(--border-color);">
+                                    <div class="badge" style="background: var(--bg-hover); color: var(--text-secondary);">V</div>
+                                    <div class="info">
+                                        <div class="name">${viceCaptain.name}</div>
+                                        <div class="meta">${viceCaptain.team} · ${viceCaptain.position}</div>
+                                    </div>
+                                    <div class="xpts" style="color: var(--text-secondary)">${(viceCaptain.xpts * 2).toFixed(1)}</div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        
+                        <div>
+                            <h4>📋 Bench Order</h4>
+                            <div class="gw-bench-list">
+                                ${bench.map((p, i) => `
+                                    <div class="gw-bench-item">
+                                        <div class="order">${i + 1}</div>
+                                        <div class="name">${p.name}</div>
+                                        <div class="xpts">${p.xpts}</div>
+                                    </div>
+                                `).join('') || '<div class="empty-state">No bench</div>'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('gwDetailPanel').innerHTML = html;
         }
         
         // Auto-fill planner team ID from saved
