@@ -1502,9 +1502,23 @@
             gap: 1rem;
             padding: 0.5rem 0;
         }
+        .gw-transfer-item.booked {
+            background: rgba(var(--accent-primary-rgb, 99, 102, 241), 0.1);
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            border-left: 3px solid var(--accent-primary);
+        }
         .gw-transfer-item .out { color: #ef4444; }
         .gw-transfer-item .arrow { color: var(--text-muted); }
         .gw-transfer-item .in { color: var(--accent-primary); font-weight: 600; }
+        .gw-transfer-item .booked-badge {
+            font-size: 0.7rem;
+            padding: 0.15rem 0.4rem;
+            background: var(--accent-primary);
+            color: #fff;
+            border-radius: 3px;
+            margin-left: auto;
+        }
         .gw-transfer-item .hit-badge {
             font-size: 0.7rem;
             padding: 0.15rem 0.4rem;
@@ -3182,6 +3196,7 @@
             
             // Add booked transfers if any
             if (bookedTransfers.length > 0) {
+                console.log('Sending booked transfers:', bookedTransfers);
                 url += `&booked_transfers=${encodeURIComponent(JSON.stringify(bookedTransfers))}`;
             }
             
@@ -3192,32 +3207,62 @@
             
             // Reset progress
             const progressBar = document.getElementById('plannerProgressBar');
+            const loadingText = document.getElementById('plannerLoadingText');
+            const loadingSubtext = document.getElementById('plannerLoadingSubtext');
             const steps = ['step1', 'step2', 'step3'];
             progressBar.style.width = '0%';
             steps.forEach(s => {
                 document.getElementById(s).className = 'loading-step';
             });
             
-            // Simulate progress animation
-            let progress = 0;
+            // Realistic progress based on actual API timing
+            // Step 1: Fetching data (0-2s) - 30%
+            // Step 2: Analyzing transfers (2-8s) - 60%  
+            // Step 3: Finding optimal path (8-15s) - 90%
+            
+            const startTime = Date.now();
+            let currentStep = 0;
+            
             const progressInterval = setInterval(() => {
-                progress += Math.random() * 15;
-                if (progress > 90) progress = 90;
-                progressBar.style.width = `${progress}%`;
+                const elapsed = (Date.now() - startTime) / 1000;
+                let progress = 0;
                 
-                // Update steps based on progress
-                if (progress > 10) {
-                    document.getElementById('step1').className = 'loading-step active';
+                if (elapsed < 2) {
+                    // Step 1: Fetching data
+                    progress = (elapsed / 2) * 30;
+                    if (currentStep < 1) {
+                        currentStep = 1;
+                        document.getElementById('step1').className = 'loading-step active';
+                        loadingText.textContent = 'Fetching team data...';
+                        loadingSubtext.textContent = 'Loading your squad and fixtures';
+                    }
+                } else if (elapsed < 8) {
+                    // Step 2: Analyzing transfers
+                    progress = 30 + ((elapsed - 2) / 6) * 30;
+                    if (currentStep < 2) {
+                        currentStep = 2;
+                        document.getElementById('step1').className = 'loading-step done';
+                        document.getElementById('step2').className = 'loading-step active';
+                        loadingText.textContent = 'Analyzing transfer options...';
+                        loadingSubtext.textContent = `Evaluating ${horizon} gameweeks`;
+                    }
+                } else if (elapsed < 20) {
+                    // Step 3: Finding optimal path
+                    progress = 60 + ((elapsed - 8) / 12) * 30;
+                    if (currentStep < 3) {
+                        currentStep = 3;
+                        document.getElementById('step2').className = 'loading-step done';
+                        document.getElementById('step3').className = 'loading-step active';
+                        loadingText.textContent = 'Finding optimal path...';
+                        loadingSubtext.textContent = 'Computing best transfer sequence';
+                    }
+                } else {
+                    progress = Math.min(95, 90 + (elapsed - 20) * 0.5);
+                    loadingSubtext.textContent = 'Almost done...';
                 }
-                if (progress > 35) {
-                    document.getElementById('step1').className = 'loading-step done';
-                    document.getElementById('step2').className = 'loading-step active';
-                }
-                if (progress > 65) {
-                    document.getElementById('step2').className = 'loading-step done';
-                    document.getElementById('step3').className = 'loading-step active';
-                }
-            }, 500);
+                
+                progressBar.style.width = `${progress}%`;
+            }, 200);
             
             try {
                 const response = await fetch(url);
@@ -3522,10 +3567,11 @@
                     <div class="gw-transfers-section">
                         <h4>🔄 Transfers Made</h4>
                         ${transfers.map(t => `
-                            <div class="gw-transfer-item">
+                            <div class="gw-transfer-item ${t.is_booked ? 'booked' : ''}">
                                 <span class="out">${typeof t.out === 'object' ? t.out.name : t.out}</span>
                                 <span class="arrow">→</span>
                                 <span class="in">${typeof t.in === 'object' ? t.in.name : t.in}</span>
+                                ${t.is_booked ? '<span class="booked-badge">📌 Booked</span>' : ''}
                                 ${t.is_hit ? '<span class="hit-badge">-4 hit</span>' : ''}
                             </div>
                         `).join('')}

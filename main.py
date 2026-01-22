@@ -268,6 +268,82 @@ def calculate_goals_conceded_penalty(xGA: float) -> float:
     return penalty
 
 
+def detect_backup_status(player: Dict, all_players: List[Dict], current_gw: int) -> tuple[bool, float, str]:
+    """
+    Detect if a player is a backup by comparing to teammates at same position.
+    
+    Returns: (is_backup, confidence, reason)
+    - is_backup: True if clearly a backup
+    - confidence: 0.0-1.0 how confident we are
+    - reason: explanation string
+    """
+    player_id = player.get("id")
+    team_id = player.get("team")
+    position = player.get("element_type")
+    
+    total_minutes = int(player.get("minutes", 0) or 0)
+    starts = int(player.get("starts", 0) or 0)
+    ownership = float(player.get("selected_by_percent", 0) or 0)
+    
+    # Find teammates at same position
+    teammates = [
+        p for p in all_players 
+        if p.get("team") == team_id 
+        and p.get("element_type") == position 
+        and p.get("id") != player_id
+    ]
+    
+    if not teammates:
+        return False, 0.0, "no_teammates"
+    
+    # Get the "starter" - teammate with most minutes at this position
+    starter = max(teammates, key=lambda p: int(p.get("minutes", 0) or 0))
+    starter_mins = int(starter.get("minutes", 0) or 0)
+    starter_starts = int(starter.get("starts", 0) or 0)
+    starter_ownership = float(starter.get("selected_by_percent", 0) or 0)
+    
+    available_gws = max(current_gw - 1, 1)
+    
+    # ==================== GKP SPECIAL CASE ====================
+    # GKPs are almost always 1st choice vs backup, very binary
+    if position == 1:
+        # If starter has 5+ starts and this player has 0-1 starts
+        if starter_starts >= 5 and starts <= 1:
+            return True, 0.95, f"backup_gkp_to_{starter.get('web_name', '?')}"
+        
+        # If ownership difference is huge
+        if starter_ownership > 5 and ownership < 1:
+            return True, 0.85, f"low_ownership_gkp"
+        
+        # If minutes difference is stark
+        if starter_mins > 800 and total_minutes < 100:
+            return True, 0.90, f"no_minutes_gkp"
+    
+    # ==================== OUTFIELD PLAYERS ====================
+    else:
+        # Calculate start rate for both
+        player_start_rate = starts / available_gws if available_gws > 0 else 0
+        starter_start_rate = starter_starts / available_gws if available_gws > 0 else 0
+        
+        # If starter has 3x+ the minutes and decent sample
+        if starter_mins > 500 and total_minutes < starter_mins * 0.25:
+            return True, 0.80, f"low_minutes_vs_{starter.get('web_name', '?')}"
+        
+        # If starter has 70%+ start rate and this player has <15%
+        if starter_start_rate > 0.70 and player_start_rate < 0.15:
+            return True, 0.75, f"low_start_rate"
+        
+        # If ownership is <1% and a teammate has >10%
+        if ownership < 1 and starter_ownership > 10:
+            return True, 0.70, f"ownership_suggests_backup"
+        
+        # Very low minutes with decent GWs played
+        if current_gw > 10 and total_minutes < 100 and starts <= 1:
+            return True, 0.85, f"minimal_involvement"
+    
+    return False, 0.0, "appears_starter"
+
+
 # Admin manager ID - overrides from this account become global
 ADMIN_MANAGER_ID = 616495  # Gerti's manager ID for global overrides
 
@@ -731,13 +807,38 @@ async def _do_fdr_refresh():
         else:
             form_xg = form_xga = form_ppg = 0
         
+        # Calculate season averages
+        season_matches = len(data['matches'])
+        season_xg_per_game = data['season_xg'] / max(1, season_matches)
+        season_xga_per_game = data['season_xga'] / max(1, season_matches)
+        
+        # Calculate clean sheet probability using Poisson: P(0 goals) = e^(-xGA)
+        # Use blend of form and season for stability
+        if season_matches >= 10:
+            blended_xga = 0.6 * form_xga + 0.4 * season_xga_per_game
+        else:
+            blended_xga = form_xga if form_xga > 0 else season_xga_per_game
+        
+        cs_probability = math.exp(-blended_xga) if blended_xga > 0 else 0.25
+        cs_probability = min(0.50, max(0.08, cs_probability))  # Bound 8%-50%
+        
+        # Calculate expected xG per game (for opponent strength)
+        if season_matches >= 10:
+            blended_xg = 0.6 * form_xg + 0.4 * season_xg_per_game
+        else:
+            blended_xg = form_xg if form_xg > 0 else season_xg_per_game
+        
         fdr_data[team_id] = {
             'season_xg': data['season_xg'],
             'season_xga': data['season_xga'],
-            'season_matches': len(data['matches']),
+            'season_matches': season_matches,
             'form_xg': round(form_xg, 2),
             'form_xga': round(form_xga, 2),
             'form_ppg': round(form_ppg, 2),
+            'season_xg_per_game': round(season_xg_per_game, 2),
+            'season_xga_per_game': round(season_xga_per_game, 2),
+            'cs_probability': round(cs_probability, 3),  # Team's expected CS rate
+            'xg_per_game': round(blended_xg, 2),  # Team's attacking output
         }
         all_form_xg.append(form_xg)
         all_form_xga.append(form_xga)
@@ -969,18 +1070,6 @@ def calculate_expected_bonus(player: Dict, position: int) -> tuple[float, float]
     final_bonus = min(2.5, max(0.1, final_bonus))
     
     return round(bonus_per_90, 2), round(final_bonus, 2)
-    xgi_bonus_factor = xGI_per_90 * 1.5  # Each xGI/90 adds ~1.5 expected bonus
-    
-    # Weight: 60% historical, 40% xGI-projected
-    if bonus_per_90 > 0:
-        expected_bonus = 0.6 * bonus_per_90 + 0.4 * (position_baseline + xgi_bonus_factor)
-    else:
-        expected_bonus = position_baseline + xgi_bonus_factor
-    
-    # Cap at realistic maximum (even Haaland averages ~1.5 bonus/90)
-    expected_bonus = min(expected_bonus, 2.0)
-    
-    return round(bonus_per_90, 2), round(expected_bonus, 2)
 
 
 def calculate_expected_minutes(
@@ -991,25 +1080,24 @@ def calculate_expected_minutes(
     events: List[Dict],
     player_history: Optional[Dict] = None,
     override_minutes: Optional[float] = None,
-    manager_id: Optional[int] = None
+    manager_id: Optional[int] = None,
+    all_players: Optional[List[Dict]] = None
 ) -> tuple[float, str]:
     """
     Expert-level expected minutes prediction.
     
-    Factors considered:
-    1. Historical start rate and minutes per start
-    2. Recent form (last 6 GWs weighted heavily)
-    3. Injury/absence patterns
-    4. Manager rotation tendencies
-    5. Fixture congestion
-    6. Player importance to team
-    7. FPL news and chance_of_playing
+    Priority order:
+    1. User override (explicit or from cache)
+    2. Rotowire predicted lineup (if fresh)
+    3. Team+position backup detection
+    4. Historical pattern analysis
+    5. Price-based fallback for new players
     
     Returns: (expected_minutes, reason_code)
     """
     player_id = player.get("id")
     
-    # Check explicit override first
+    # ==================== LAYER 1: USER OVERRIDE ====================
     if override_minutes is not None:
         return override_minutes, "user_override"
     
@@ -1028,19 +1116,18 @@ def calculate_expected_minutes(
     status = player.get("status", "a")
     news = player.get("news", "") or ""
     position = player.get("element_type", 4)
-    price = player.get("now_cost", 50) / 10  # Price as proxy for importance
+    price = player.get("now_cost", 50) / 10
     
     available_gws = max(current_gw - 1, 1)
     
-    # ==================== UNAVAILABLE PLAYERS ====================
-    # Handle injured/suspended/unavailable status FIRST
-    if status == 'u':  # Unavailable
+    # ==================== HANDLE UNAVAILABLE FIRST ====================
+    if status == 'u':
         return 0, "unavailable"
     
-    if status == 's':  # Suspended
+    if status == 's':
         return 0, "suspended"
     
-    if status == 'i':  # Injured
+    if status == 'i':
         if chance_of_playing is not None:
             if chance_of_playing == 0:
                 return 0, "injured"
@@ -1053,10 +1140,7 @@ def calculate_expected_minutes(
         else:
             return 0, "injured"
     
-    # ==================== DOUBTFUL PLAYERS ====================
-    if status == 'd':  # Doubtful
-        cop = chance_of_playing / 100 if chance_of_playing else 0.5
-        # Don't just multiply - model the binary: either plays full or doesn't play
+    if status == 'd':
         if chance_of_playing and chance_of_playing >= 75:
             return 75, "minor_doubt"
         elif chance_of_playing and chance_of_playing >= 50:
@@ -1064,7 +1148,30 @@ def calculate_expected_minutes(
         else:
             return 25, "major_doubt"
     
-    # ==================== INSUFFICIENT DATA ====================
+    # ==================== LAYER 2: ROTOWIRE PREDICTED LINEUP ====================
+    # Only trust if data is fresh (<6 hours)
+    if (cache.predicted_minutes and 
+        player_id in cache.predicted_minutes and 
+        cache.predicted_minutes_last_update and
+        (datetime.now() - cache.predicted_minutes_last_update).seconds < 21600):
+        
+        rotowire_mins = cache.predicted_minutes[player_id]
+        return rotowire_mins, "rotowire_lineup"
+    
+    # ==================== LAYER 3: BACKUP DETECTION ====================
+    if all_players:
+        is_backup, confidence, backup_reason = detect_backup_status(player, all_players, current_gw)
+        if is_backup and confidence >= 0.75:
+            # High confidence backup - very low minutes
+            if position == 1:  # GKP backups get almost nothing
+                return 0, f"backup_{backup_reason}"
+            else:  # Outfield backups might get cameos
+                return 10, f"backup_{backup_reason}"
+        elif is_backup and confidence >= 0.5:
+            # Medium confidence - some minutes possible
+            return 25, f"likely_backup_{backup_reason}"
+    
+    # ==================== LAYER 4: INSUFFICIENT DATA ====================
     if starts == 0:
         # New signing or hasn't played - use price as proxy
         if price >= 10:
@@ -1079,7 +1186,7 @@ def calculate_expected_minutes(
     if total_minutes < 90:
         return 15, "insufficient_data"
     
-    # ==================== BASE CALCULATION ====================
+    # ==================== LAYER 5: PATTERN DETECTION ====================
     mins_per_start = total_minutes / starts
     start_rate = min(1.0, starts / available_gws)
     
@@ -1273,7 +1380,8 @@ def calculate_expected_points(
     all_fixtures: List[Dict] = None,
     events: List[Dict] = None,
     player_history: Optional[Dict] = None,
-    override_minutes: Optional[float] = None
+    override_minutes: Optional[float] = None,
+    all_players: Optional[List[Dict]] = None
 ) -> Dict:
     """
     Expert-level expected points calculation.
@@ -1313,7 +1421,7 @@ def calculate_expected_points(
     # Get expected minutes
     exp_mins, mins_reason = calculate_expected_minutes(
         player, current_gw, team_name, all_fixtures or [], events or [],
-        player_history, override_minutes
+        player_history, override_minutes, all_players=all_players
     )
     
     # Calculate per-90 rates
@@ -1322,6 +1430,22 @@ def calculate_expected_points(
     xA90 = xA / mins90
     xGC90 = xGC / mins90
     og_per_90 = own_goals / mins90 if mins90 > 1 else 0.01
+    
+    # ==================== REGRESSION FOR HIGH-xG PLAYERS ====================
+    # Elite players (Haaland, Salah) historically slightly underperform their xG
+    # Apply small regression factor to avoid overrating
+    xGI90 = xG90 + xA90
+    if xGI90 > 0.9:
+        regression_factor = 0.92  # Elite attackers (Haaland, Salah level)
+    elif xGI90 > 0.7:
+        regression_factor = 0.95  # Premium attackers
+    elif xGI90 > 0.5:
+        regression_factor = 0.98  # Good attackers
+    else:
+        regression_factor = 1.0  # No regression for average/below
+    
+    xG90 *= regression_factor
+    xA90 *= regression_factor
     
     # ==================== YELLOW CARD MODEL ====================
     # Yellow card probability based on:
@@ -1352,8 +1476,11 @@ def calculate_expected_points(
     saves_per_90, save_pts_per_90 = calculate_saves_per_90(player) if position == 1 else (0, 0)
     bonus_per_90, expected_bonus = calculate_expected_bonus(player, position)
     
-    # Get team's base CS rate
-    team_base_cs = TEAM_BASE_CS_RATES.get(team_name, 0.22)
+    # Get team's CS rate - prefer dynamic FDR data, fallback to hardcoded
+    if cache.fdr_data and team_id in cache.fdr_data:
+        team_base_cs = cache.fdr_data[team_id].get('cs_probability', 0.22)
+    else:
+        team_base_cs = TEAM_BASE_CS_RATES.get(team_name, 0.22)
     
     # Points per goal/assist by position
     goal_pts = {1: 6, 2: 6, 3: 5, 4: 4}.get(position, 4)
@@ -1470,6 +1597,9 @@ def calculate_expected_points(
         # Home boost for attacking
         if is_home:
             attack_multiplier *= HOME_ATTACK_BOOST
+        
+        # CAP TOTAL FIXTURE BOOST AT 20% - prevents over-inflation of MID/FWD xPts
+        attack_multiplier = min(1.20, max(0.80, attack_multiplier))
         
         fixture_xG90 = xG90 * attack_multiplier
         fixture_xA90 = xA90 * attack_multiplier
@@ -1837,98 +1967,125 @@ async def clear_predicted_minutes():
 
 
 @app.post("/api/predicted-minutes/fetch")
-async def fetch_predicted_minutes_from_source(source: str = "fplreview"):
+async def fetch_predicted_minutes_from_source(source: str = "rotowire"):
     """
     Fetch predicted minutes from external sources.
-    Sources: fplreview, rotowire
+    Primary source: Rotowire predicted lineups
     """
+    from bs4 import BeautifulSoup
+    
     data = await fetch_fpl_data()
     elements = {e["id"]: e for e in data["elements"]}
+    teams_dict = {t["id"]: t for t in data["teams"]}
+    
+    # Build comprehensive name lookup
     elements_by_name = {}
     for e in data["elements"]:
-        # Create lookup by various name formats
-        name = e.get("web_name", "").lower()
-        full_name = f"{e.get('first_name', '')} {e.get('second_name', '')}".lower().strip()
+        name = e.get("web_name", "").lower().strip()
+        first = e.get("first_name", "").lower().strip()
+        second = e.get("second_name", "").lower().strip()
+        full_name = f"{first} {second}".strip()
+        
         elements_by_name[name] = e["id"]
         elements_by_name[full_name] = e["id"]
-        # Also add without accents for matching
+        elements_by_name[second] = e["id"]  # Last name only
+        
+        # Without accents
         import unicodedata
-        name_ascii = unicodedata.normalize('NFKD', name).encode('ASCII', 'ignore').decode()
-        elements_by_name[name_ascii] = e["id"]
+        for n in [name, full_name, second]:
+            if n:
+                ascii_name = unicodedata.normalize('NFKD', n).encode('ASCII', 'ignore').decode().lower()
+                if ascii_name and ascii_name != n:
+                    elements_by_name[ascii_name] = e["id"]
     
     predictions = {}
-    source_used = source
     errors = []
+    matched_players = []
+    unmatched_players = []
     
-    if source == "fplreview":
-        # FPL Review free data - try their public endpoint
-        try:
-            client = await get_http_client()
-            # FPL Review has a free CSV export for the current GW
-            # Try their API endpoint
-            response = await client.get(
-                "https://fplreview.com/api/fpl/getFixturePredictions",
-                headers={'User-Agent': 'Mozilla/5.0'},
-                timeout=15.0
-            )
-            if response.status_code == 200:
-                fpl_data = response.json()
-                # Parse FPL Review format
-                for player in fpl_data.get("players", []):
-                    pid = player.get("id")
-                    mins = player.get("expected_mins") or player.get("mins")
-                    if pid and mins is not None:
-                        predictions[pid] = float(mins)
-        except Exception as e:
-            errors.append(f"FPL Review API: {str(e)}")
-            
-            # Fallback: try scraping their free page
-            try:
-                response = await client.get(
-                    "https://fplreview.com/free-planner/",
-                    headers={'User-Agent': 'Mozilla/5.0'},
-                    timeout=15.0
-                )
-                # Parse HTML for player data - would need proper parsing
-                errors.append("FPL Review scraping not yet implemented")
-            except Exception as e2:
-                errors.append(f"FPL Review scrape: {str(e2)}")
-    
-    elif source == "rotowire":
-        # Rotowire predicted lineups
+    if source == "rotowire":
         try:
             client = await get_http_client()
             response = await client.get(
                 "https://www.rotowire.com/soccer/lineups.php?league=EPL",
-                headers={'User-Agent': 'Mozilla/5.0'},
-                timeout=15.0
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                },
+                timeout=20.0
             )
+            
             if response.status_code == 200:
-                html = response.text
-                # Parse predicted starters - they get 90 mins, subs get 20
-                # This is a simplified parse - would need BeautifulSoup for proper parsing
-                import re
+                soup = BeautifulSoup(response.text, 'lxml')
                 
-                # Find player names in lineup divs
-                starter_pattern = r'class="lineup__player[^"]*is-starter[^"]*"[^>]*>([^<]+)<'
-                sub_pattern = r'class="lineup__player[^"]*is-sub[^"]*"[^>]*>([^<]+)<'
+                # Find all lineup cards
+                lineup_cards = soup.find_all('div', class_='lineup__box') or soup.find_all('div', class_='lineup')
                 
-                starters = re.findall(starter_pattern, html, re.IGNORECASE)
-                subs = re.findall(sub_pattern, html, re.IGNORECASE)
+                if not lineup_cards:
+                    # Try alternative selectors
+                    lineup_cards = soup.find_all('div', {'class': lambda x: x and 'lineup' in x.lower()})
                 
-                for name in starters:
-                    name_lower = name.strip().lower()
-                    if name_lower in elements_by_name:
-                        predictions[elements_by_name[name_lower]] = 90.0
-                
-                for name in subs:
-                    name_lower = name.strip().lower()
-                    if name_lower in elements_by_name:
-                        # Subs get reduced minutes
-                        predictions[elements_by_name[name_lower]] = 25.0
+                for card in lineup_cards:
+                    # Find all player elements within this card
+                    # Rotowire uses different classes for starters vs subs
+                    
+                    # Try multiple selector patterns
+                    starters = card.select('.lineup__player') or card.select('[class*="player"]')
+                    
+                    for player_elem in starters:
+                        # Get player name - could be in various places
+                        name_elem = player_elem.select_one('.lineup__player-name') or player_elem.select_one('a') or player_elem
+                        if not name_elem:
+                            continue
+                            
+                        player_name = name_elem.get_text(strip=True).lower()
+                        if not player_name or len(player_name) < 2:
+                            continue
                         
+                        # Check if this is a starter or sub based on class/position
+                        classes = ' '.join(player_elem.get('class', []))
+                        is_starter = 'is-starter' in classes or 'starter' in classes or 'lineup__player--' not in classes
+                        is_sub = 'is-sub' in classes or 'sub' in classes or 'bench' in classes
+                        is_confirmed = 'is-confirmed' in classes or 'confirmed' in classes
+                        
+                        # Determine minutes
+                        if is_sub:
+                            mins = 15.0  # Bench player
+                        elif is_confirmed:
+                            mins = 90.0  # Confirmed starter
+                        elif is_starter:
+                            mins = 85.0  # Predicted starter
+                        else:
+                            mins = 45.0  # Unknown
+                        
+                        # Try to match player
+                        matched_id = None
+                        
+                        # Direct match
+                        if player_name in elements_by_name:
+                            matched_id = elements_by_name[player_name]
+                        else:
+                            # Fuzzy match - check if any stored name contains this name or vice versa
+                            for stored_name, pid in elements_by_name.items():
+                                if len(player_name) >= 4 and len(stored_name) >= 4:
+                                    if player_name in stored_name or stored_name in player_name:
+                                        matched_id = pid
+                                        break
+                        
+                        if matched_id:
+                            predictions[matched_id] = mins
+                            matched_players.append(f"{player_name} -> {elements[matched_id]['web_name']} ({mins}m)")
+                        else:
+                            unmatched_players.append(player_name)
+                
+                logger.info(f"Rotowire: matched {len(matched_players)}, unmatched {len(unmatched_players)}")
+                            
+            else:
+                errors.append(f"Rotowire HTTP {response.status_code}")
+                
         except Exception as e:
             errors.append(f"Rotowire: {str(e)}")
+            logger.error(f"Rotowire scrape failed: {e}")
     
     # Apply predictions to cache
     count = 0
@@ -1941,9 +2098,11 @@ async def fetch_predicted_minutes_from_source(source: str = "fplreview"):
         cache.predicted_minutes_last_update = datetime.now()
     
     return {
-        "status": "ok" if count > 0 else "partial",
-        "source": source_used,
+        "status": "ok" if count > 0 else "failed",
+        "source": source,
         "imported": count,
+        "matched_sample": matched_players[:20],
+        "unmatched_sample": unmatched_players[:20],
         "errors": errors if errors else None,
         "updated_at": cache.predicted_minutes_last_update.isoformat() if cache.predicted_minutes_last_update else None
     }
@@ -2082,7 +2241,7 @@ async def get_rankings(
         
         stats = calculate_expected_points(
             player, position_id, current_gw, upcoming, teams, fixtures, events,
-            player_history=player_hist
+            player_history=player_hist, all_players=elements
         )
         
         team_data = teams.get(player["team"], {})
@@ -2178,10 +2337,10 @@ async def get_my_team(manager_id: int):
         player_hist = player_histories.get(player["id"])
         
         upcoming = get_player_upcoming_fixtures(player["team"], fixtures, next_gw, next_gw + 5, teams)
-        stats = calculate_expected_points(player, position_id, current_gw, upcoming, teams, fixtures, events, player_history=player_hist)
+        stats = calculate_expected_points(player, position_id, current_gw, upcoming, teams, fixtures, events, player_history=player_hist, all_players=list(elements.values()))
         
         single_fixtures = get_player_upcoming_fixtures(player["team"], fixtures, next_gw, next_gw, teams)
-        single_stats = calculate_expected_points(player, position_id, current_gw, single_fixtures, teams, fixtures, events, player_history=player_hist)
+        single_stats = calculate_expected_points(player, position_id, current_gw, single_fixtures, teams, fixtures, events, player_history=player_hist, all_players=list(elements.values()))
         
         squad.append({
             "id": player["id"],
@@ -3309,6 +3468,7 @@ class TransferPath:
             },
             "xpts_gain": transfer["xpts_gain"],
             "is_hit": is_hit,
+            "is_booked": transfer.get("is_booked", False),
         }
         self.actions.append(action)
         
@@ -3394,17 +3554,24 @@ def solve_transfer_plan(
     booked_by_gw = {}
     if booked_transfers:
         squad_ids = {p["id"] for p in squad}
+        logger.info(f"Processing {len(booked_transfers)} booked transfers")
         for bt in booked_transfers:
             gw = bt.get("gw")
             out_name = bt.get("out", "")
             in_name = bt.get("in", "")
             
             if not gw or not out_name or not in_name:
+                logger.warning(f"Invalid booked transfer: {bt}")
                 continue
             
             # Find the players
             out_player = find_player_by_name(out_name, list(elements.values()), squad_ids)
             in_player = find_player_by_name(in_name, all_players)
+            
+            if not out_player:
+                logger.warning(f"Could not find out player: '{out_name}' in squad")
+            if not in_player:
+                logger.warning(f"Could not find in player: '{in_name}'")
             
             if out_player and in_player:
                 if gw not in booked_by_gw:
@@ -3413,6 +3580,7 @@ def solve_transfer_plan(
                     "out": out_player,
                     "in": in_player
                 })
+                logger.info(f"Booked GW{gw}: {out_player.get('web_name')} -> {in_player.get('web_name')}")
     
     # Initialize root path
     root = TransferPath(squad, bank, free_transfers)
@@ -3454,9 +3622,14 @@ def solve_transfer_plan(
                     in_player = booked["in"]
                     
                     # Check if out_player is still in squad
-                    squad_ids = {p["id"] for p in booked_path.squad}
-                    if out_player["id"] not in squad_ids:
+                    squad_dict = {p["id"]: p for p in booked_path.squad}
+                    if out_player["id"] not in squad_dict:
+                        logger.warning(f"Booked transfer: {out_player.get('web_name')} not in squad, skipping")
                         continue  # Player already transferred out
+                    
+                    # Get the squad version of out_player (has selling_price)
+                    squad_out_player = squad_dict[out_player["id"]]
+                    selling_price = squad_out_player.get("selling_price", squad_out_player.get("price", out_player.get("now_cost", 0) / 10))
                     
                     # Build transfer dict
                     position_id = out_player.get("element_type", in_player.get("element_type", 0))
@@ -3470,6 +3643,7 @@ def solve_transfer_plan(
                             "team_id": out_player.get("team"),
                             "position_id": out_player.get("element_type"),
                             "price": out_player.get("now_cost", 0) / 10,
+                            "selling_price": selling_price,  # Use squad selling price
                         },
                         "in": {
                             "id": in_player["id"],
@@ -3484,6 +3658,8 @@ def solve_transfer_plan(
                         "xpts_gain": 0,  # Booked - not optimized
                         "is_booked": True
                     }
+                    
+                    logger.info(f"Applying booked transfer GW{gw}: {out_player.get('web_name')} -> {in_player.get('web_name')}")
                     
                     # Use FT if available, otherwise take hit
                     if booked_path.ft > 0:
