@@ -204,7 +204,7 @@ FPL_FDR_TO_10 = {1: 2, 2: 4, 3: 5, 4: 7, 5: 9}
 # DEFCON thresholds (2025/26 rules)
 DEFCON_THRESHOLD_DEF = 10
 DEFCON_THRESHOLD_MID = 12
-DEFCON_POINTS = 1.5  # Reduced from 2 - DEFCON bonus is nice but not that common
+DEFCON_POINTS = 1.5  # DEFCON bonus for DEF/MID
 
 # Fixture importance weights - near-term fixtures matter more
 # Sum = 1.0 for easy normalization
@@ -443,6 +443,22 @@ TEAM_NAME_MAPPING = {
 UNDERSTAT_TO_FPL_ID = {v[1]: v[0] for v in TEAM_NAME_MAPPING.values()}
 FPL_ID_TO_UNDERSTAT = {v[0]: v[1] for v in TEAM_NAME_MAPPING.values()}
 
+# Analytic FPL team names to FPL ID mapping (handles various name formats)
+# Note: IDs may need updating if teams get promoted/relegated
+ANALYTIC_FPL_TO_ID = {
+    "Arsenal": 1, "Aston Villa": 2, "Bournemouth": 3, "Brentford": 4,
+    "Brighton": 5, "Brighton & Hove Albion": 5, "Brighton and Hove Albion": 5,
+    "Chelsea": 6, "Crystal Palace": 7, "Everton": 8,
+    "Fulham": 9, "Ipswich": 10, "Ipswich Town": 10, "Leicester": 11, "Leicester City": 11,
+    "Liverpool": 12, "Manchester City": 13, "Man City": 13,
+    "Manchester Utd": 14, "Manchester United": 14, "Man Utd": 14, "Man United": 14,
+    "Newcastle Utd": 15, "Newcastle United": 15, "Newcastle": 15,
+    "Nott'ham Forest": 16, "Nottingham Forest": 16, "Nott'm Forest": 16, "Forest": 16,
+    "Southampton": 17, "Tottenham": 18, "Spurs": 18, "Tottenham Hotspur": 18,
+    "West Ham": 19, "West Ham United": 19,
+    "Wolves": 20, "Wolverhampton": 20, "Wolverhampton Wanderers": 20,
+}
+
 HOME_AWAY_FDR_ADJUSTMENT = {'home': 0.85, 'away': 1.15}
 
 
@@ -592,6 +608,9 @@ class DataCache:
         # Predicted minutes from external sources (e.g., FPL Review)
         self.predicted_minutes: Dict[int, float] = {}  # player_id -> predicted_minutes
         self.predicted_minutes_last_update: Optional[datetime] = None
+        # Manual team strength data (from Analytic FPL)
+        self.manual_team_strength: Dict[str, Dict] = {}  # team_name -> {adjxg_for, adjxg_ag}
+        self.manual_team_strength_last_update: Optional[datetime] = None
     
     def get_minutes_override(self, player_id: int, manager_id: Optional[int] = None) -> Optional[float]:
         """Get minutes override, checking manager-specific first, then global, then predicted."""
@@ -862,21 +881,31 @@ async def _do_fdr_refresh():
         season_xg_per_game = data['season_xg'] / max(1, season_matches)
         season_xga_per_game = data['season_xga'] / max(1, season_matches)
         
-        # Calculate clean sheet probability using Poisson: P(0 goals) = e^(-xGA)
-        # Use blend of form and season for stability
-        if season_matches >= 10:
-            blended_xga = 0.6 * form_xga + 0.4 * season_xga_per_game
-        else:
-            blended_xga = form_xga if form_xga > 0 else season_xga_per_game
+        # Check if we have manual team strength data (from Analytic FPL)
+        manual_data = cache.manual_team_strength.get(team_id)
         
+        if manual_data:
+            # Use Analytic FPL adjusted xG as baseline, blend with form
+            # 70% stable baseline from Analytic FPL, 30% recent form from Understat
+            manual_xg = manual_data.get('adjxg_for', form_xg)
+            manual_xga = manual_data.get('adjxg_ag', form_xga)
+            
+            blended_xg = 0.70 * manual_xg + 0.30 * form_xg
+            blended_xga = 0.70 * manual_xga + 0.30 * form_xga
+            data_source = "analytic_fpl+form"
+        else:
+            # Fallback to form + season blend (original behavior)
+            if season_matches >= 10:
+                blended_xga = 0.6 * form_xga + 0.4 * season_xga_per_game
+                blended_xg = 0.6 * form_xg + 0.4 * season_xg_per_game
+            else:
+                blended_xga = form_xga if form_xga > 0 else season_xga_per_game
+                blended_xg = form_xg if form_xg > 0 else season_xg_per_game
+            data_source = "understat_form+season"
+        
+        # Calculate clean sheet probability using Poisson: P(0 goals) = e^(-xGA)
         cs_probability = math.exp(-blended_xga) if blended_xga > 0 else 0.25
         cs_probability = min(0.50, max(0.08, cs_probability))  # Bound 8%-50%
-        
-        # Calculate expected xG per game (for opponent strength)
-        if season_matches >= 10:
-            blended_xg = 0.6 * form_xg + 0.4 * season_xg_per_game
-        else:
-            blended_xg = form_xg if form_xg > 0 else season_xg_per_game
         
         fdr_data[team_id] = {
             'season_xg': data['season_xg'],
@@ -887,23 +916,26 @@ async def _do_fdr_refresh():
             'form_ppg': round(form_ppg, 2),
             'season_xg_per_game': round(season_xg_per_game, 2),
             'season_xga_per_game': round(season_xga_per_game, 2),
+            'blended_xg': round(blended_xg, 2),  # Final blended xG for predictions
+            'blended_xga': round(blended_xga, 2),  # Final blended xGA for predictions
             'cs_probability': round(cs_probability, 3),  # Team's expected CS rate
-            'xg_per_game': round(blended_xg, 2),  # Team's attacking output
+            'xg_per_game': round(blended_xg, 2),  # Alias for backwards compatibility
+            'data_source': data_source,
         }
-        all_form_xg.append(form_xg)
-        all_form_xga.append(form_xga)
+        all_form_xg.append(blended_xg)  # Use blended for FDR percentiles
+        all_form_xga.append(blended_xga)
     
     # Compute FDR scores using percentiles
     if len(all_form_xg) >= 5:
         for team_id, data in fdr_data.items():
-            # Attack FDR: How hard to attack this team (based on their xGA)
+            # Attack FDR: How hard to attack this team (based on their blended xGA)
             # Low xGA = hard to score against = HIGH attack_fdr
-            xga_percentile = percentileofscore(all_form_xga, data['form_xga'])
+            xga_percentile = percentileofscore(all_form_xga, data['blended_xga'])
             attack_fdr = max(1, min(10, int((100 - xga_percentile) / 10) + 1))
             
-            # Defence FDR: How hard to defend against this team (based on their xG)
+            # Defence FDR: How hard to defend against this team (based on their blended xG)
             # High xG = dangerous attack = HIGH defence_fdr
-            xg_percentile = percentileofscore(all_form_xg, data['form_xg'])
+            xg_percentile = percentileofscore(all_form_xg, data['blended_xg'])
             defence_fdr = max(1, min(10, int(xg_percentile / 10) + 1))
             
             data['attack_fdr'] = attack_fdr
@@ -1648,16 +1680,18 @@ def calculate_expected_points(
         else:
             attack_multiplier *= AWAY_ATTACK_PENALTY  # 0.87
         
-        # CAP TOTAL FIXTURE BOOST AT 25% - allows for juicy home games vs weak defences
-        attack_multiplier = min(1.25, max(0.75, attack_multiplier))
+        # CAP TOTAL FIXTURE BOOST AT 22% - reasonable swing for home vs weak defence
+        attack_multiplier = min(1.22, max(0.78, attack_multiplier))
         
         # Apply penalty boost to xG if player is a penalty taker
         fixture_xG90 = (xG90 + penalty_boost) * attack_multiplier
         fixture_xA90 = xA90 * attack_multiplier
         
         # ==================== FIXTURE-SPECIFIC BONUS ====================
-        # Bonus correlates with goals/assists, so adjust for fixture
-        fixture_bonus = expected_bonus * attack_multiplier
+        # Bonus is competitive within each match - doesn't scale as aggressively as xG
+        # Good fixtures help but effect is muted (50% of attack multiplier effect)
+        bonus_multiplier = 1.0 + (attack_multiplier - 1.0) * 0.5
+        fixture_bonus = expected_bonus * bonus_multiplier
         
         # ==================== CALCULATE FIXTURE xPTS ====================
         # Appearance points (assume 60+ mins for simplicity in per-90 calc)
@@ -1800,12 +1834,42 @@ def calculate_expected_points(
     # Scale by number of fixtures in horizon
     total_xpts_per_90 = total_xpts * len(horizon)
     
-    # Calculate clean per-90 rate (no PPG blend - that double-counts fixture variance)
+    # Calculate clean per-90 rate
     model_per_90 = total_xpts_per_90 / max(1, len(horizon))
     
-    # Apply minutes factor
+    # ==================== APPLY MINUTES FACTOR ====================
+    # Appearance points (2 pts) are DISCRETE - you get them if you play 60+ mins
+    # Other components (goals, assists, CS, saves) scale with minutes
+    #
+    # Split the calculation:
+    # - Appearance: P(60+ mins) * 2 + P(1-59 mins) * 1
+    # - Everything else: linear with minutes_factor
+    
     minutes_factor = exp_mins / 90.0
-    final_xpts = total_xpts_per_90 * minutes_factor
+    
+    # Probability of 60+ mins (logistic curve)
+    if exp_mins >= 85:
+        prob_60_plus = 0.95
+    elif exp_mins >= 75:
+        prob_60_plus = 0.85
+    elif exp_mins >= 60:
+        prob_60_plus = 0.50 + (exp_mins - 60) * 0.014  # 50% at 60, 85% at 85
+    elif exp_mins >= 30:
+        prob_60_plus = (exp_mins - 30) / 60  # 0% at 30, 50% at 60
+    else:
+        prob_60_plus = 0.0
+    
+    # Probability of playing at all (for 1-pt appearance)
+    prob_plays = min(1.0, exp_mins / 15) if exp_mins > 0 else 0
+    
+    # Expected appearance points (discrete)
+    appearance_xpts = (prob_60_plus * 2.0) + ((prob_plays - prob_60_plus) * 1.0)
+    
+    # Non-appearance per-90 (remove the 2.0 app pts we added per fixture)
+    non_app_per_90 = model_per_90 - 2.0
+    
+    # Final xPts: discrete appearance + linear everything else
+    final_xpts = (appearance_xpts * len(horizon)) + (non_app_per_90 * len(horizon) * minutes_factor)
     
     return {
         "xpts": round(final_xpts, 2),
@@ -2029,6 +2093,109 @@ async def clear_predicted_minutes():
     cache.predicted_minutes.clear()
     cache.predicted_minutes_last_update = None
     return {"status": "ok", "message": "All predicted minutes cleared"}
+
+
+# ==================== TEAM STRENGTH ADMIN (Analytic FPL Data) ====================
+
+class TeamStrengthData(BaseModel):
+    """Team strength data from Analytic FPL."""
+    team: str
+    adjxg_for: float
+    adjxg_ag: float
+
+
+class TeamStrengthBulkImport(BaseModel):
+    """Bulk import team strength data."""
+    teams: List[TeamStrengthData]
+    manager_id: int  # Must be admin
+
+
+@app.post("/api/team-strength")
+async def update_team_strength(data: TeamStrengthBulkImport):
+    """
+    Update team strength data from Analytic FPL.
+    Admin only (manager_id must be 616495).
+    
+    This data is blended with Understat form data:
+    final_xg = 0.7 * analytic_fpl_baseline + 0.3 * understat_form
+    """
+    if data.manager_id != ADMIN_MANAGER_ID:
+        raise HTTPException(status_code=403, detail="Admin access required (manager_id=616495)")
+    
+    updated = []
+    for team_data in data.teams:
+        team_name = team_data.team.strip()
+        team_id = ANALYTIC_FPL_TO_ID.get(team_name)
+        
+        if team_id is None:
+            logger.warning(f"Unknown team name: {team_name}")
+            continue
+        
+        cache.manual_team_strength[team_id] = {
+            "team_name": team_name,
+            "adjxg_for": team_data.adjxg_for,
+            "adjxg_ag": team_data.adjxg_ag,
+        }
+        updated.append(team_name)
+    
+    cache.manual_team_strength_last_update = datetime.now()
+    
+    # Force FDR refresh to incorporate new data
+    cache.fdr_last_update = None
+    await refresh_fdr_data(force=True)
+    
+    return {
+        "status": "ok",
+        "updated_teams": updated,
+        "count": len(updated),
+        "updated_at": cache.manual_team_strength_last_update.isoformat()
+    }
+
+
+@app.get("/api/team-strength")
+async def get_team_strength():
+    """Get current team strength data (manual + computed)."""
+    await refresh_fdr_data()
+    
+    result = {}
+    for team_id, fdr in cache.fdr_data.items():
+        team_name = FPL_ID_TO_UNDERSTAT.get(team_id, f"Team {team_id}")
+        manual = cache.manual_team_strength.get(team_id, {})
+        
+        result[team_id] = {
+            "team_name": team_name,
+            "manual_adjxg_for": manual.get("adjxg_for"),
+            "manual_adjxg_ag": manual.get("adjxg_ag"),
+            "form_xg": fdr.get("form_xg"),
+            "form_xga": fdr.get("form_xga"),
+            "blended_xg": fdr.get("blended_xg"),
+            "blended_xga": fdr.get("blended_xga"),
+            "cs_probability": fdr.get("cs_probability"),
+            "attack_fdr": fdr.get("attack_fdr"),
+            "defence_fdr": fdr.get("defence_fdr"),
+        }
+    
+    return {
+        "teams": result,
+        "manual_last_update": cache.manual_team_strength_last_update.isoformat() if cache.manual_team_strength_last_update else None,
+        "fdr_last_update": cache.fdr_last_update.isoformat() if cache.fdr_last_update else None,
+    }
+
+
+@app.delete("/api/team-strength")
+async def clear_team_strength(manager_id: int):
+    """Clear manual team strength data (admin only)."""
+    if manager_id != ADMIN_MANAGER_ID:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    cache.manual_team_strength.clear()
+    cache.manual_team_strength_last_update = None
+    
+    # Force FDR refresh
+    cache.fdr_last_update = None
+    await refresh_fdr_data(force=True)
+    
+    return {"status": "ok", "message": "Team strength data cleared"}
 
 
 @app.post("/api/predicted-minutes/fetch")
@@ -3373,42 +3540,53 @@ def evaluate_squad_xpts(
     teams_dict: Dict,
     elements: Dict,
     events: List[Dict],
-    chip: Optional[str] = None
+    chip: Optional[str] = None,
+    player_gw_cache: Optional[Dict] = None,  # (player_id, gw) -> xpts
 ) -> float:
     """
     Calculate expected points for a squad in a single GW.
     Handles chip effects (BB = all 15 play, TC = captain x3).
+    
+    player_gw_cache: Optional cache to avoid recalculating xpts for players already computed.
     """
     # Get xPts for each player for this specific GW
     player_xpts = []
     
     for p in squad:
-        player = elements.get(p["id"])
-        if not player:
-            # Player not found in elements, use data from squad
-            player_xpts.append({
-                "id": p["id"],
-                "position_id": p.get("position_id", 3),
-                "xpts": p.get("xpts", 0) / 5,  # Rough per-GW estimate
-                "is_captain": p.get("is_captain", False),
-            })
-            continue
+        pid = p["id"]
+        cache_key = (pid, gw)
         
-        position_id = player["element_type"]
-        upcoming = get_player_upcoming_fixtures(player["team"], fixtures, gw, gw, teams_dict)
-        
-        if not upcoming:
-            # Player has blank gameweek
-            xpts = 0
+        # Check cache first
+        if player_gw_cache is not None and cache_key in player_gw_cache:
+            xpts = player_gw_cache[cache_key]
+            position_id = elements.get(pid, {}).get("element_type", p.get("position_id", 3))
         else:
-            stats = calculate_expected_points(
-                player, position_id, gw, upcoming, teams_dict, fixtures, events
-            )
-            # Single GW xPts (base90 * minutes_factor * fixture_multiplier)
-            xpts = stats["xpts"] / max(len(upcoming), 1)  # Per fixture if DGW
+            player = elements.get(pid)
+            if not player:
+                # Player not found in elements, use data from squad
+                xpts = p.get("xpts", 0) / 5  # Rough per-GW estimate
+                position_id = p.get("position_id", 3)
+            else:
+                position_id = player["element_type"]
+                upcoming = get_player_upcoming_fixtures(player["team"], fixtures, gw, gw, teams_dict)
+                
+                if not upcoming:
+                    # Player has blank gameweek
+                    xpts = 0
+                else:
+                    stats = calculate_expected_points(
+                        player, position_id, gw, upcoming, teams_dict, fixtures, events
+                    )
+                    # calculate_expected_points already sums xpts across all fixtures in the GW
+                    # (including DGW double fixtures) - do NOT divide
+                    xpts = stats["xpts"]
+            
+            # Store in cache
+            if player_gw_cache is not None:
+                player_gw_cache[cache_key] = xpts
         
         player_xpts.append({
-            "id": p["id"],
+            "id": pid,
             "position_id": position_id,
             "xpts": xpts,
             "is_captain": p.get("is_captain", False),
@@ -3584,12 +3762,14 @@ class TransferPath:
         self.actions = []  # List of (gw, action_type, details)
         self.total_xpts = 0
         self.hits = 0
+        self.gw_xpts = {}  # Cache: gw -> xpts (for incremental updates)
     
     def copy(self):
         new_path = TransferPath(self.squad, self.bank, self.ft)
         new_path.actions = self.actions.copy()
         new_path.total_xpts = self.total_xpts
         new_path.hits = self.hits
+        new_path.gw_xpts = self.gw_xpts.copy()  # Copy cached GW xpts
         return new_path
     
     def apply_transfer(self, transfer: Dict, gw: int, is_hit: bool = False):
@@ -3747,20 +3927,46 @@ def solve_transfer_plan(
                 })
                 logger.info(f"Booked GW{gw}: {out_player.get('web_name')} -> {in_player.get('web_name')}")
     
+    # Track ALL booked-in players across entire horizon - these cannot be transferred out
+    all_booked_in_ids = set()
+    for gw_booked in booked_by_gw.values():
+        for bt in gw_booked:
+            all_booked_in_ids.add(bt["in"]["id"])
+    
+    # Track booked-out players by GW - cannot transfer out BEFORE their booked GW
+    booked_out_before_gw = {}  # player_id -> gw they're booked out
+    for gw_num, gw_booked in booked_by_gw.items():
+        for bt in gw_booked:
+            booked_out_before_gw[bt["out"]["id"]] = gw_num
+    
+    if all_booked_in_ids:
+        logger.info(f"Protected booked-in player IDs: {all_booked_in_ids}")
+    if booked_out_before_gw:
+        logger.info(f"Booked-out players: {booked_out_before_gw}")
+    
     # Initialize root path
     root = TransferPath(squad, bank, free_transfers)
     
-    # Calculate baseline xPts (no transfers)
-    baseline_xpts = 0
-    for gw in range(start_gw, end_gw):
-        chip = None
-        for chip_name, chip_gw in chip_gws.items():
-            if chip_gw == gw:
-                chip = chip_name
-                break
-        baseline_xpts += evaluate_squad_xpts(squad, gw, fixtures, teams_dict, elements, events, chip)
+    # Create shared caches for performance
+    player_gw_cache = {}  # (player_id, gw) -> xpts - shared across all evaluations
+    gw_to_chip = {v: k for k, v in chip_gws.items()}  # gw -> chip_name lookup
     
-    root.total_xpts = baseline_xpts
+    # Helper to recompute xpts from a given GW onwards
+    def recompute_from(path: TransferPath, from_gw: int):
+        for g in range(from_gw, end_gw):
+            chip = gw_to_chip.get(g)
+            path.gw_xpts[g] = evaluate_squad_xpts(
+                path.squad, g, fixtures, teams_dict, elements, events, chip, player_gw_cache
+            )
+        path.total_xpts = sum(path.gw_xpts.values()) - (path.hits * 4)
+    
+    # Calculate baseline xPts for root (populate gw_xpts cache)
+    for gw in range(start_gw, end_gw):
+        chip = gw_to_chip.get(gw)
+        root.gw_xpts[gw] = evaluate_squad_xpts(
+            squad, gw, fixtures, teams_dict, elements, events, chip, player_gw_cache
+        )
+    root.total_xpts = sum(root.gw_xpts.values())
     
     # BFS through decision tree
     paths = [root]
@@ -3779,15 +3985,18 @@ def solve_transfer_plan(
         booked_this_gw = booked_by_gw.get(gw, [])
         
         for path in paths:
-            # If there are booked transfers, apply them first
+            # ALWAYS apply booked transfers first if any exist for this GW
+            # Booked transfers are MANDATORY - not optional branches
+            working_path = path.copy()
+            booked_applied = False
+            
             if booked_this_gw:
-                booked_path = path.copy()
                 for booked in booked_this_gw:
                     out_player = booked["out"]
                     in_player = booked["in"]
                     
                     # Check if out_player is still in squad
-                    squad_dict = {p["id"]: p for p in booked_path.squad}
+                    squad_dict = {p["id"]: p for p in working_path.squad}
                     if out_player["id"] not in squad_dict:
                         logger.warning(f"Booked transfer: {out_player.get('web_name')} not in squad, skipping")
                         continue  # Player already transferred out
@@ -3808,7 +4017,7 @@ def solve_transfer_plan(
                             "team_id": out_player.get("team"),
                             "position_id": out_player.get("element_type"),
                             "price": out_player.get("now_cost", 0) / 10,
-                            "selling_price": selling_price,  # Use squad selling price
+                            "selling_price": selling_price,
                         },
                         "in": {
                             "id": in_player["id"],
@@ -3820,79 +4029,72 @@ def solve_transfer_plan(
                             "form": float(in_player.get("form", 0) or 0),
                             "minutes": in_player.get("minutes", 0),
                         },
-                        "xpts_gain": 0,  # Booked - not optimized
+                        "xpts_gain": 0,
                         "is_booked": True
                     }
                     
                     logger.info(f"Applying booked transfer GW{gw}: {out_player.get('web_name')} -> {in_player.get('web_name')}")
                     
                     # Use FT if available, otherwise take hit
-                    if booked_path.ft > 0:
-                        booked_path.use_ft()
-                        booked_path.apply_transfer(transfer, gw, is_hit=False)
+                    if working_path.ft > 0:
+                        working_path.use_ft()
+                        working_path.apply_transfer(transfer, gw, is_hit=False)
                     else:
-                        booked_path.apply_transfer(transfer, gw, is_hit=True)
+                        working_path.apply_transfer(transfer, gw, is_hit=True)
+                    booked_applied = True
                 
-                # Recalculate total xPts after booked transfers
-                booked_path.total_xpts = sum(
-                    evaluate_squad_xpts(booked_path.squad, g, fixtures, teams_dict, elements, events,
-                                       chip_gws.get(g))
-                    for g in range(start_gw, end_gw)
-                ) - (booked_path.hits * 4)
-                new_paths.append(booked_path)
-                
-                # Still allow rolling FT if any left (for future GWs)
-                if booked_path.ft > 0:
-                    roll_booked = booked_path.copy()
-                    roll_booked.roll_transfer(gw)
-                    new_paths.append(roll_booked)
-            else:
-                # No booked transfers - normal optimization
-                # Option 1: Roll FT (if beneficial or no good transfers)
-                roll_path = path.copy()
+                # Recompute after booked transfers
+                if booked_applied:
+                    recompute_from(working_path, gw)
+            
+            # Now explore options FROM the working_path (which has booked transfers applied)
+            # Option 1: Roll FT (or just continue if no FTs)
+            roll_path = working_path.copy()
+            if not booked_applied:  # Only roll if we didn't use FT for booked
                 roll_path.roll_transfer(gw)
-                gw_xpts = evaluate_squad_xpts(roll_path.squad, gw, fixtures, teams_dict, elements, events, chip_this_gw)
-                roll_path.total_xpts = sum(
-                    evaluate_squad_xpts(roll_path.squad, g, fixtures, teams_dict, elements, events,
-                                       chip_gws.get(g))
-                    for g in range(start_gw, end_gw)
-                )
-                new_paths.append(roll_path)
-                
-                # Get transfer candidates
+            elif working_path.ft > 0:  # Had FTs left after booked transfer
+                roll_path.roll_transfer(gw)
+            new_paths.append(roll_path)
+            
+            # Option 2: Use remaining FT for additional transfer (after booked or as main)
+            if working_path.ft > 0:
+                # Get candidates - exclude transfers that would:
+                # 1. Remove a player we booked in (now or future)
+                # 2. Remove a player we plan to book out later (before their booked GW)
                 candidates = get_transfer_candidates(
-                    path.squad, all_players, teams_dict, fixtures, gw, end_gw - gw, path.bank, limit=3
+                    working_path.squad, all_players, teams_dict, fixtures, gw, end_gw - gw, working_path.bank, limit=5
                 )
                 
-                if path.ft > 0 and candidates:
-                    # Option 2: Use FT for best transfer
-                    for i, transfer in enumerate(candidates[:3]):  # Top 3 transfers
-                        ft_path = path.copy()
-                        ft_path.use_ft()
-                        ft_path.apply_transfer(transfer, gw, is_hit=False)
-                        ft_path.total_xpts = sum(
-                            evaluate_squad_xpts(ft_path.squad, g, fixtures, teams_dict, elements, events,
-                                               chip_gws.get(g))
-                            for g in range(start_gw, end_gw)
-                        )
-                        new_paths.append(ft_path)
-                        
-                        # Option 3: Take hit for second transfer (if allowed)
-                        if max_hits > 0 and path.hits < max_hits and len(candidates) > 1:
-                            for j, second_transfer in enumerate(candidates[i+1:i+3]):  # Next 2
-                                if second_transfer["out"]["id"] == transfer["in"]["id"]:
-                                    continue
-                                if second_transfer["in"]["id"] == transfer["out"]["id"]:
-                                    continue
-                                
-                                hit_path = ft_path.copy()
-                                hit_path.apply_transfer(second_transfer, gw, is_hit=True)
-                                hit_path.total_xpts = sum(
-                                    evaluate_squad_xpts(hit_path.squad, g, fixtures, teams_dict, elements, events,
-                                                       chip_gws.get(g))
-                                    for g in range(start_gw, end_gw)
-                                ) - 4  # -4 for hit
-                                new_paths.append(hit_path)
+                def is_protected(player_id):
+                    # Can't transfer out booked-in players
+                    if player_id in all_booked_in_ids:
+                        return True
+                    # Can't transfer out players before their booked-out GW
+                    if player_id in booked_out_before_gw and gw < booked_out_before_gw[player_id]:
+                        return True
+                    return False
+                
+                candidates = [c for c in candidates if not is_protected(c["out"]["id"])]
+                
+                for i, transfer in enumerate(candidates[:3]):
+                    ft_path = working_path.copy()
+                    ft_path.use_ft()
+                    ft_path.apply_transfer(transfer, gw, is_hit=False)
+                    recompute_from(ft_path, gw)
+                    new_paths.append(ft_path)
+                    
+                    # Option 3: Take hit for second transfer (if allowed)
+                    if max_hits > 0 and working_path.hits < max_hits and len(candidates) > 1:
+                        for second_transfer in candidates[i+1:i+3]:
+                            if second_transfer["out"]["id"] == transfer["in"]["id"]:
+                                continue
+                            if second_transfer["in"]["id"] == transfer["out"]["id"]:
+                                continue
+                            
+                            hit_path = ft_path.copy()
+                            hit_path.apply_transfer(second_transfer, gw, is_hit=True)
+                            recompute_from(hit_path, gw)
+                            new_paths.append(hit_path)
         
         # Prune: keep top 20 paths by xPts
         new_paths.sort(key=lambda p: -p.total_xpts)
@@ -3933,10 +4135,11 @@ def solve_transfer_plan(
             position_id = player.get("position_id") or element.get("element_type", 0)
             team_id = player.get("team_id") or element.get("team", 0)
             
-            upcoming = get_player_upcoming_fixtures(team_id, fixtures, gw, gw + 1, teams_dict)
+            upcoming = get_player_upcoming_fixtures(team_id, fixtures, gw, gw, teams_dict)
             if upcoming:
                 stats = calculate_expected_points(element, position_id, gw, upcoming, teams_dict, fixtures, events)
-                gw_xpts = stats.get("xpts", 0) / max(len(upcoming), 1)  # Single GW xPts
+                # calculate_expected_points already sums xpts for all fixtures in the GW - do NOT divide
+                gw_xpts = stats.get("xpts", 0)
             else:
                 gw_xpts = player.get("xpts", 0) / horizon if horizon > 0 else 0
             

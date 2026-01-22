@@ -514,20 +514,20 @@
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 6px;
-            padding: 0.35rem 0.75rem;
-            margin-bottom: 0.5rem;
+            padding: 0.25rem 0.6rem;
+            margin-bottom: 0.35rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
-            gap: 0.4rem;
+            gap: 0.3rem;
         }
         .optimizer-title {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.4rem;
             font-weight: 600;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
         }
         .optimizer-actions {
             display: flex;
@@ -924,11 +924,11 @@
         .sidebar-card {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 1rem;
+            border-radius: 10px;
+            padding: 0.75rem;
         }
 
-        .sidebar-card h3 { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.75rem; font-weight: 600; }
+        .sidebar-card h3 { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; font-weight: 600; }
 
         .sidebar-stat { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
         .sidebar-stat:last-child { border-bottom: none; }
@@ -1043,8 +1043,9 @@
         /* GW Optimizer Grid */
         .optimizer-grid {
             display: grid;
-            grid-template-columns: 1fr 320px;
-            gap: 1.5rem;
+            grid-template-columns: 1fr 280px;
+            gap: 1rem;
+            align-items: start;
         }
         
         @media (max-width: 1024px) {
@@ -1056,7 +1057,7 @@
         .optimizer-sidebar {
             display: flex;
             flex-direction: column;
-            gap: 1rem;
+            gap: 0.6rem;
         }
         
         .captain-card-highlight {
@@ -1067,11 +1068,11 @@
         .captain-recommendation {
             display: flex;
             align-items: center;
-            gap: 1rem;
-            padding: 0.75rem;
+            gap: 0.6rem;
+            padding: 0.5rem;
             background: var(--bg-tertiary);
-            border-radius: 8px;
-            margin-bottom: 0.5rem;
+            border-radius: 6px;
+            margin-bottom: 0.35rem;
         }
         
         .captain-recommendation.main {
@@ -1080,14 +1081,14 @@
         }
         
         .captain-recommendation .badge {
-            width: 32px;
-            height: 32px;
+            width: 26px;
+            height: 26px;
             display: flex;
             align-items: center;
             justify-content: center;
             border-radius: 50%;
             font-weight: 700;
-            font-size: 0.85rem;
+            font-size: 0.75rem;
         }
         
         .captain-recommendation .badge.c {
@@ -1107,56 +1108,57 @@
         
         .captain-recommendation .name {
             font-weight: 600;
-            font-size: 0.95rem;
+            font-size: 0.85rem;
         }
         
         .captain-recommendation .meta {
-            font-size: 0.8rem;
+            font-size: 0.7rem;
             color: var(--text-muted);
         }
         
         .captain-recommendation .xpts {
             font-family: 'JetBrains Mono', monospace;
             font-weight: 600;
+            font-size: 0.85rem;
             color: var(--accent-primary);
         }
         
         .bench-list {
             display: flex;
             flex-direction: column;
-            gap: 0.5rem;
+            gap: 0.35rem;
         }
         
         .bench-item {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
-            padding: 0.6rem 0.75rem;
+            gap: 0.5rem;
+            padding: 0.4rem 0.5rem;
             background: var(--bg-tertiary);
-            border-radius: 6px;
+            border-radius: 5px;
         }
         
         .bench-item .order {
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
             background: var(--bg-hover);
             border-radius: 50%;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             font-weight: 600;
             color: var(--text-muted);
         }
         
         .bench-item .name {
             flex: 1;
-            font-size: 0.9rem;
+            font-size: 0.8rem;
         }
         
         .bench-item .pos {
-            font-size: 0.7rem;
-            padding: 0.15rem 0.4rem;
+            font-size: 0.65rem;
+            padding: 0.1rem 0.3rem;
             background: var(--bg-hover);
             border-radius: 3px;
             color: var(--text-muted);
@@ -1164,15 +1166,16 @@
         
         .bench-item .xpts {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.85rem;
+            font-size: 0.75rem;
             color: var(--text-secondary);
         }
         
         .value-stat {
             display: flex;
             justify-content: space-between;
-            padding: 0.5rem 0;
+            padding: 0.35rem 0;
             border-bottom: 1px solid var(--border-color);
+            font-size: 0.85rem;
         }
         
         .value-stat:last-child {
@@ -1295,7 +1298,7 @@
         .planner-header h2 { font-size: 1.75rem; margin-bottom: 0.5rem; }
         .planner-subtitle { color: var(--text-muted); }
         
-        .planner-setup { background: var(--surface); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        .planner-setup { background: var(--surface); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
         .planner-input-row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end; margin-bottom: 1rem; }
         .planner-input-row .control-group { flex: 1; min-width: 150px; }
         
@@ -1334,13 +1337,13 @@
         
         
         /* Advanced Options - Compact */
-        .advanced-toggle { margin-top: 0.75rem; }
-        .advanced-toggle .btn { font-size: 0.75rem; padding: 0.35rem 0.75rem; }
-        .advanced-options { margin-top: 0.75rem; padding: 0.75rem 1rem; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border-color); }
-        .advanced-section { margin-bottom: 0.75rem; }
+        .advanced-toggle { margin-top: 0.5rem; }
+        .advanced-toggle .btn { font-size: 0.7rem; padding: 0.25rem 0.5rem; }
+        .advanced-options { margin-top: 0.5rem; padding: 0.5rem 0.75rem; background: var(--bg-tertiary); border-radius: 6px; border: 1px solid var(--border-color); font-size: 0.8rem; }
+        .advanced-section { margin-bottom: 0.5rem; }
         .advanced-section:last-child { margin-bottom: 0; }
-        .advanced-section h4 { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem; }
-        .advanced-help { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.5rem; }
+        .advanced-section h4 { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.35rem; }
+        .advanced-help { font-size: 0.65rem; color: var(--text-muted); margin-bottom: 0.35rem; }
         .chip-schedule-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
         .chip-schedule-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.6rem; background: var(--bg-secondary); border-radius: 6px; }
         .chip-schedule-item input { width: 50px; padding: 0.35rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); font-size: 0.8rem; text-align: center; }
@@ -1376,16 +1379,16 @@
         }
         
         /* Booked Transfers */
-        .booked-transfers { display: flex; flex-direction: column; gap: 0.75rem; }
-        .booked-transfer-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; position: relative; }
-        .book-gw-select { width: 80px; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.9rem; }
-        .book-player-input { width: 160px; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.9rem; }
+        .booked-transfers { display: flex; flex-direction: column; gap: 0.5rem; }
+        .booked-transfer-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; position: relative; }
+        .book-gw-select { width: 65px; padding: 0.35rem; border: 1px solid var(--border-color); border-radius: 5px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
+        .book-player-input { width: 130px; padding: 0.35rem 0.5rem; border: 1px solid var(--border-color); border-radius: 5px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
         .book-player-input:focus { border-color: var(--accent-primary); outline: none; }
-        .book-arrow { color: var(--accent-primary); font-weight: bold; font-size: 1.1rem; }
-        .booked-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 1rem; background: var(--bg-secondary); border-radius: 8px; font-size: 0.9rem; border: 1px solid var(--accent-primary); }
+        .book-arrow { color: var(--accent-primary); font-weight: bold; font-size: 0.9rem; }
+        .booked-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.6rem; background: var(--bg-secondary); border-radius: 6px; font-size: 0.8rem; border: 1px solid var(--accent-primary); }
         .booked-item .out { color: #ef4444; font-weight: 600; }
         .booked-item .in { color: #10b981; font-weight: 600; }
-        .booked-item .remove-btn { cursor: pointer; color: var(--text-muted); margin-left: auto; padding: 0 0.25rem; font-size: 1.1rem; }
+        .booked-item .remove-btn { cursor: pointer; color: var(--text-muted); margin-left: auto; padding: 0 0.2rem; font-size: 0.9rem; }
         .booked-item .remove-btn:hover { color: #ef4444; }
         
         /* Player Autocomplete */
@@ -1399,8 +1402,77 @@
         .autocomplete-item .player-price { color: var(--accent-primary); font-weight: 600; font-size: 0.8rem; }
         .autocomplete-wrapper { position: relative; }
         
+        /* Admin Panel */
+        .admin-panel {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, var(--bg-card) 100%);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        .admin-panel.visible { display: block; }
+        .admin-panel-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+            color: #ef4444;
+            font-size: 0.85rem;
+        }
+        .admin-panel-content {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 0.75rem;
+            align-items: start;
+        }
+        .admin-textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 0.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            resize: vertical;
+        }
+        .admin-textarea:focus { border-color: #ef4444; outline: none; }
+        .admin-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .admin-btn {
+            padding: 0.5rem 1rem;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .admin-btn:hover { background: #dc2626; }
+        .admin-btn.secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+        }
+        .admin-btn.secondary:hover { background: var(--bg-hover); }
+        .admin-status {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+        }
+        .admin-status.success { color: #10b981; }
+        .admin-status.error { color: #ef4444; }
+        
         @media (max-width: 768px) {
             .chip-schedule-grid { grid-template-columns: repeat(2, 1fr); }
+            .admin-panel-content { grid-template-columns: 1fr; }
         }
         
         .plan-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
@@ -2294,6 +2366,30 @@
                 </div>
             </div>
 
+            <!-- Admin Panel (only visible for admin manager ID) -->
+            <div class="admin-panel" id="adminPanel">
+                <div class="admin-panel-header">
+                    🔐 Admin: Team Strength Data (Analytic FPL)
+                </div>
+                <div class="admin-panel-content">
+                    <div>
+                        <textarea class="admin-textarea" id="teamStrengthInput" placeholder="Paste team data from Analytic FPL. Format (one per line):
+Arsenal,1.79,0.62
+Liverpool,1.49,0.96
+Man City,1.73,1.03
+...
+
+Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></textarea>
+                        <div class="admin-status" id="teamStrengthStatus"></div>
+                    </div>
+                    <div class="admin-actions">
+                        <button class="admin-btn" onclick="submitTeamStrength()">📊 Update Strengths</button>
+                        <button class="admin-btn secondary" onclick="viewTeamStrength()">👁️ View Current</button>
+                        <button class="admin-btn secondary" onclick="clearTeamStrength()">🗑️ Clear</button>
+                    </div>
+                </div>
+            </div>
+
             <div class="position-tabs">
                 <button class="position-tab active" data-position="GKP">GKP</button>
                 <button class="position-tab" data-position="DEF">DEF</button>
@@ -2552,6 +2648,7 @@
 
             await loadBootstrap();
             checkPredictionStatus(); // Check for existing predictions
+            checkAdminAccess(); // Check admin access on load
             if (savedTeamId) {
                 document.getElementById('teamIdInput').value = savedTeamId;
                 loadMyTeam();
@@ -2626,6 +2723,9 @@
                 document.getElementById('bannerOR').textContent = formatRank(m.overall_rank);
                 
                 renderOptimizedSquad(myTeamData);
+                
+                // Check admin access for admin panel
+                checkAdminAccess();
                 
                 // Load stats in background
                 loadManagerStats(teamId);
@@ -2813,8 +2913,10 @@
             const captain = sortedByXpts[0];
             const viceCaptain = sortedByXpts[1];
             
-            // Sort bench by xPts (optimal bench order)
-            const optimalBench = [...bench].sort((a, b) => b.xpts_single_gw - a.xpts_single_gw);
+            // Sort bench: GK first (required), then outfield by xPts
+            const benchGK = bench.filter(p => p.position === 'GKP');
+            const benchOutfield = bench.filter(p => p.position !== 'GKP').sort((a, b) => b.xpts_single_gw - a.xpts_single_gw);
+            const optimalBench = [...benchGK, ...benchOutfield];
             
             // Group starting XI by position
             const gkp = starting.filter(p => p.position === 'GKP');
@@ -3367,6 +3469,171 @@
             } catch (error) {
                 console.error('Failed to set override:', error);
                 alert('Failed to save override');
+            }
+        }
+
+        // ==================== ADMIN PANEL: Team Strength ====================
+        const ADMIN_MANAGER_ID = 616495;
+        
+        function checkAdminAccess() {
+            // Show admin panel if current team ID matches admin
+            const teamIdInput = document.getElementById('teamIdInput');
+            const teamId = parseInt(teamIdInput?.value || localStorage.getItem('fpl_team_id') || '0');
+            const adminPanel = document.getElementById('adminPanel');
+            if (adminPanel) {
+                adminPanel.classList.toggle('visible', teamId === ADMIN_MANAGER_ID);
+            }
+        }
+        
+        async function submitTeamStrength() {
+            const input = document.getElementById('teamStrengthInput');
+            const status = document.getElementById('teamStrengthStatus');
+            const rawText = input.value.trim();
+            
+            if (!rawText) {
+                status.textContent = 'Please paste team data';
+                status.className = 'admin-status error';
+                return;
+            }
+            
+            // Parse the input - supports multiple formats
+            const teams = [];
+            const lines = rawText.split('\n').filter(line => line.trim());
+            
+            for (const line of lines) {
+                // Try CSV format: Team,xGFor,xGAg
+                const csvMatch = line.match(/^([^,]+),\s*([\d.]+),\s*([\d.]+)/);
+                if (csvMatch) {
+                    teams.push({
+                        team: csvMatch[1].trim(),
+                        adjxg_for: parseFloat(csvMatch[2]),
+                        adjxg_ag: parseFloat(csvMatch[3])
+                    });
+                    continue;
+                }
+                
+                // Try table format: Rank Team Played Points xPoints xGFor xGAg xGDiff
+                // or just: Team ... xGFor xGAg ...
+                const parts = line.split(/\s{2,}|\t/).map(p => p.trim()).filter(p => p);
+                if (parts.length >= 3) {
+                    // Find the team name (first non-numeric that's not a rank)
+                    let teamName = null;
+                    let numbers = [];
+                    
+                    for (const part of parts) {
+                        if (!teamName && isNaN(parseFloat(part))) {
+                            teamName = part;
+                        } else if (teamName && !isNaN(parseFloat(part))) {
+                            numbers.push(parseFloat(part));
+                        }
+                    }
+                    
+                    // We need at least team name and some numbers
+                    // Format from screenshot: Played, Points, xPoints, AdjxG For, AdjxG Ag, AdjxG Diff
+                    // Positions: [0]=Played, [1]=Points, [2]=xPoints, [3]=AdjxG For, [4]=AdjxG Ag, [5]=AdjxG Diff
+                    if (teamName && numbers.length >= 5) {
+                        teams.push({
+                            team: teamName,
+                            adjxg_for: numbers[3],  // AdjxG For
+                            adjxg_ag: numbers[4]    // AdjxG Ag
+                        });
+                    }
+                }
+            }
+            
+            if (teams.length === 0) {
+                status.textContent = 'Could not parse any teams. Use format: Team,xGFor,xGAg';
+                status.className = 'admin-status error';
+                return;
+            }
+            
+            status.textContent = `Parsed ${teams.length} teams, submitting...`;
+            status.className = 'admin-status';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/team-strength`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        teams: teams,
+                        manager_id: ADMIN_MANAGER_ID
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    status.textContent = `✓ Updated ${result.count} teams: ${result.updated_teams.join(', ')}`;
+                    status.className = 'admin-status success';
+                    input.value = '';
+                } else {
+                    status.textContent = `Error: ${result.detail || 'Unknown error'}`;
+                    status.className = 'admin-status error';
+                }
+            } catch (error) {
+                status.textContent = `Error: ${error.message}`;
+                status.className = 'admin-status error';
+            }
+        }
+        
+        async function viewTeamStrength() {
+            const status = document.getElementById('teamStrengthStatus');
+            const input = document.getElementById('teamStrengthInput');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/team-strength`);
+                const data = await response.json();
+                
+                // Format the data for display
+                let output = '# Current Team Strength Data\n';
+                output += '# Team, Manual xG For, Manual xG Ag, Form xG, Form xGA, Blended xG, Blended xGA, CS%\n\n';
+                
+                const teams = Object.values(data.teams).sort((a, b) => 
+                    (b.blended_xg || 0) - (a.blended_xg || 0)
+                );
+                
+                for (const team of teams) {
+                    const manual = team.manual_adjxg_for ? 
+                        `${team.manual_adjxg_for.toFixed(2)}, ${team.manual_adjxg_ag.toFixed(2)}` : 
+                        '-, -';
+                    output += `${team.team_name}, ${manual}, ${team.form_xg || '-'}, ${team.form_xga || '-'}, ${team.blended_xg || '-'}, ${team.blended_xga || '-'}, ${((team.cs_probability || 0) * 100).toFixed(1)}%\n`;
+                }
+                
+                output += `\n# Last manual update: ${data.manual_last_update || 'Never'}`;
+                output += `\n# Last FDR update: ${data.fdr_last_update || 'Never'}`;
+                
+                input.value = output;
+                status.textContent = `Loaded ${teams.length} teams`;
+                status.className = 'admin-status success';
+            } catch (error) {
+                status.textContent = `Error: ${error.message}`;
+                status.className = 'admin-status error';
+            }
+        }
+        
+        async function clearTeamStrength() {
+            if (!confirm('Clear all manual team strength data? FDR will revert to Understat-only calculations.')) {
+                return;
+            }
+            
+            const status = document.getElementById('teamStrengthStatus');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/team-strength?manager_id=${ADMIN_MANAGER_ID}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    status.textContent = '✓ Team strength data cleared';
+                    status.className = 'admin-status success';
+                } else {
+                    const result = await response.json();
+                    status.textContent = `Error: ${result.detail || 'Unknown error'}`;
+                    status.className = 'admin-status error';
+                }
+            } catch (error) {
+                status.textContent = `Error: ${error.message}`;
+                status.className = 'admin-status error';
             }
         }
 
