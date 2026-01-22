@@ -925,22 +925,30 @@ async def _do_fdr_refresh():
         all_form_xg.append(blended_xg)  # Use blended for FDR percentiles
         all_form_xga.append(blended_xga)
     
-    # Compute FDR scores using percentiles
+    # Compute FDR scores using normalized xG/xGA values
+    # This gives more differentiation than percentiles
     if len(all_form_xg) >= 5:
+        # Get min/max for normalization
+        min_xg, max_xg = min(all_form_xg), max(all_form_xg)
+        min_xga, max_xga = min(all_form_xga), max(all_form_xga)
+        xg_range = max(max_xg - min_xg, 0.5)  # Avoid division by zero
+        xga_range = max(max_xga - min_xga, 0.3)
+        
         for team_id, data in fdr_data.items():
             # Attack FDR: How hard to attack this team (based on their blended xGA)
             # Low xGA = hard to score against = HIGH attack_fdr
-            xga_percentile = percentileofscore(all_form_xga, data['blended_xga'])
-            attack_fdr = max(1, min(10, int((100 - xga_percentile) / 10) + 1))
+            # Normalize xGA to 0-1 scale, then invert and scale to 1-10
+            xga_norm = (data['blended_xga'] - min_xga) / xga_range  # 0 = best defense, 1 = worst
+            attack_fdr = int(round(1 + (1 - xga_norm) * 9))  # 1-10, inverted
             
             # Defence FDR: How hard to defend against this team (based on their blended xG)
             # High xG = dangerous attack = HIGH defence_fdr
-            xg_percentile = percentileofscore(all_form_xg, data['blended_xg'])
-            defence_fdr = max(1, min(10, int(xg_percentile / 10) + 1))
+            xg_norm = (data['blended_xg'] - min_xg) / xg_range  # 0 = weakest attack, 1 = strongest
+            defence_fdr = int(round(1 + xg_norm * 9))  # 1-10
             
-            data['attack_fdr'] = attack_fdr
-            data['defence_fdr'] = defence_fdr
-            data['composite_fdr'] = round((attack_fdr + defence_fdr) / 2, 1)
+            data['attack_fdr'] = max(1, min(10, attack_fdr))
+            data['defence_fdr'] = max(1, min(10, defence_fdr))
+            data['composite_fdr'] = round((data['attack_fdr'] + data['defence_fdr']) / 2, 1)
     
     cache.fdr_data = fdr_data
     cache.fdr_last_update = datetime.now()
@@ -1960,7 +1968,8 @@ def calculate_captain_score(
 
 
 def get_player_upcoming_fixtures(
-    player_team: int, fixtures: List[Dict], current_gw: int, gw_end: int, teams_dict: Dict
+    player_team: int, fixtures: List[Dict], current_gw: int, gw_end: int, teams_dict: Dict,
+    position_id: int = 4  # Default to FWD perspective for attack FDR
 ) -> List[Dict]:
     upcoming = []
     for fix in fixtures:
@@ -1968,21 +1977,26 @@ def get_player_upcoming_fixtures(
         if gw and current_gw <= gw <= gw_end:
             if fix["team_h"] == player_team:
                 opponent_id = fix["team_a"]
+                # Use our computed FDR (composite of attack + defence)
+                fdr = get_fixture_fdr(opponent_id, True, position_id)
                 upcoming.append({
                     "gameweek": gw,
                     "opponent": teams_dict.get(opponent_id, {}).get("short_name", "???"),
                     "opponent_id": opponent_id,
                     "is_home": True,
-                    "difficulty": fix.get("team_h_difficulty", 3)
+                    "difficulty": fdr,  # Our computed FDR 1-10
+                    "fpl_difficulty": fix.get("team_h_difficulty", 3)  # Original FPL 1-5
                 })
             elif fix["team_a"] == player_team:
                 opponent_id = fix["team_h"]
+                fdr = get_fixture_fdr(opponent_id, False, position_id)
                 upcoming.append({
                     "gameweek": gw,
                     "opponent": teams_dict.get(opponent_id, {}).get("short_name", "???"),
                     "opponent_id": opponent_id,
                     "is_home": False,
-                    "difficulty": fix.get("team_a_difficulty", 3)
+                    "difficulty": fdr,
+                    "fpl_difficulty": fix.get("team_a_difficulty", 3)
                 })
     return sorted(upcoming, key=lambda x: x["gameweek"])
 
@@ -2511,7 +2525,7 @@ async def get_rankings(
     for player in filtered_players:
         price = player["now_cost"] / 10
         
-        upcoming = get_player_upcoming_fixtures(player["team"], fixtures, gw_start, gw_end, teams)
+        upcoming = get_player_upcoming_fixtures(player["team"], fixtures, gw_start, gw_end, teams, position_id)
         
         # Pass player history for smart pattern detection
         player_hist = player_histories.get(player["id"])
@@ -2613,10 +2627,10 @@ async def get_my_team(manager_id: int):
         position_id = player["element_type"]
         player_hist = player_histories.get(player["id"])
         
-        upcoming = get_player_upcoming_fixtures(player["team"], fixtures, next_gw, next_gw + 5, teams)
+        upcoming = get_player_upcoming_fixtures(player["team"], fixtures, next_gw, next_gw + 5, teams, position_id)
         stats = calculate_expected_points(player, position_id, current_gw, upcoming, teams, fixtures, events, player_history=player_hist, all_players=list(elements.values()))
         
-        single_fixtures = get_player_upcoming_fixtures(player["team"], fixtures, next_gw, next_gw, teams)
+        single_fixtures = get_player_upcoming_fixtures(player["team"], fixtures, next_gw, next_gw, teams, position_id)
         single_stats = calculate_expected_points(player, position_id, current_gw, single_fixtures, teams, fixtures, events, player_history=player_hist, all_players=list(elements.values()))
         
         squad.append({
@@ -4391,127 +4405,133 @@ async def get_transfer_plan(
     User can specify which GWs to use chips (or leave for auto-suggestion).
     booked_transfers: JSON string like '[{"gw":23,"out":"Salah","in":"Palmer"}]'
     """
-    await refresh_fdr_data()
-    
-    # Parse booked transfers JSON
-    parsed_booked = []
-    if booked_transfers:
-        try:
-            parsed_booked = json.loads(booked_transfers)
-        except:
-            pass  # Ignore invalid JSON
-    
-    data = await fetch_fpl_data()
-    fixtures = await fetch_fixtures()
-    history = await fetch_manager_history(manager_id)
-    
-    elements = {e["id"]: e for e in data["elements"]}
-    all_players = data["elements"]
-    teams = {t["id"]: t for t in data["teams"]}
-    events = data["events"]
-    current_gw = get_current_gameweek(events)
-    next_gw = get_next_gameweek(events)
-    
-    # Get current squad
-    team_data = await fetch_manager_team(manager_id, current_gw)
-    picks = team_data["picks"]["picks"]
-    entry_history = team_data["picks"].get("entry_history", {})
-    bank = entry_history.get("bank", 0) / 10
-    
-    # Determine free transfers (1 base + rolled if applicable)
-    # This is simplified - real logic would check previous GW transfers
-    free_transfers = 1
-    if entry_history.get("event_transfers", 0) == 0:
-        free_transfers = min(free_transfers + 1, 5)
-    
-    # Build squad list
-    squad = []
-    for pick in picks:
-        player = elements.get(pick["element"])
-        if not player:
-            continue
+    try:
+        await refresh_fdr_data()
         
-        position_id = player["element_type"]
-        upcoming = get_player_upcoming_fixtures(player["team"], fixtures, next_gw, next_gw + horizon, teams)
-        stats = calculate_expected_points(player, position_id, current_gw, upcoming, teams, fixtures, events)
+        # Parse booked transfers JSON
+        parsed_booked = []
+        if booked_transfers:
+            try:
+                parsed_booked = json.loads(booked_transfers)
+            except:
+                pass  # Ignore invalid JSON
         
-        squad.append({
-            "id": player["id"],
-            "name": player["web_name"],
-            "team_id": player["team"],
-            "position_id": position_id,
-            "price": player["now_cost"] / 10,
-            "selling_price": pick.get("selling_price", player["now_cost"]) / 10,
-            "xpts": stats["xpts"],
-            "form": float(player.get("form", 0) or 0),
-            "minutes": player.get("minutes", 0),
-        })
-    
-    # Get available chips
-    available_chips = get_available_chips(history, current_gw)
-    
-    # Build chip schedule from user input
-    chip_gws = {}
-    if wc_gw and available_chips.get("wildcard"):
-        chip_gws["wildcard"] = wc_gw
-    if tc_gw and available_chips.get("3xc"):
-        chip_gws["3xc"] = tc_gw
-    if bb_gw and available_chips.get("bboost"):
-        chip_gws["bboost"] = bb_gw
-    if fh_gw and available_chips.get("freehit"):
-        chip_gws["freehit"] = fh_gw
-    
-    # Detect DGW/BGW for chip suggestions
-    gw_info = detect_dgw_bgw(fixtures, events, next_gw, next_gw + horizon)
-    
-    # Auto-suggest chips if not specified
-    chip_suggestions = []
-    for gw, info in gw_info.items():
-        if info["is_dgw"] and info["dgw_count"] >= 5:
-            if available_chips.get("bboost") and "bboost" not in chip_gws:
-                chip_suggestions.append({
-                    "chip": "BB",
-                    "gw": gw,
-                    "reason": f"DGW with {info['dgw_count']} teams having doubles",
-                })
-            if available_chips.get("3xc") and "3xc" not in chip_gws:
-                chip_suggestions.append({
-                    "chip": "TC",
-                    "gw": gw,
-                    "reason": f"DGW opportunity for captain",
-                })
-    
-    # Run solver
-    plan = solve_transfer_plan(
-        squad=squad,
-        bank=bank,
-        free_transfers=free_transfers,
-        all_players=all_players,
-        teams_dict=teams,
-        elements=elements,
-        fixtures=fixtures,
-        events=events,
-        start_gw=next_gw,
-        horizon=horizon,
-        chip_gws=chip_gws,
-        max_hits=max_hits,
-        booked_transfers=parsed_booked,
-    )
-    
-    return {
-        "manager_id": manager_id,
-        "current_gw": current_gw,
-        "planning_horizon": f"GW{next_gw}-GW{next_gw + horizon - 1}",
-        "available_chips": {CHIP_DISPLAY.get(k, k): v for k, v in available_chips.items()},
-        "chip_schedule": {CHIP_DISPLAY.get(k, k): v for k, v in chip_gws.items()},
-        "chip_suggestions": chip_suggestions,
-        "booked_transfers": parsed_booked,
-        "gw_info": gw_info,
-        "bank": bank,
-        "free_transfers": free_transfers,
-        "ft_disclaimer": "FT count is estimated from recent transfer history. Verify before confirming transfers.",
-        "plan": plan,
-    }
+        data = await fetch_fpl_data()
+        fixtures = await fetch_fixtures()
+        history = await fetch_manager_history(manager_id)
+        
+        elements = {e["id"]: e for e in data["elements"]}
+        all_players = data["elements"]
+        teams = {t["id"]: t for t in data["teams"]}
+        events = data["events"]
+        current_gw = get_current_gameweek(events)
+        next_gw = get_next_gameweek(events)
+        
+        # Get current squad
+        team_data = await fetch_manager_team(manager_id, current_gw)
+        picks = team_data["picks"]["picks"]
+        entry_history = team_data["picks"].get("entry_history", {})
+        bank = entry_history.get("bank", 0) / 10
+        
+        # Determine free transfers (1 base + rolled if applicable)
+        # This is simplified - real logic would check previous GW transfers
+        free_transfers = 1
+        if entry_history.get("event_transfers", 0) == 0:
+            free_transfers = min(free_transfers + 1, 5)
+        
+        # Build squad list
+        squad = []
+        for pick in picks:
+            player = elements.get(pick["element"])
+            if not player:
+                continue
+            
+            position_id = player["element_type"]
+            upcoming = get_player_upcoming_fixtures(player["team"], fixtures, next_gw, next_gw + horizon, teams)
+            stats = calculate_expected_points(player, position_id, current_gw, upcoming, teams, fixtures, events)
+            
+            squad.append({
+                "id": player["id"],
+                "name": player["web_name"],
+                "team_id": player["team"],
+                "position_id": position_id,
+                "price": player["now_cost"] / 10,
+                "selling_price": pick.get("selling_price", player["now_cost"]) / 10,
+                "xpts": stats["xpts"],
+                "form": float(player.get("form", 0) or 0),
+                "minutes": player.get("minutes", 0),
+            })
+        
+        # Get available chips
+        available_chips = get_available_chips(history, current_gw)
+        
+        # Build chip schedule from user input
+        chip_gws = {}
+        if wc_gw and available_chips.get("wildcard"):
+            chip_gws["wildcard"] = wc_gw
+        if tc_gw and available_chips.get("3xc"):
+            chip_gws["3xc"] = tc_gw
+        if bb_gw and available_chips.get("bboost"):
+            chip_gws["bboost"] = bb_gw
+        if fh_gw and available_chips.get("freehit"):
+            chip_gws["freehit"] = fh_gw
+        
+        # Detect DGW/BGW for chip suggestions
+        gw_info = detect_dgw_bgw(fixtures, events, next_gw, next_gw + horizon)
+        
+        # Auto-suggest chips if not specified
+        chip_suggestions = []
+        for gw, info in gw_info.items():
+            if info["is_dgw"] and info["dgw_count"] >= 5:
+                if available_chips.get("bboost") and "bboost" not in chip_gws:
+                    chip_suggestions.append({
+                        "chip": "BB",
+                        "gw": gw,
+                        "reason": f"DGW with {info['dgw_count']} teams having doubles",
+                    })
+                if available_chips.get("3xc") and "3xc" not in chip_gws:
+                    chip_suggestions.append({
+                        "chip": "TC",
+                        "gw": gw,
+                        "reason": f"DGW opportunity for captain",
+                    })
+        
+        # Run solver
+        plan = solve_transfer_plan(
+            squad=squad,
+            bank=bank,
+            free_transfers=free_transfers,
+            all_players=all_players,
+            teams_dict=teams,
+            elements=elements,
+            fixtures=fixtures,
+            events=events,
+            start_gw=next_gw,
+            horizon=horizon,
+            chip_gws=chip_gws,
+            max_hits=max_hits,
+            booked_transfers=parsed_booked,
+        )
+        
+        return {
+            "manager_id": manager_id,
+            "current_gw": current_gw,
+            "planning_horizon": f"GW{next_gw}-GW{next_gw + horizon - 1}",
+            "available_chips": {CHIP_DISPLAY.get(k, k): v for k, v in available_chips.items()},
+            "chip_schedule": {CHIP_DISPLAY.get(k, k): v for k, v in chip_gws.items()},
+            "chip_suggestions": chip_suggestions,
+            "booked_transfers": parsed_booked,
+            "gw_info": gw_info,
+            "bank": bank,
+            "free_transfers": free_transfers,
+            "ft_disclaimer": "FT count is estimated from recent transfer history. Verify before confirming transfers.",
+            "plan": plan,
+        }
+    except Exception as e:
+        logger.error(f"Transfer planner error for manager {manager_id}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

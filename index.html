@@ -510,48 +510,9 @@
         }
 
         /* ===== THIN GW OPTIMIZER HEADER ===== */
-        .gw-optimizer-header {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            padding: 0.15rem 0.5rem;
-            margin-bottom: 0.25rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 0.25rem;
-        }
-        .optimizer-title {
-            display: flex;
-            align-items: center;
-            gap: 0.3rem;
-            font-weight: 600;
-            font-size: 0.75rem;
-        }
-        .optimizer-actions {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
         .btn-sm {
             padding: 0.2rem 0.5rem;
             font-size: 0.7rem;
-        }
-        .prediction-status {
-            font-size: 0.65rem;
-            color: var(--text-muted);
-            padding: 0.15rem 0.4rem;
-            border-radius: 3px;
-            background: var(--bg-secondary);
-        }
-        .prediction-status.synced {
-            color: #10b981;
-            background: rgba(16, 185, 129, 0.1);
-        }
-        .prediction-status.stale {
-            color: #f59e0b;
-            background: rgba(245, 158, 11, 0.1);
         }
         .gw-badge {
             background: var(--accent-primary);
@@ -561,25 +522,6 @@
             font-weight: 700;
             font-size: 0.7rem;
         }
-        .optimizer-summary {
-            display: flex;
-            gap: 0.75rem;
-        }
-        .optimizer-stat {
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-        }
-        .optimizer-stat .value {
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 700;
-            color: var(--accent-primary);
-        }
-        .optimizer-stat .label {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-
         /* Legacy manager-card hidden */
         .manager-card { display: none; }
 
@@ -826,11 +768,16 @@
         .fixture-badge .gw { font-size: 0.55rem; opacity: 0.8; margin-bottom: 1px; }
         .fixture-badge .opp { font-size: 0.75rem; }
 
-        .fixture-badge.fdr-1 { background: rgba(0, 255, 135, 0.2); color: var(--fdr-1); border: 1px solid rgba(0, 255, 135, 0.3); }
-        .fixture-badge.fdr-2 { background: rgba(45, 206, 137, 0.2); color: var(--fdr-2); border: 1px solid rgba(45, 206, 137, 0.3); }
-        .fixture-badge.fdr-3 { background: rgba(255, 215, 0, 0.2); color: var(--fdr-3); border: 1px solid rgba(255, 215, 0, 0.3); }
-        .fixture-badge.fdr-4 { background: rgba(255, 107, 53, 0.2); color: var(--fdr-4); border: 1px solid rgba(255, 107, 53, 0.3); }
-        .fixture-badge.fdr-5 { background: rgba(255, 56, 96, 0.2); color: var(--fdr-5); border: 1px solid rgba(255, 56, 96, 0.3); }
+        .fixture-badge.fdr-1 { background: rgba(0, 255, 135, 0.25); color: #00ff87; border: 1px solid rgba(0, 255, 135, 0.4); }
+        .fixture-badge.fdr-2 { background: rgba(45, 206, 137, 0.25); color: #2dce89; border: 1px solid rgba(45, 206, 137, 0.4); }
+        .fixture-badge.fdr-3 { background: rgba(124, 224, 138, 0.25); color: #7ce08a; border: 1px solid rgba(124, 224, 138, 0.4); }
+        .fixture-badge.fdr-4 { background: rgba(184, 224, 104, 0.25); color: #b8e068; border: 1px solid rgba(184, 224, 104, 0.4); }
+        .fixture-badge.fdr-5 { background: rgba(255, 215, 0, 0.25); color: #ffd700; border: 1px solid rgba(255, 215, 0, 0.4); }
+        .fixture-badge.fdr-6 { background: rgba(255, 179, 71, 0.25); color: #ffb347; border: 1px solid rgba(255, 179, 71, 0.4); }
+        .fixture-badge.fdr-7 { background: rgba(255, 140, 66, 0.25); color: #ff8c42; border: 1px solid rgba(255, 140, 66, 0.4); }
+        .fixture-badge.fdr-8 { background: rgba(255, 107, 53, 0.25); color: #ff6b35; border: 1px solid rgba(255, 107, 53, 0.4); }
+        .fixture-badge.fdr-9 { background: rgba(230, 57, 70, 0.25); color: #e63946; border: 1px solid rgba(230, 57, 70, 0.4); }
+        .fixture-badge.fdr-10 { background: rgba(157, 2, 8, 0.25); color: #ff6b6b; border: 1px solid rgba(157, 2, 8, 0.4); }
 
         /* FDR Grid - Full Season View */
         .fdr-grid-container {
@@ -1062,12 +1009,12 @@
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 8px;
-            padding: 0.5rem 0.6rem;
+            padding: 0.6rem 0.75rem;
         }
 
-        .sidebar-card h3 { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.35rem; font-weight: 600; }
+        .sidebar-card h3 { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.4rem; font-weight: 600; }
 
-        .sidebar-stat { display: flex; justify-content: space-between; padding: 0.3rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.8rem; }
+        .sidebar-stat { display: flex; justify-content: space-between; padding: 0.35rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem; }
         .sidebar-stat:last-child { border-bottom: none; padding-bottom: 0; }
         .sidebar-stat .label { color: var(--text-secondary); }
         .sidebar-stat .value { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--accent-primary); }
@@ -1180,9 +1127,9 @@
         /* GW Optimizer Grid */
         .optimizer-grid {
             display: grid;
-            grid-template-columns: 1fr 240px;
+            grid-template-columns: 1fr 260px;
             gap: 0.75rem;
-            align-items: start;
+            align-items: stretch;
         }
         
         @media (max-width: 1024px) {
@@ -1191,10 +1138,36 @@
             }
         }
         
+        .pitch-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .pitch-header .gw-badge {
+            background: var(--accent-primary);
+            color: var(--bg-primary);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 0.75rem;
+        }
+        
+        .pitch-header .pitch-xpts {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        .pitch-header .pitch-xpts strong {
+            color: var(--accent-primary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
         .optimizer-sidebar {
             display: flex;
             flex-direction: column;
-            gap: 0.4rem;
+            gap: 0.5rem;
         }
         
         .captain-card-highlight {
@@ -1517,16 +1490,20 @@
         }
         
         /* Booked Transfers */
-        .booked-transfers { display: flex; flex-direction: column; gap: 0.3rem; }
-        .booked-transfer-row { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; position: relative; }
-        .book-gw-select { width: 55px; padding: 0.25rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.7rem; }
-        .book-player-input { width: 110px; padding: 0.25rem 0.4rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.7rem; }
+        .booked-transfers { display: flex; flex-direction: column; gap: 0.4rem; }
+        .booked-transfer-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; position: relative; }
+        .book-gw-select { width: 70px; padding: 0.35rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
+        .book-player-input { width: 150px; padding: 0.35rem 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
         .book-player-input:focus { border-color: var(--accent-primary); outline: none; }
-        .book-arrow { color: var(--accent-primary); font-weight: bold; font-size: 0.8rem; }
-        .booked-item { display: flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.4rem; background: var(--bg-secondary); border-radius: 4px; font-size: 0.7rem; border: 1px solid var(--accent-primary); }
+        .book-arrow { color: var(--accent-primary); font-weight: bold; font-size: 1rem; }
+        .book-add-btn { padding: 0.35rem 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-secondary); font-size: 0.8rem; cursor: pointer; transition: all 0.2s; }
+        .book-add-btn:hover { background: #10b981; color: #fff; border-color: #10b981; }
+        .booked-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.6rem; background: var(--bg-secondary); border-radius: 4px; font-size: 0.8rem; border: 1px solid var(--accent-primary); }
+        .booked-item .gw-label { color: var(--text-muted); font-size: 0.7rem; }
         .booked-item .out { color: #ef4444; font-weight: 600; }
         .booked-item .in { color: #10b981; font-weight: 600; }
-        .booked-item .remove-btn { cursor: pointer; color: var(--text-muted); margin-left: auto; padding: 0 0.15rem; font-size: 0.8rem; }
+        .booked-item .remove-btn { cursor: pointer; color: var(--text-muted); margin-left: auto; padding: 0 0.25rem; font-size: 0.9rem; }
+        .booked-item .remove-btn:hover { color: #ef4444; }
         .booked-item .remove-btn:hover { color: #ef4444; }
         
         /* Player Autocomplete */
@@ -2095,8 +2072,8 @@
         .chip-btn {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 0.4rem 0.5rem;
+            border-radius: 6px;
+            padding: 0.3rem 0.4rem;
             text-align: center;
             transition: all 0.3s ease;
             cursor: default;
@@ -2117,17 +2094,17 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 0.2rem;
+            margin-bottom: 0.15rem;
         }
         .chip-btn-header .chip-status {
-            font-size: 0.55rem;
+            font-size: 0.5rem;
             color: var(--text-muted);
         }
         .chip-btn.used .chip-status {
             color: var(--accent-primary);
         }
         .chip-btn-value {
-            font-size: 1.1rem;
+            font-size: 0.95rem;
             font-weight: 700;
             font-family: 'JetBrains Mono', monospace;
             color: var(--text-primary);
@@ -2138,7 +2115,7 @@
         .chip-btn-value.positive { color: #10b981 !important; }
         .chip-btn-value.negative { color: #ef4444 !important; }
         .chip-btn-label {
-            font-size: 0.6rem;
+            font-size: 0.55rem;
             color: var(--text-muted);
             margin-top: 0.1rem;
         }
@@ -2269,27 +2246,12 @@
                 </div>
 
                 <div id="squadPanel" class="rec-panel active">
-                    <div class="gw-optimizer-header" id="gwOptimizerHeader">
-                        <div class="optimizer-title">
-                            <span class="gw-badge" id="optimizerGwBadge">GW --</span>
-                            <span>Optimal Lineup</span>
-                        </div>
-                        <div class="optimizer-actions">
-                            <button class="btn btn-sm btn-secondary" onclick="syncPredictedLineups()" title="Fetch predicted lineups from FPL Review">
-                                🔄 Sync Lineups
-                            </button>
-                            <span class="prediction-status" id="predictionStatus" title="Predicted lineup status"></span>
-                        </div>
-                        <div class="optimizer-summary" id="optimizerSummary">
-                            <div class="optimizer-stat">
-                                <span class="value" id="optimizerTotalXpts">--</span>
-                                <span class="label">xPts</span>
-                            </div>
-                        </div>
-                    </div>
-                    
                     <div class="optimizer-grid">
                         <div class="pitch-container">
+                            <div class="pitch-header">
+                                <span class="gw-badge" id="optimizerGwBadge">GW --</span>
+                                <span class="pitch-xpts">xPts: <strong id="optimizerTotalXpts">--</strong></span>
+                            </div>
                             <div class="pitch-visual" id="squadPitch"></div>
                         </div>
                         <div class="optimizer-sidebar">
@@ -2672,7 +2634,7 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                                     <input type="text" id="bookTransferIn" placeholder="Player in" class="book-player-input" autocomplete="off">
                                     <div class="player-autocomplete" id="autocompleteIn"></div>
                                 </div>
-                                <button class="btn btn-sm" onclick="addBookedTransfer()">+ Add</button>
+                                <button class="book-add-btn" onclick="addBookedTransfer()">+ Add to Book</button>
                             </div>
                             <div id="bookedTransfersList"></div>
                         </div>
@@ -2798,7 +2760,6 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
             });
 
             await loadBootstrap();
-            checkPredictionStatus(); // Check for existing predictions
             checkAdminAccess(); // Check admin access on load
             if (savedTeamId) {
                 document.getElementById('teamIdInput').value = savedTeamId;
@@ -3463,19 +3424,23 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                             grid: { color: 'rgba(255,255,255,0.05)' }
                         },
                         y: {
-                            type: 'linear',
+                            type: 'logarithmic',
                             display: true,
                             position: 'left',
                             reverse: true,  // Lower rank is better
+                            min: 1,
                             ticks: { 
                                 color: '#00d4aa',
                                 callback: function(value) {
-                                    return value >= 1000000 ? (value/1000000).toFixed(1) + 'M' :
+                                    // Only show specific tick values on log scale
+                                    const allowed = [1, 10, 100, 1000, 10000, 100000, 1000000, 5000000, 10000000];
+                                    if (!allowed.includes(value)) return '';
+                                    return value >= 1000000 ? (value/1000000).toFixed(0) + 'M' :
                                            value >= 1000 ? (value/1000).toFixed(0) + 'K' : value;
                                 }
                             },
                             grid: { color: 'rgba(255,255,255,0.05)' },
-                            title: { display: true, text: 'Overall Rank', color: '#00d4aa' }
+                            title: { display: true, text: 'Overall Rank (log)', color: '#00d4aa' }
                         },
                         y1: {
                             type: 'linear',
