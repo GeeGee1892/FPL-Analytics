@@ -15,6 +15,7 @@ import asyncio
 import re
 import json
 import httpx
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -116,6 +117,126 @@ async def fetch_with_retry(
     raise HTTPException(status_code=503, detail="Failed after max retries")
 
 
+async def load_import_data_from_file():
+    """
+    Auto-load team strength and fixture xG data from data/import_data.json on startup.
+    
+    Looks for the file in:
+    1. ./data/import_data.json (relative to working dir)
+    2. /app/data/import_data.json (Docker/production)
+    3. ../data/import_data.json (development)
+    """
+    possible_paths = [
+        Path("data/import_data.json"),
+        Path("/app/data/import_data.json"),
+        Path(__file__).parent / "data" / "import_data.json",
+        Path(__file__).parent.parent / "data" / "import_data.json",
+    ]
+    
+    import_file = None
+    for p in possible_paths:
+        if p.exists():
+            import_file = p
+            break
+    
+    if not import_file:
+        logger.info("No import_data.json found - skipping auto-load. Looked in: data/import_data.json")
+        return
+    
+    try:
+        with open(import_file, 'r') as f:
+            data = json.load(f)
+        
+        logger.info(f"Loading import data from {import_file}")
+        
+        # Load team strength data
+        if "team_strength_import" in data:
+            ts_data = data["team_strength_import"]
+            teams_list = ts_data.get("teams", [])
+            loaded_teams = []
+            
+            for team_data in teams_list:
+                team_name = team_data.get("team", "").strip()
+                team_id = ANALYTIC_FPL_TO_ID.get(team_name)
+                
+                if team_id is None:
+                    logger.warning(f"Auto-load: Unknown team name: {team_name}")
+                    continue
+                
+                cache.manual_team_strength[team_id] = {
+                    "team_name": team_name,
+                    "adjxg_for": team_data.get("adjxg_for", 1.5),
+                    "adjxg_ag": team_data.get("adjxg_ag", 1.3),
+                    "attack_delta": team_data.get("attack_delta", 0.0),
+                    "defence_delta": team_data.get("defence_delta", 0.0),
+                    "attack_trend": team_data.get("attack_trend", 0.0),
+                    "defence_trend": team_data.get("defence_trend", 0.0),
+                }
+                loaded_teams.append(team_name)
+            
+            cache.manual_team_strength_last_update = datetime.now()
+            logger.info(f"Auto-loaded team strength for {len(loaded_teams)} teams")
+        
+        # Load fixture xG data (needs FPL data for team name mapping)
+        if "fixture_xg_import" in data:
+            try:
+                fpl_data = await fetch_fpl_data()
+                teams_by_name = {}
+                for t in fpl_data["teams"]:
+                    teams_by_name[t["name"].lower()] = t["id"]
+                    teams_by_name[t["short_name"].lower()] = t["id"]
+                
+                # Add common aliases
+                aliases = {
+                    "man city": "Manchester City", "man utd": "Manchester United",
+                    "spurs": "Tottenham", "wolves": "Wolverhampton Wanderers",
+                    "brighton": "Brighton and Hove Albion", "forest": "Nottingham Forest",
+                    "nott'm forest": "Nottingham Forest", "nottingham forest": "Nottingham Forest",
+                }
+                for alias, full_name in aliases.items():
+                    if full_name.lower() in teams_by_name:
+                        teams_by_name[alias.lower()] = teams_by_name[full_name.lower()]
+                
+                # Also use ANALYTIC_FPL_TO_ID
+                for name, team_id in ANALYTIC_FPL_TO_ID.items():
+                    teams_by_name[name.lower()] = team_id
+                
+                fx_data = data["fixture_xg_import"]
+                fixtures_list = fx_data.get("fixtures", [])
+                loaded_fixtures = 0
+                
+                for fix in fixtures_list:
+                    home_name = fix.get("home_team", "").strip().lower()
+                    away_name = fix.get("away_team", "").strip().lower()
+                    
+                    home_id = teams_by_name.get(home_name)
+                    away_id = teams_by_name.get(away_name)
+                    
+                    if home_id is None or away_id is None:
+                        logger.warning(f"Auto-load fixture: Unknown team - {fix.get('home_team')} vs {fix.get('away_team')}")
+                        continue
+                    
+                    gw = fix.get("gameweek", 0)
+                    key = (home_id, away_id, gw)
+                    cache.fixture_xg[key] = {
+                        "home_xg": fix.get("home_xg", 1.5),
+                        "away_xg": fix.get("away_xg", 1.0),
+                        "home_team": fix.get("home_team", ""),
+                        "away_team": fix.get("away_team", ""),
+                        "gw": gw,
+                    }
+                    loaded_fixtures += 1
+                
+                cache.fixture_xg_last_update = datetime.now()
+                logger.info(f"Auto-loaded {loaded_fixtures} fixture xG projections")
+                
+            except Exception as e:
+                logger.error(f"Failed to load fixture xG (FPL API may be unavailable): {e}")
+        
+    except Exception as e:
+        logger.error(f"Failed to load import_data.json: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
@@ -128,8 +249,16 @@ async def lifespan(app: FastAPI):
         headers={"User-Agent": "FPL-Assistant/3.2"}
     )
     
+    # Auto-load import data from file (team strength + fixture xG)
     try:
-        await refresh_fdr_data()
+        await load_import_data_from_file()
+        logger.info("Import data auto-load completed")
+    except Exception as e:
+        logger.error(f"Import data auto-load failed: {e}")
+    
+    # Initialize FDR data (will incorporate any loaded team strength)
+    try:
+        await refresh_fdr_data(force=True)
         logger.info("FDR data initialized on startup")
     except Exception as e:
         logger.error(f"FDR startup refresh failed: {e}")
@@ -400,20 +529,31 @@ ADMIN_MANAGER_ID = 616495  # Gerti's manager ID for global overrides
 # Base CS probability by team tier (used when FDR data unavailable)
 # Based on 2024/25 data - top teams keep ~35% CS, bottom ~15%
 TEAM_BASE_CS_RATES = {
-    "Arsenal": 0.38, "Liverpool": 0.36, "Man City": 0.34, "Chelsea": 0.30,
-    "Aston Villa": 0.28, "Newcastle": 0.28, "Brighton": 0.26, "Tottenham": 0.25,
-    "Man Utd": 0.24, "Fulham": 0.24, "Bournemouth": 0.23, "West Ham": 0.22,
-    "Crystal Palace": 0.22, "Brentford": 0.21, "Wolves": 0.20, "Everton": 0.19,
-    "Nott'm Forest": 0.22, "Leicester": 0.18, "Ipswich": 0.16, "Southampton": 0.14,
+    # 25/26 Season - Based on Analytic FPL adjusted xGA
+    # CS rate = e^(-xGA) approximately
+    "Arsenal": 0.44, "Liverpool": 0.35, "Man City": 0.32, "Chelsea": 0.26,
+    "Aston Villa": 0.30, "Newcastle": 0.32, "Brighton": 0.26, "Tottenham": 0.24,
+    "Man Utd": 0.29, "Fulham": 0.25, "Bournemouth": 0.23, "West Ham": 0.20,
+    "Crystal Palace": 0.24, "Brentford": 0.25, "Wolves": 0.24, "Everton": 0.26,
+    "Nott'm Forest": 0.23, 
+    # Promoted teams 25/26
+    "Leeds United": 0.25, "Leeds": 0.25,
+    "Sunderland": 0.23,
+    "Burnley": 0.16,
 }
 
-# Base attack strength by team (xG per game)
+# Base attack strength by team (xG per game) - 25/26 Season
 TEAM_BASE_XG = {
-    "Man City": 2.4, "Liverpool": 2.3, "Arsenal": 2.2, "Chelsea": 2.0,
-    "Tottenham": 1.9, "Newcastle": 1.8, "Aston Villa": 1.8, "Brighton": 1.7,
-    "Man Utd": 1.6, "West Ham": 1.5, "Bournemouth": 1.5, "Brentford": 1.5,
-    "Fulham": 1.4, "Crystal Palace": 1.4, "Wolves": 1.3, "Everton": 1.2,
-    "Nott'm Forest": 1.3, "Leicester": 1.3, "Ipswich": 1.1, "Southampton": 1.0,
+    # From Analytic FPL adjusted xG
+    "Man City": 1.98, "Liverpool": 1.78, "Arsenal": 1.84, "Chelsea": 1.54,
+    "Tottenham": 1.44, "Newcastle": 1.48, "Aston Villa": 1.41, "Brighton": 1.37,
+    "Man Utd": 1.48, "West Ham": 1.22, "Bournemouth": 1.24, "Brentford": 1.41,
+    "Fulham": 1.24, "Crystal Palace": 1.41, "Wolves": 1.08, "Everton": 1.03,
+    "Nott'm Forest": 1.16,
+    # Promoted teams 25/26
+    "Leeds United": 1.15, "Leeds": 1.15,
+    "Sunderland": 0.82,
+    "Burnley": 0.84,
 }
 
 # Team name mappings: FPL short_name -> (fpl_id, understat_name)
@@ -427,14 +567,14 @@ TEAM_NAME_MAPPING = {
     "CRY": (7, "Crystal Palace"),
     "EVE": (8, "Everton"),
     "FUL": (9, "Fulham"),
-    "IPS": (10, "Ipswich"),
-    "LEI": (11, "Leicester"),
+    "BUR": (10, "Burnley"),  # Promoted 25/26
+    "LEE": (11, "Leeds United"),  # Promoted 25/26
     "LIV": (12, "Liverpool"),
     "MCI": (13, "Manchester City"),
     "MUN": (14, "Manchester United"),
     "NEW": (15, "Newcastle United"),
     "NFO": (16, "Nottingham Forest"),
-    "SOU": (17, "Southampton"),
+    "SUN": (17, "Sunderland"),  # Promoted 25/26
     "TOT": (18, "Tottenham"),
     "WHU": (19, "West Ham"),
     "WOL": (20, "Wolverhampton Wanderers"),
@@ -444,17 +584,20 @@ UNDERSTAT_TO_FPL_ID = {v[1]: v[0] for v in TEAM_NAME_MAPPING.values()}
 FPL_ID_TO_UNDERSTAT = {v[0]: v[1] for v in TEAM_NAME_MAPPING.values()}
 
 # Analytic FPL team names to FPL ID mapping (handles various name formats)
-# Note: IDs may need updating if teams get promoted/relegated
+# Updated for 25/26 season: Burnley, Leeds, Sunderland promoted
 ANALYTIC_FPL_TO_ID = {
     "Arsenal": 1, "Aston Villa": 2, "Bournemouth": 3, "Brentford": 4,
     "Brighton": 5, "Brighton & Hove Albion": 5, "Brighton and Hove Albion": 5,
     "Chelsea": 6, "Crystal Palace": 7, "Everton": 8,
-    "Fulham": 9, "Ipswich": 10, "Ipswich Town": 10, "Leicester": 11, "Leicester City": 11,
+    "Fulham": 9, 
+    "Burnley": 10,  # Promoted 25/26
+    "Leeds United": 11, "Leeds": 11,  # Promoted 25/26
     "Liverpool": 12, "Manchester City": 13, "Man City": 13,
     "Manchester Utd": 14, "Manchester United": 14, "Man Utd": 14, "Man United": 14,
     "Newcastle Utd": 15, "Newcastle United": 15, "Newcastle": 15,
     "Nott'ham Forest": 16, "Nottingham Forest": 16, "Nott'm Forest": 16, "Forest": 16,
-    "Southampton": 17, "Tottenham": 18, "Spurs": 18, "Tottenham Hotspur": 18,
+    "Sunderland": 17,  # Promoted 25/26
+    "Tottenham": 18, "Spurs": 18, "Tottenham Hotspur": 18,
     "West Ham": 19, "West Ham United": 19,
     "Wolves": 20, "Wolverhampton": 20, "Wolverhampton Wanderers": 20,
 }
@@ -611,6 +754,14 @@ class DataCache:
         # Manual team strength data (from Analytic FPL)
         self.manual_team_strength: Dict[str, Dict] = {}  # team_name -> {adjxg_for, adjxg_ag}
         self.manual_team_strength_last_update: Optional[datetime] = None
+        # Player history cache (reduces API calls significantly)
+        self.player_histories: Dict[int, Dict] = {}  # player_id -> history data
+        self.player_histories_last_update: Dict[int, datetime] = {}  # player_id -> last update time
+        self.player_history_cache_duration = 1800  # 30 minutes
+        # Fixture-specific xG projections (from Analytic FPL or similar)
+        # Key: (home_team_id, away_team_id, gw) -> {home_xg, away_xg}
+        self.fixture_xg: Dict[Tuple[int, int, int], Dict] = {}
+        self.fixture_xg_last_update: Optional[datetime] = None
     
     def get_minutes_override(self, player_id: int, manager_id: Optional[int] = None) -> Optional[float]:
         """Get minutes override, checking manager-specific first, then global, then predicted."""
@@ -648,6 +799,33 @@ class DataCache:
     
     def fdr_is_stale(self) -> bool:
         return self.fdr_last_update is None or (datetime.now() - self.fdr_last_update).total_seconds() > 21600  # 6 hours
+    
+    def get_player_history(self, player_id: int) -> Optional[Dict]:
+        """Get cached player history if not stale."""
+        if player_id not in self.player_histories:
+            return None
+        last_update = self.player_histories_last_update.get(player_id)
+        if last_update is None:
+            return None
+        if (datetime.now() - last_update).total_seconds() > self.player_history_cache_duration:
+            return None  # Stale
+        return self.player_histories[player_id]
+    
+    def set_player_history(self, player_id: int, history: Dict):
+        """Cache player history."""
+        self.player_histories[player_id] = history
+        self.player_histories_last_update[player_id] = datetime.now()
+    
+    def clear_stale_player_histories(self):
+        """Remove stale player histories to prevent memory bloat."""
+        now = datetime.now()
+        stale_ids = [
+            pid for pid, last_update in self.player_histories_last_update.items()
+            if (now - last_update).total_seconds() > self.player_history_cache_duration * 2
+        ]
+        for pid in stale_ids:
+            self.player_histories.pop(pid, None)
+            self.player_histories_last_update.pop(pid, None)
 
 
 cache = DataCache()
@@ -885,14 +1063,50 @@ async def _do_fdr_refresh():
         manual_data = cache.manual_team_strength.get(team_id)
         
         if manual_data:
-            # Use Analytic FPL adjusted xG as baseline, blend with form
-            # 70% stable baseline from Analytic FPL, 30% recent form from Understat
+            # ==================== WEIGHTED BLEND WITH TREND ====================
+            # Weighting: 55% Analytic FPL baseline, 30% Understat form, 15% trend adjustment
+            #
+            # The trend data captures teams improving/declining:
+            # - attack_delta: Recent change in attacking output
+            # - defence_delta: Recent change in defensive solidity
+            # - attack_trend: Directional momentum for attack
+            # - defence_trend: Directional momentum for defence
+            
             manual_xg = manual_data.get('adjxg_for', form_xg)
             manual_xga = manual_data.get('adjxg_ag', form_xga)
             
-            blended_xg = 0.70 * manual_xg + 0.30 * form_xg
-            blended_xga = 0.70 * manual_xga + 0.30 * form_xga
-            data_source = "analytic_fpl+form"
+            # Get trend adjustments (default to 0 if not provided)
+            attack_delta = manual_data.get('attack_delta') or 0
+            defence_delta = manual_data.get('defence_delta') or 0
+            attack_trend = manual_data.get('attack_trend') or 0
+            defence_trend = manual_data.get('defence_trend') or 0
+            
+            # Combine delta and trend into a momentum factor
+            # Delta = recent change (more weight), Trend = longer-term direction
+            attack_momentum = attack_delta * 0.6 + attack_trend * 0.4
+            defence_momentum = defence_delta * 0.6 + defence_trend * 0.4
+            
+            # Apply momentum to baseline (capped at ±15% adjustment)
+            # Positive attack momentum = expect MORE goals
+            # Negative defence momentum = expect FEWER goals conceded
+            attack_adjustment = max(-0.15, min(0.15, attack_momentum * 0.5))
+            defence_adjustment = max(-0.15, min(0.15, defence_momentum * 0.5))
+            
+            # Final blend: 55% Analytic FPL, 30% Understat form, 15% trend adjustment
+            base_xg = 0.55 * manual_xg + 0.30 * form_xg + 0.15 * (manual_xg + attack_adjustment)
+            base_xga = 0.55 * manual_xga + 0.30 * form_xga + 0.15 * (manual_xga + defence_adjustment)
+            
+            # Simplify to: baseline × (1 + momentum_factor × weight)
+            blended_xg = (0.55 * manual_xg + 0.30 * form_xg) * (1 + attack_adjustment)
+            blended_xga = (0.55 * manual_xga + 0.30 * form_xga) * (1 + defence_adjustment)
+            
+            data_source = "analytic_fpl+form+trend"
+            trend_info = {
+                "attack_momentum": round(attack_momentum, 3),
+                "defence_momentum": round(defence_momentum, 3),
+                "attack_adjustment": round(attack_adjustment, 3),
+                "defence_adjustment": round(defence_adjustment, 3),
+            }
         else:
             # Fallback to form + season blend (original behavior)
             if season_matches >= 10:
@@ -902,6 +1116,7 @@ async def _do_fdr_refresh():
                 blended_xga = form_xga if form_xga > 0 else season_xga_per_game
                 blended_xg = form_xg if form_xg > 0 else season_xg_per_game
             data_source = "understat_form+season"
+            trend_info = None
         
         # Calculate clean sheet probability using Poisson: P(0 goals) = e^(-xGA)
         cs_probability = math.exp(-blended_xga) if blended_xga > 0 else 0.25
@@ -921,6 +1136,7 @@ async def _do_fdr_refresh():
             'cs_probability': round(cs_probability, 3),  # Team's expected CS rate
             'xg_per_game': round(blended_xg, 2),  # Alias for backwards compatibility
             'data_source': data_source,
+            'trend_info': trend_info,  # Momentum adjustments if available
         }
         all_form_xg.append(blended_xg)  # Use blended for FDR percentiles
         all_form_xga.append(blended_xga)
@@ -1026,14 +1242,14 @@ def calculate_defcon_per_90(player: Dict, position_id: int) -> tuple[float, floa
         threshold = DEFCON_THRESHOLD_MID
     
     # Calculate probability of hitting threshold using sigmoid
-    # Steeper curve (scale=1.5) and capped at 0.5 - even high DEFCON players
-    # don't hit the bonus every game due to variance
+    # Steeper curve (scale=1.5) - elite defenders (Rodri, Rice) hit 55-60% 
+    # of the time at 14-16 DEFCON/90 vs threshold of 12
     if defcon_per_90 <= 0:
         prob = 0.0
     else:
-        scale = 1.5  # Steeper than before
+        scale = 1.5  # Steeper curve
         raw_prob = 1.0 / (1.0 + math.exp(-(defcon_per_90 - threshold) / scale))
-        prob = min(raw_prob, 0.5)  # Cap at 50% - realistic for even the best
+        prob = min(raw_prob, 0.60)  # Cap at 60% - realistic for elite defensive mids
     
     return round(defcon_per_90, 2), round(prob, 3), defcon_total
 
@@ -1098,37 +1314,44 @@ def calculate_expected_bonus(player: Dict, position: int) -> tuple[float, float]
     xGI90 = xG90 + xA90
     
     # ==================== MODEL BONUS FROM UNDERLYING STATS ====================
-    # BPS-to-Bonus conversion: ~25-30 BPS typically needed for 3 bonus
-    # Goal involvement is the biggest driver
+    # BPS (Bonus Point System) weights:
+    # - Goals: +24 for MID/FWD, +12 for DEF, +6 for GKP
+    # - Assists: +9
+    # - Clean sheet: +12 for DEF/GKP, +6 for MID
+    # - Key passes, tackles, saves contribute smaller amounts
+    # 
+    # Top 3 BPS in each match get 3, 2, 1 bonus points.
+    # Premium attackers in good fixtures can hit 40+ BPS with a brace.
     
     # Estimate BPS contribution from goals/assists/CS
-    goal_bps_contrib = goals_per_90 * (24 if position in [3, 4] else 12)
+    goal_bps_contrib = goals_per_90 * (24 if position in [3, 4] else (12 if position == 2 else 6))
     assist_bps_contrib = assists_per_90 * 9
-    cs_bps_contrib = cs_per_90 * (12 if position == 2 else (6 if position == 3 else 0))
+    cs_bps_contrib = cs_per_90 * (12 if position in [1, 2] else (6 if position == 3 else 0))
     
-    # Base BPS from other actions (tackles, key passes, saves, etc.)
+    # Base BPS from other actions (tackles, key passes, saves, interceptions)
     # Estimated from typical position ranges
-    base_bps = {1: 8, 2: 10, 3: 8, 4: 5}.get(position, 8)
+    base_bps = {1: 10, 2: 11, 3: 9, 4: 6}.get(position, 8)
     
     estimated_bps = base_bps + goal_bps_contrib + assist_bps_contrib + cs_bps_contrib
     
-    # Convert BPS to bonus probability
-    # Top scorers (30+ BPS) almost always get 3 bonus
-    # 20-30 BPS often gets 1-2 bonus
-    # <15 BPS rarely gets bonus
-    
-    if estimated_bps >= 35:
-        estimated_bonus = 2.5
-    elif estimated_bps >= 28:
-        estimated_bonus = 1.8
+    # Convert BPS to expected bonus using smoother curve
+    # Premium attackers regularly hit 35+ BPS in good games
+    if estimated_bps >= 40:
+        estimated_bonus = 2.7  # Elite haul territory (Haaland brace)
+    elif estimated_bps >= 35:
+        estimated_bonus = 2.3
+    elif estimated_bps >= 30:
+        estimated_bonus = 1.9
+    elif estimated_bps >= 26:
+        estimated_bonus = 1.5
     elif estimated_bps >= 22:
-        estimated_bonus = 1.2
+        estimated_bonus = 1.1
     elif estimated_bps >= 18:
         estimated_bonus = 0.7
     elif estimated_bps >= 14:
         estimated_bonus = 0.4
     else:
-        estimated_bonus = 0.2
+        estimated_bonus = 0.15
     
     # ==================== BLEND HISTORICAL AND MODELED ====================
     # If player has significant history, weight historical more
@@ -1522,18 +1745,40 @@ def calculate_expected_points(
     og_per_90 = own_goals / mins90 if mins90 > 1 else 0.01
     
     # ==================== PENALTY TAKER BOOST ====================
-    # Main penalty takers get significant xG from pens - ensure we account for this
-    # FPL xG includes penalties, but if a player's pen share changed mid-season,
-    # their historical xG may understate current expected output
+    # FPL's xG INCLUDES penalty xG, so we don't need to boost for established takers.
+    # We only boost when:
+    # 1. Player became main penalty taker mid-season (historical xG understates current role)
+    # 2. Player's pen share increased significantly
+    #
+    # The boost is conservative - we're correcting for stale historical data, not adding raw pen xG
     player_id = player.get("id")
     penalty_boost = 0.0
+    
     if player_id in PENALTY_TAKERS:
-        pen_xg, confidence = PENALTY_TAKERS[player_id]
-        # Only boost if their historical xG90 seems low relative to pen contribution
-        # This handles cases where a player became the main taker recently
-        if xG90 < pen_xg * 0.8:  # Their xG seems to understate pen contribution
-            penalty_boost = (pen_xg - xG90 * 0.3) * confidence * 0.5  # Conservative boost
-            penalty_boost = max(0, min(0.15, penalty_boost))  # Cap at 0.15 xG/90 boost
+        pen_xg_per_90, confidence = PENALTY_TAKERS[player_id]
+        
+        # Get player's actual penalty stats from FPL
+        penalties_missed = int(player.get("penalties_missed", 0) or 0)
+        penalties_saved = int(player.get("penalties_saved", 0) or 0)  # For GKPs
+        
+        # Estimate penalties taken (goals from pens + misses)
+        # FPL doesn't give pen goals directly, but high pen takers have consistent rates
+        # We look at the ratio of their xG to expected pen xG contribution
+        
+        # If player has low minutes (new to team/role), boost more aggressively
+        if mins90 < 8:
+            # Limited sample - trust the PENALTY_TAKERS designation
+            # Apply partial boost weighted by confidence
+            penalty_boost = pen_xg_per_90 * confidence * 0.3
+        elif mins90 < 15:
+            # Medium sample - smaller boost for emerging takers
+            expected_pen_contribution = pen_xg_per_90 * 0.76  # 76% pen conversion
+            if xG90 < expected_pen_contribution * 0.7:
+                # Their xG seems too low for a main pen taker - boost
+                penalty_boost = (expected_pen_contribution - xG90 * 0.3) * confidence * 0.25
+        # else: Full season sample - trust their historical xG already includes pens
+        
+        penalty_boost = max(0, min(0.12, penalty_boost))  # Cap at 0.12 xG/90 boost
     
     # ==================== YELLOW CARD MODEL ====================
     # Yellow card probability based on:
@@ -1629,64 +1874,151 @@ def calculate_expected_points(
     total_xpts = 0
     avg_cs_prob = 0
     
+    # Pre-calculate team's defensive baseline (needed for both loop and final calc)
+    if cache.fdr_data and team_id in cache.fdr_data:
+        team_xga_baseline = cache.fdr_data[team_id].get('blended_xga', 1.3)
+    else:
+        # Fallback: estimate from CS rate using inverse Poisson
+        team_xga_baseline = -math.log(max(0.08, team_base_cs))
+    
     for i, fix in enumerate(horizon):
         weight = weights_used[i] / total_weight
         opponent_id = fix.get("opponent_id")
         is_home = fix.get("is_home", True)
         opponent_name = teams_dict.get(opponent_id, {}).get("name", "")
+        fixture_gw = fix.get("gameweek", 0)
+        
+        # ==================== CHECK FOR FIXTURE-SPECIFIC xG ====================
+        # If we have fixture-level projections (GW+1, GW+2), use them with high weight
+        # Weighting: GW+1 = 65% fixture xG, GW+2 = 55% fixture xG
+        
+        fixture_xg_data = None
+        fixture_xg_weight = 0
+        
+        # Look up fixture xG in cache (try both home/away orientations)
+        if is_home:
+            fixture_key = (team_id, opponent_id, fixture_gw)
+        else:
+            fixture_key = (opponent_id, team_id, fixture_gw)
+        
+        if fixture_key in cache.fixture_xg:
+            fixture_xg_data = cache.fixture_xg[fixture_key]
+            # Weight based on how far out the fixture is
+            if i == 0:  # Next GW
+                fixture_xg_weight = 0.65
+            elif i == 1:  # GW+2
+                fixture_xg_weight = 0.55
+            else:
+                fixture_xg_weight = 0.40  # GW+3 and beyond (if available)
         
         # ==================== FIXTURE-SPECIFIC CS PROBABILITY ====================
-        # CS prob = Team's defensive ability vs Opponent's attacking ability
+        # CS probability uses Poisson: P(0 goals) = e^(-expected_goals_against)
         
-        # Get opponent's attacking strength
-        if cache.fdr_data and opponent_id in cache.fdr_data:
-            opp_attack_fdr = cache.fdr_data[opponent_id].get("attack_fdr", 5)
-            opp_xg_per_game = cache.fdr_data[opponent_id].get("form_xg", LEAGUE_AVG_GOALS_PER_GAME)
+        if fixture_xg_data and fixture_xg_weight > 0:
+            # USE FIXTURE-SPECIFIC xG PROJECTION
+            # This is the highest-signal data for near-term predictions
+            if is_home:
+                fixture_specific_xga = fixture_xg_data.get("away_xg", 1.3)  # What away team is expected to score
+            else:
+                fixture_specific_xga = fixture_xg_data.get("home_xg", 1.5)  # What home team is expected to score
+            
+            # Blend fixture xG with team strength model
+            # fixture_xg_weight% from fixture projection, remainder from team strength
+            team_model_xga = team_xga_baseline * (opp_xg_per_game / LEAGUE_AVG_GOALS_PER_GAME)
+            if is_home:
+                team_model_xga *= 0.85 * AWAY_ATTACK_PENALTY
+            else:
+                team_model_xga *= 1.18 * HOME_ATTACK_BOOST
+            
+            expected_goals_against = (fixture_xg_weight * fixture_specific_xga + 
+                                     (1 - fixture_xg_weight) * team_model_xga)
+            data_source_for_fixture = "fixture_xg+model"
         else:
-            opp_xg_per_game = TEAM_BASE_XG.get(opponent_name, LEAGUE_AVG_GOALS_PER_GAME)
-            opp_attack_fdr = 5  # Neutral
+            # FALLBACK TO TEAM STRENGTH MODEL
+            # Note: team_xga_baseline was calculated before the loop
+            
+            # Get opponent's attacking strength
+            if cache.fdr_data and opponent_id in cache.fdr_data:
+                opp_xg_per_game = cache.fdr_data[opponent_id].get('blended_xg', LEAGUE_AVG_GOALS_PER_GAME)
+            else:
+                opp_xg_per_game = TEAM_BASE_XG.get(opponent_name, LEAGUE_AVG_GOALS_PER_GAME)
+            
+            # Calculate opponent's attacking multiplier relative to league average
+            opp_attack_multiplier = opp_xg_per_game / LEAGUE_AVG_GOALS_PER_GAME
+            
+            # Apply home/away adjustment to the fixture
+            # When you're HOME: opponent (away) attacks weaker, you defend stronger
+            # When you're AWAY: opponent (home) attacks stronger, you defend weaker
+            if is_home:
+                ha_defensive_factor = 0.85  # You concede ~15% less at home
+                opp_attack_multiplier *= AWAY_ATTACK_PENALTY  # 0.87 - they're away
+            else:
+                ha_defensive_factor = 1.18  # You concede ~18% more away
+                opp_attack_multiplier *= HOME_ATTACK_BOOST  # 1.19 - they're at home
+            
+            # Final expected goals against for THIS FIXTURE
+            # = Your baseline xGA × opponent attack quality × home/away factor
+            expected_goals_against = team_xga_baseline * opp_attack_multiplier * ha_defensive_factor
+            data_source_for_fixture = "team_model"
         
-        # Adjust for home/away (asymmetric - home advantage > away disadvantage)
-        if is_home:
-            # Playing at home - opponent's attack is weaker (they're away)
-            opp_xg_adjusted = opp_xg_per_game * AWAY_ATTACK_PENALTY  # 0.87
-        else:
-            # Playing away - opponent's attack is stronger (they're at home)
-            opp_xg_adjusted = opp_xg_per_game * HOME_ATTACK_BOOST  # 1.19
+        # Bound expected goals against to realistic range (0.4 to 3.0)
+        expected_goals_against = max(0.4, min(3.0, expected_goals_against))
         
-        # CS probability using Poisson: P(0 goals) = e^(-lambda)
-        # Lambda = expected goals conceded by our team this fixture
-        # Base it on: opponent's xG adjusted by our defensive strength
-        team_def_factor = team_base_cs / LEAGUE_AVG_CS_RATE  # How much better/worse than average
-        
-        # If opponent creates 1.5 xG normally, and we're 20% better defensively
-        expected_goals_against = opp_xg_adjusted / team_def_factor
+        # CS probability using Poisson
         fixture_cs_prob = math.exp(-expected_goals_against)
-        fixture_cs_prob = min(0.60, max(0.05, fixture_cs_prob))  # Bound between 5-60%
+        fixture_cs_prob = min(0.55, max(0.03, fixture_cs_prob))  # Bound between 3-55%
         
         avg_cs_prob += fixture_cs_prob * weight
         
         # ==================== FIXTURE-SPECIFIC xGI ====================
         # Adjust player's xG/xA based on opponent's defensive weakness
+        # Use fixture xG if available for attack projections too
         
-        if cache.fdr_data and opponent_id in cache.fdr_data:
-            opp_def_fdr = cache.fdr_data[opponent_id].get("defence_fdr", 5)
+        if fixture_xg_data and fixture_xg_weight > 0:
+            # Use fixture-specific attacking projection
+            if is_home:
+                fixture_specific_xg_for = fixture_xg_data.get("home_xg", 1.5)  # What we're expected to score
+            else:
+                fixture_specific_xg_for = fixture_xg_data.get("away_xg", 1.0)
+            
+            # Convert fixture xG to multiplier relative to our baseline
+            team_base_xg = cache.fdr_data.get(team_id, {}).get('blended_xg', LEAGUE_AVG_GOALS_PER_GAME)
+            if team_base_xg > 0:
+                attack_multiplier = fixture_specific_xg_for / team_base_xg
+            else:
+                attack_multiplier = 1.0
+            
+            # Blend with FDR-based multiplier
+            if cache.fdr_data and opponent_id in cache.fdr_data:
+                opp_def_fdr = cache.fdr_data[opponent_id].get("defence_fdr", 5)
+                fdr_attack_mult = FDR_MULTIPLIERS_10.get(round(opp_def_fdr), 1.0)
+                if is_home:
+                    fdr_attack_mult *= HOME_ATTACK_BOOST
+                else:
+                    fdr_attack_mult *= AWAY_ATTACK_PENALTY
+                
+                # Blend: fixture_xg_weight from fixture, rest from FDR model
+                attack_multiplier = fixture_xg_weight * attack_multiplier + (1 - fixture_xg_weight) * fdr_attack_mult
         else:
-            # Estimate from CS rate (lower CS = weaker defence)
-            opp_cs_rate = TEAM_BASE_CS_RATES.get(opponent_name, 0.22)
-            # Convert to FDR: 10% CS = weak (FDR 3), 35% CS = strong (FDR 8)
-            opp_def_fdr = 3 + (opp_cs_rate / 0.35) * 5
-            opp_def_fdr = min(10, max(1, opp_def_fdr))
-        
-        # FDR multiplier for attacking returns
-        # Easier defence = more goals expected
-        attack_multiplier = FDR_MULTIPLIERS_10.get(round(opp_def_fdr), 1.0)
-        
-        # Home/away adjustment for attacking (asymmetric)
-        if is_home:
-            attack_multiplier *= HOME_ATTACK_BOOST  # 1.19
-        else:
-            attack_multiplier *= AWAY_ATTACK_PENALTY  # 0.87
+            # Fallback to FDR-based multiplier
+            if cache.fdr_data and opponent_id in cache.fdr_data:
+                opp_def_fdr = cache.fdr_data[opponent_id].get("defence_fdr", 5)
+            else:
+                # Estimate from CS rate (lower CS = weaker defence)
+                opp_cs_rate = TEAM_BASE_CS_RATES.get(opponent_name, 0.22)
+                # Convert to FDR: 10% CS = weak (FDR 3), 35% CS = strong (FDR 8)
+                opp_def_fdr = 3 + (opp_cs_rate / 0.35) * 5
+                opp_def_fdr = min(10, max(1, opp_def_fdr))
+            
+            # FDR multiplier for attacking returns
+            # Easier defence = more goals expected
+            attack_multiplier = FDR_MULTIPLIERS_10.get(round(opp_def_fdr), 1.0)
+            
+            # Home/away adjustment for attacking (asymmetric)
+            if is_home:
+                attack_multiplier *= HOME_ATTACK_BOOST  # 1.19
+            else:
+                attack_multiplier *= AWAY_ATTACK_PENALTY  # 0.87
         
         # CAP TOTAL FIXTURE BOOST AT 22% - reasonable swing for home vs weak defence
         attack_multiplier = min(1.22, max(0.78, attack_multiplier))
@@ -1846,12 +2178,16 @@ def calculate_expected_points(
     model_per_90 = total_xpts_per_90 / max(1, len(horizon))
     
     # ==================== APPLY MINUTES FACTOR ====================
-    # Appearance points (2 pts) are DISCRETE - you get them if you play 60+ mins
-    # Other components (goals, assists, CS, saves) scale with minutes
+    # FPL points have discrete and continuous components:
     #
-    # Split the calculation:
-    # - Appearance: P(60+ mins) * 2 + P(1-59 mins) * 1
-    # - Everything else: linear with minutes_factor
+    # DISCRETE (conditional on playing threshold):
+    # - Appearance: 2 pts for 60+ mins, 1 pt for 1-59 mins
+    # - Clean Sheet: 4/1/0 pts - requires 60+ mins for GKP/DEF, always for MID
+    # - Bonus: Competitive BPS system - extremely unlikely without 60+ mins
+    #
+    # CONTINUOUS (scale with minutes):
+    # - Goals, Assists, Saves (proportional to time on pitch)
+    # - Yellow/Red cards, Own goals (exposure-based)
     
     minutes_factor = exp_mins / 90.0
     
@@ -1870,21 +2206,85 @@ def calculate_expected_points(
     # Probability of playing at all (for 1-pt appearance)
     prob_plays = min(1.0, exp_mins / 15) if exp_mins > 0 else 0
     
-    # Expected appearance points (discrete)
-    appearance_xpts = (prob_60_plus * 2.0) + ((prob_plays - prob_60_plus) * 1.0)
+    # ==================== REBUILD xPts WITH PROPER DISCRETIZATION ====================
     
-    # Non-appearance per-90 (remove the 2.0 app pts we added per fixture)
-    non_app_per_90 = model_per_90 - 2.0
+    # Appearance points (discrete)
+    appearance_xpts_per_fix = (prob_60_plus * 2.0) + ((prob_plays - prob_60_plus) * 1.0)
     
-    # Final xPts: discrete appearance + linear everything else
-    final_xpts = (appearance_xpts * len(horizon)) + (non_app_per_90 * len(horizon) * minutes_factor)
+    # CS points (discrete for GKP/DEF - requires 60+ mins)
+    if position in [1, 2]:
+        # CS only counts if you play 60+ mins
+        cs_xpts_per_fix = avg_cs_prob * cs_pts * prob_60_plus
+    else:
+        # MID CS point doesn't require 60+ mins
+        cs_xpts_per_fix = avg_cs_prob * cs_pts * prob_plays
+    
+    # Bonus points (discrete - almost impossible without significant minutes)
+    # BPS accumulates during play, so very unlikely to get bonus with <45 mins
+    if exp_mins >= 70:
+        bonus_discount = 1.0
+    elif exp_mins >= 55:
+        bonus_discount = 0.85  # Slight discount - might miss bonus cutoff
+    elif exp_mins >= 40:
+        bonus_discount = 0.50  # Significant discount - sub unlikely to win bonus
+    elif exp_mins >= 25:
+        bonus_discount = 0.20  # Very unlikely
+    else:
+        bonus_discount = 0.05  # Almost never
+    bonus_xpts_per_fix = expected_bonus * bonus_discount
+    
+    # Goal and assist points (continuous - scale with minutes)
+    xgi_xpts_per_fix = ((goal_pts * (xG90 + penalty_boost)) + (3 * xA90)) * minutes_factor
+    
+    # Save points (continuous - GKP only)
+    save_xpts_per_fix = (save_pts_per_90 * minutes_factor) if position == 1 else 0
+    
+    # DEFCON points (discrete - requires threshold in 90 mins)
+    # Scale down for reduced minutes as less time to accumulate actions
+    defcon_xpts_per_fix = (defcon_prob * DEFCON_POINTS * min(1.0, minutes_factor * 1.1)) if position in [2, 3] else 0
+    
+    # Deductions (continuous - exposure-based)
+    yellow_deduction_per_fix = yellow_per_90 * minutes_factor
+    og_deduction_per_fix = (og_per_90 * 2.0 * minutes_factor) if position in [1, 2] else (og_per_90 * 2.0 * 0.2 * minutes_factor)
+    
+    # Goals conceded deduction (uses Poisson, already calculated in fixture loop)
+    # Use team's defensive baseline (calculated before loop)
+    if position in [1, 2]:
+        gc_deduction_per_fix = calculate_goals_conceded_penalty(team_xga_baseline) * prob_60_plus  # Only if play 60+
+    else:
+        gc_deduction_per_fix = 0
+    
+    # Sum all components per fixture
+    xpts_per_fixture = (
+        appearance_xpts_per_fix +
+        cs_xpts_per_fix +
+        bonus_xpts_per_fix +
+        xgi_xpts_per_fix +
+        save_xpts_per_fix +
+        defcon_xpts_per_fix -
+        yellow_deduction_per_fix -
+        og_deduction_per_fix -
+        gc_deduction_per_fix
+    )
+    
+    # Final xPts = per-fixture rate × number of fixtures
+    final_xpts = xpts_per_fixture * len(horizon)
+    
+    # Calculate ceiling and floor for variance modeling
+    # Ceiling: 80th percentile outcome (good form, favorable fixtures)
+    # Floor: 20th percentile outcome (poor form, tough fixtures)
+    xpts_ceiling = final_xpts * (1.25 if position in [3, 4] else 1.15)
+    xpts_floor = final_xpts * (0.65 if position in [3, 4] else 0.75)
     
     return {
         "xpts": round(final_xpts, 2),
         "xpts_per_90": round(model_per_90, 2),
+        "xpts_ceiling": round(xpts_ceiling, 2),
+        "xpts_floor": round(xpts_floor, 2),
         "expected_minutes": exp_mins,
         "minutes_reason": mins_reason,
         "minutes_factor": round(minutes_factor, 3),
+        "prob_60_plus": round(prob_60_plus, 3),
         "defcon_per_90": defcon_per_90,
         "defcon_prob": defcon_prob,
         "defcon_pts_total": defcon_pts_total,
@@ -1906,21 +2306,23 @@ def calculate_captain_score(
     next_fixture: Optional[Dict]
 ) -> Dict:
     """
-    Calculate captaincy score factoring in ceiling potential.
+    Calculate captaincy score factoring in ceiling potential AND differential value.
     
-    Attackers vs weak defences at home have higher ceilings.
-    We want ceiling for captaincy, not just expected value.
+    For rank climbing, we want:
+    1. High ceiling potential (attackers vs weak defences at home)
+    2. Differential upside (low ownership = rank gain if they haul)
     
-    Returns dict with captain_score and ceiling_mult.
+    Returns dict with captain_score, ceiling_mult, and diff_boost.
     """
     ceiling_mult = 1.0
+    diff_boost = 0.0
     
     # Position multiplier - attackers have higher point ceilings
     position_mults = {
-        1: 0.70,   # GKP - very low ceiling
-        2: 0.85,   # DEF - moderate ceiling
-        3: 1.10,   # MID - high ceiling (5pt goals + CS point)
-        4: 1.15    # FWD - highest ceiling
+        1: 0.70,   # GKP - very low ceiling (max ~15 pts realistic)
+        2: 0.85,   # DEF - moderate ceiling (CS + goal = 15+ pts)
+        3: 1.12,   # MID - high ceiling (5pt goals + CS point + assist potential)
+        4: 1.18    # FWD - highest ceiling (brace potential)
     }
     ceiling_mult *= position_mults.get(position_id, 1.0)
     
@@ -1931,39 +2333,60 @@ def calculate_captain_score(
         
         # Home advantage increases ceiling
         if is_home:
-            ceiling_mult *= 1.08
+            ceiling_mult *= 1.10
         
         # Opponent defensive strength affects attacker ceilings
         if position_id in [3, 4] and cache.fdr_data and opponent_id in cache.fdr_data:
             opp_def_fdr = cache.fdr_data[opponent_id].get("defence_fdr", 5)
             if opp_def_fdr <= 3:
-                ceiling_mult *= 1.12  # Weak defence = haul potential
+                ceiling_mult *= 1.15  # Weak defence = haul potential
             elif opp_def_fdr <= 4:
-                ceiling_mult *= 1.05
+                ceiling_mult *= 1.08
             elif opp_def_fdr >= 8:
-                ceiling_mult *= 0.88  # Strong defence = capped upside
+                ceiling_mult *= 0.85  # Strong defence = capped upside
             elif opp_def_fdr >= 7:
-                ceiling_mult *= 0.94
+                ceiling_mult *= 0.92
     
     # Historical explosiveness - PPG as proxy for haul frequency
     total_points = int(player.get("total_points", 0) or 0)
     starts = int(player.get("starts", 0) or 0)
     if starts >= 5:
         ppg = total_points / starts
-        if ppg >= 7.5:
-            ceiling_mult *= 1.12  # Elite returner
-        elif ppg >= 6.5:
-            ceiling_mult *= 1.08
-        elif ppg >= 5.5:
-            ceiling_mult *= 1.04
+        if ppg >= 8.0:
+            ceiling_mult *= 1.15  # Elite returner (Haaland, Salah tier)
+        elif ppg >= 7.0:
+            ceiling_mult *= 1.10
+        elif ppg >= 6.0:
+            ceiling_mult *= 1.05
+        elif ppg >= 5.0:
+            ceiling_mult *= 1.0
         elif ppg < 4:
-            ceiling_mult *= 0.88  # Historically poor
+            ceiling_mult *= 0.85  # Historically poor
     
-    captain_score = base_xpts * ceiling_mult
+    # ==================== DIFFERENTIAL VALUE ====================
+    # In mini-leagues, captaining a differential can swing ranks significantly
+    # High EO captain = no rank movement on haul
+    # Low EO captain with haul = massive rank gain
+    ownership = float(player.get("selected_by_percent", 0) or 0)
+    
+    if ownership < 5:
+        diff_boost = 0.08  # Punt captain - high variance play
+    elif ownership < 10:
+        diff_boost = 0.05  # Strong differential
+    elif ownership < 20:
+        diff_boost = 0.02  # Mild differential upside
+    elif ownership > 50:
+        diff_boost = -0.03  # Template captain - no rank gain, only risk
+    elif ownership > 35:
+        diff_boost = -0.01  # Popular pick
+    
+    captain_score = base_xpts * ceiling_mult * (1 + diff_boost)
     
     return {
         "captain_score": round(captain_score, 2),
         "ceiling_mult": round(ceiling_mult, 3),
+        "diff_boost": round(diff_boost, 3),
+        "ownership": round(ownership, 1),
     }
 
 
@@ -2112,10 +2535,22 @@ async def clear_predicted_minutes():
 # ==================== TEAM STRENGTH ADMIN (Analytic FPL Data) ====================
 
 class TeamStrengthData(BaseModel):
-    """Team strength data from Analytic FPL."""
+    """
+    Team strength data from Analytic FPL.
+    
+    Attack = Adjusted xG For (opponent-quality adjusted)
+    Defence = Adjusted xGA (opponent-quality adjusted)
+    Deltas = Recent change in strength
+    Trends = Directional momentum
+    """
     team: str
-    adjxg_for: float
-    adjxg_ag: float
+    adjxg_for: float  # Attack column
+    adjxg_ag: float   # Defence column
+    # Optional trend/delta data
+    attack_delta: Optional[float] = None   # Attack Δ
+    defence_delta: Optional[float] = None  # Defence Δ
+    attack_trend: Optional[float] = None   # Att Trend
+    defence_trend: Optional[float] = None  # Def Trend
 
 
 class TeamStrengthBulkImport(BaseModel):
@@ -2124,31 +2559,59 @@ class TeamStrengthBulkImport(BaseModel):
     manager_id: int  # Must be admin
 
 
+class FixtureXGData(BaseModel):
+    """Fixture-specific xG projections for near-term predictions."""
+    home_team: str
+    away_team: str
+    gameweek: int
+    home_xg: float  # Projected xG for home team
+    away_xg: float  # Projected xG for away team
+    
+
+class FixtureXGBulkImport(BaseModel):
+    """Bulk import fixture xG projections."""
+    fixtures: List[FixtureXGData]
+    manager_id: int  # Must be admin
+    source: Optional[str] = "analytic_fpl"
+
+
 @app.post("/api/team-strength")
 async def update_team_strength(data: TeamStrengthBulkImport):
     """
     Update team strength data from Analytic FPL.
     Admin only (manager_id must be 616495).
     
-    This data is blended with Understat form data:
-    final_xg = 0.7 * analytic_fpl_baseline + 0.3 * understat_form
+    Weighting strategy:
+    - 55-60% Analytic FPL adjusted xG (stable baseline)
+    - 25-30% Understat recent form (reactive)
+    - 10-15% Trend adjustment (momentum)
+    
+    The trend data (Δ and Trend columns) captures teams improving/declining.
     """
     if data.manager_id != ADMIN_MANAGER_ID:
         raise HTTPException(status_code=403, detail="Admin access required (manager_id=616495)")
     
     updated = []
+    skipped = []
+    
     for team_data in data.teams:
         team_name = team_data.team.strip()
         team_id = ANALYTIC_FPL_TO_ID.get(team_name)
         
         if team_id is None:
             logger.warning(f"Unknown team name: {team_name}")
+            skipped.append(team_name)
             continue
         
         cache.manual_team_strength[team_id] = {
             "team_name": team_name,
             "adjxg_for": team_data.adjxg_for,
             "adjxg_ag": team_data.adjxg_ag,
+            # Trend data for momentum adjustments
+            "attack_delta": team_data.attack_delta,
+            "defence_delta": team_data.defence_delta,
+            "attack_trend": team_data.attack_trend,
+            "defence_trend": team_data.defence_trend,
         }
         updated.append(team_name)
     
@@ -2161,9 +2624,123 @@ async def update_team_strength(data: TeamStrengthBulkImport):
     return {
         "status": "ok",
         "updated_teams": updated,
+        "skipped_teams": skipped,
         "count": len(updated),
-        "updated_at": cache.manual_team_strength_last_update.isoformat()
+        "updated_at": cache.manual_team_strength_last_update.isoformat(),
+        "weighting_info": {
+            "analytic_fpl_weight": 0.55,
+            "understat_form_weight": 0.30,
+            "trend_weight": 0.15,
+            "note": "Trend data (Δ) applies momentum adjustment to near-term predictions"
+        }
     }
+
+
+@app.post("/api/fixture-xg")
+async def import_fixture_xg(data: FixtureXGBulkImport):
+    """
+    Import fixture-specific xG projections for GW+1 and GW+2.
+    Admin only.
+    
+    This is the highest-signal data for near-term predictions.
+    When available, fixture xG is weighted:
+    - GW+1: 65% fixture xG, 20% team strength, 15% form
+    - GW+2: 55% fixture xG, 25% team strength, 20% form
+    """
+    if data.manager_id != ADMIN_MANAGER_ID:
+        raise HTTPException(status_code=403, detail="Admin access required (manager_id=616495)")
+    
+    fpl_data = await fetch_fpl_data()
+    teams_by_name = {}
+    for t in fpl_data["teams"]:
+        teams_by_name[t["name"].lower()] = t["id"]
+        teams_by_name[t["short_name"].lower()] = t["id"]
+    
+    # Add common aliases
+    aliases = {
+        "man city": "Manchester City", "man utd": "Manchester United",
+        "spurs": "Tottenham", "wolves": "Wolverhampton Wanderers",
+        "brighton": "Brighton and Hove Albion", "forest": "Nottingham Forest",
+        "nott'm forest": "Nottingham Forest", "nottingham forest": "Nottingham Forest",
+    }
+    for alias, full_name in aliases.items():
+        if full_name.lower() in teams_by_name:
+            teams_by_name[alias.lower()] = teams_by_name[full_name.lower()]
+    
+    # Also use ANALYTIC_FPL_TO_ID for matching
+    for name, team_id in ANALYTIC_FPL_TO_ID.items():
+        teams_by_name[name.lower()] = team_id
+    
+    imported = []
+    errors = []
+    
+    for fix in data.fixtures:
+        home_name = fix.home_team.strip().lower()
+        away_name = fix.away_team.strip().lower()
+        
+        home_id = teams_by_name.get(home_name)
+        away_id = teams_by_name.get(away_name)
+        
+        if home_id is None:
+            errors.append(f"Unknown home team: {fix.home_team}")
+            continue
+        if away_id is None:
+            errors.append(f"Unknown away team: {fix.away_team}")
+            continue
+        
+        key = (home_id, away_id, fix.gameweek)
+        cache.fixture_xg[key] = {
+            "home_xg": fix.home_xg,
+            "away_xg": fix.away_xg,
+            "home_team": fix.home_team,
+            "away_team": fix.away_team,
+            "gw": fix.gameweek,
+        }
+        imported.append(f"GW{fix.gameweek}: {fix.home_team} vs {fix.away_team}")
+    
+    cache.fixture_xg_last_update = datetime.now()
+    
+    return {
+        "status": "ok",
+        "imported": len(imported),
+        "imported_fixtures": imported,
+        "errors": errors if errors else None,
+        "source": data.source,
+        "updated_at": cache.fixture_xg_last_update.isoformat(),
+    }
+
+
+@app.get("/api/fixture-xg")
+async def get_fixture_xg(gw: Optional[int] = None):
+    """Get cached fixture xG projections."""
+    if gw:
+        fixtures = {
+            f"{v['home_team']} vs {v['away_team']}": v 
+            for k, v in cache.fixture_xg.items() 
+            if k[2] == gw
+        }
+    else:
+        fixtures = {
+            f"GW{k[2]}: {v['home_team']} vs {v['away_team']}": v 
+            for k, v in cache.fixture_xg.items()
+        }
+    
+    return {
+        "fixtures": fixtures,
+        "count": len(fixtures),
+        "last_update": cache.fixture_xg_last_update.isoformat() if cache.fixture_xg_last_update else None,
+    }
+
+
+@app.delete("/api/fixture-xg")
+async def clear_fixture_xg(manager_id: int):
+    """Clear fixture xG cache (admin only)."""
+    if manager_id != ADMIN_MANAGER_ID:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    cache.fixture_xg.clear()
+    cache.fixture_xg_last_update = None
+    return {"status": "ok", "message": "Fixture xG cache cleared"}
 
 
 @app.get("/api/team-strength")
@@ -2458,8 +3035,8 @@ async def search_players(
 @app.get("/api/rankings/{position}")
 async def get_rankings(
     position: Position,
-    gw_start: int = Query(1, ge=1, le=38),
-    gw_end: int = Query(8, ge=1, le=38),
+    gw_start: Optional[int] = Query(None, ge=1, le=38),
+    gw_end: Optional[int] = Query(None, ge=1, le=38),
     min_minutes: int = Query(MIN_MINUTES_DEFAULT, ge=0),
     min_price: float = Query(0, ge=0),
     max_price: float = Query(20, ge=0, le=20),
@@ -2468,9 +3045,6 @@ async def get_rankings(
     sort_by: str = Query("xpts", pattern="^(xpts|price|form|ownership|defcon_per_90|saves_per_90|expected_minutes|total_points|xgi_per_90|bonus_per_90)$"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$")
 ):
-    if gw_end < gw_start:
-        raise HTTPException(status_code=400, detail="gw_end must be >= gw_start")
-    
     # Ensure FDR data is loaded
     await refresh_fdr_data()
     
@@ -2481,7 +3055,17 @@ async def get_rankings(
     teams = {t["id"]: t for t in data["teams"]}
     events = data["events"]
     current_gw = get_current_gameweek(events)
+    next_gw = get_next_gameweek(events)
     position_id = POSITION_ID_MAP[position.value]
+    
+    # Use dynamic defaults based on current GW if not specified
+    if gw_start is None:
+        gw_start = next_gw if next_gw else min(current_gw + 1, 38)
+    if gw_end is None:
+        gw_end = min(gw_start + 5, 38)
+    
+    if gw_end < gw_start:
+        raise HTTPException(status_code=400, detail="gw_end must be >= gw_start")
     
     # Filter players first
     filtered_players = []
@@ -2549,8 +3133,11 @@ async def get_rankings(
             "price": price,
             "xpts": stats["xpts"],
             "xpts_per_90": stats["xpts_per_90"],
+            "xpts_ceiling": stats.get("xpts_ceiling", stats["xpts"] * 1.2),
+            "xpts_floor": stats.get("xpts_floor", stats["xpts"] * 0.7),
             "expected_minutes": stats["expected_minutes"],
             "minutes_reason": stats["minutes_reason"],
+            "prob_60_plus": stats.get("prob_60_plus", 0.8),
             "form": float(player.get("form", 0) or 0),
             "total_points": player.get("total_points", 0),
             "ownership": ownership_pct,
@@ -2980,13 +3567,29 @@ async def fetch_manager_transfers(manager_id: int) -> List[Dict]:
         return []
 
 
-async def fetch_player_history(player_id: int) -> Dict:
-    """Fetch player's GW-by-GW history."""
+async def fetch_player_history(player_id: int, use_cache: bool = True) -> Dict:
+    """
+    Fetch player's GW-by-GW history with caching.
+    
+    Cache duration: 30 minutes (player histories don't change during GW).
+    This significantly reduces API calls for rankings/transfers.
+    """
+    # Check cache first
+    if use_cache:
+        cached = cache.get_player_history(player_id)
+        if cached is not None:
+            return cached
+    
     try:
         client = await get_http_client()
         response = await client.get(f"{FPL_BASE_URL}/element-summary/{player_id}/")
         response.raise_for_status()
-        return response.json()
+        history = response.json()
+        
+        # Cache the result
+        cache.set_player_history(player_id, history)
+        
+        return history
     except Exception:
         return {"history": []}
 
@@ -4074,6 +4677,9 @@ def solve_transfer_plan(
         )
     root.total_xpts = sum(root.gw_xpts.values())
     
+    # Save baseline xPts BEFORE we start modifying paths
+    baseline_xpts = root.total_xpts
+    
     # BFS through decision tree
     paths = [root]
     
@@ -4433,11 +5039,50 @@ async def get_transfer_plan(
         entry_history = team_data["picks"].get("entry_history", {})
         bank = entry_history.get("bank", 0) / 10
         
-        # Determine free transfers (1 base + rolled if applicable)
-        # This is simplified - real logic would check previous GW transfers
-        free_transfers = 1
-        if entry_history.get("event_transfers", 0) == 0:
-            free_transfers = min(free_transfers + 1, 5)
+        # ==================== CALCULATE FREE TRANSFERS ====================
+        # FPL rules (2024/25):
+        # - Start each GW with 1 FT
+        # - If you don't use your FT, it rolls over (max 5 FTs banked)
+        # - Making 0 transfers = +1 FT for next GW
+        # - Making N transfers where N > FT = (N - FT) × 4 point hit
+        #
+        # We can estimate FT balance from recent transfer history:
+        # - Look at last few GWs of transfers
+        # - Count consecutive 0-transfer GWs = rolled FTs
+        # - But we can't know exact starting balance without full history
+        
+        # Get manager's transfer history to estimate FT balance
+        manager_transfers = team_data.get("transfers", [])
+        manager_history = history.get("current", [])
+        
+        # Count how many FTs the manager likely has
+        free_transfers = 1  # Minimum is always 1
+        
+        # Look at recent GWs to count rolls
+        recent_gws = sorted([h for h in manager_history if h.get("event", 0) <= current_gw], 
+                          key=lambda x: x.get("event", 0), reverse=True)[:5]
+        
+        consecutive_rolls = 0
+        for gw_data in recent_gws:
+            transfers_made = gw_data.get("event_transfers", 0)
+            if transfers_made == 0:
+                consecutive_rolls += 1
+            else:
+                break  # Stop counting once we hit a GW with transfers
+        
+        # Each consecutive 0-transfer GW = +1 FT (capped at 5)
+        # But we need to account for the current GW too
+        current_gw_transfers = entry_history.get("event_transfers", 0)
+        
+        if current_gw_transfers == 0:
+            # No transfers made this GW yet - they have their FTs
+            free_transfers = min(1 + consecutive_rolls, 5)
+        else:
+            # They already made transfers this GW
+            # We're planning for NEXT GW, so they'll have 1 FT
+            free_transfers = 1
+        
+        ft_estimation_method = "history_analysis"
         
         # Build squad list
         squad = []
@@ -4532,6 +5177,217 @@ async def get_transfer_plan(
         import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ MODEL BACKTESTING ============
+
+@app.get("/api/backtest/gw/{gw}")
+async def backtest_gameweek(
+    gw: int = Query(..., ge=1, le=38),
+    position: Optional[Position] = None,
+    min_minutes: int = Query(200, ge=0),
+    limit: int = Query(50, ge=1, le=200)
+):
+    """
+    Backtest the xPts model against actual GW results.
+    
+    Compares predicted xPts (calculated BEFORE the GW) vs actual points.
+    Useful for model validation and calibration.
+    
+    Returns:
+    - Per-player: predicted xPts, actual points, error
+    - Aggregate: MAE, RMSE, correlation
+    - Breakdown by position
+    """
+    await refresh_fdr_data()
+    
+    data = await fetch_fpl_data()
+    fixtures = await fetch_fixtures()
+    
+    elements = data["elements"]
+    teams = {t["id"]: t for t in data["teams"]}
+    events = data["events"]
+    
+    # Filter by position if specified
+    if position:
+        position_id = POSITION_ID_MAP[position.value]
+        elements = [e for e in elements if e["element_type"] == position_id]
+    
+    # Filter by minutes
+    elements = [e for e in elements if e.get("minutes", 0) >= min_minutes]
+    
+    results = []
+    errors = []
+    position_stats = defaultdict(lambda: {"errors": [], "count": 0})
+    
+    for player in elements:
+        # Get player's actual points for this GW
+        try:
+            history = await fetch_player_history(player["id"])
+            gw_data = next((h for h in history.get("history", []) if h.get("round") == gw), None)
+            
+            if not gw_data:
+                continue
+            
+            actual_points = gw_data.get("total_points", 0)
+            actual_minutes = gw_data.get("minutes", 0)
+            
+            # Skip players who didn't play (can't validate model on 0-minute players)
+            if actual_minutes == 0:
+                continue
+            
+            # Calculate what our model would have predicted
+            # Use fixtures from that GW
+            position_id = player["element_type"]
+            upcoming = get_player_upcoming_fixtures(player["team"], fixtures, gw, gw, teams, position_id)
+            
+            # Calculate xPts for single GW
+            stats = calculate_expected_points(
+                player, position_id, gw - 1, upcoming, teams, fixtures, events
+            )
+            
+            predicted_xpts = stats["xpts"]
+            error = predicted_xpts - actual_points
+            
+            results.append({
+                "id": player["id"],
+                "name": player["web_name"],
+                "team": teams.get(player["team"], {}).get("short_name", "???"),
+                "position": POSITION_MAP.get(position_id, "???"),
+                "predicted_xpts": round(predicted_xpts, 2),
+                "actual_points": actual_points,
+                "error": round(error, 2),
+                "abs_error": round(abs(error), 2),
+                "minutes": actual_minutes,
+            })
+            
+            errors.append(error)
+            pos_name = POSITION_MAP.get(position_id, "???")
+            position_stats[pos_name]["errors"].append(error)
+            position_stats[pos_name]["count"] += 1
+            
+        except Exception as e:
+            logger.warning(f"Backtest error for player {player['id']}: {e}")
+            continue
+    
+    if not errors:
+        return {"error": "No valid data for backtesting", "gw": gw}
+    
+    # Calculate aggregate stats
+    import statistics
+    mae = sum(abs(e) for e in errors) / len(errors)
+    rmse = math.sqrt(sum(e**2 for e in errors) / len(errors))
+    
+    # Calculate correlation (Pearson)
+    if len(results) >= 3:
+        predicted = [r["predicted_xpts"] for r in results]
+        actual = [r["actual_points"] for r in results]
+        
+        mean_pred = statistics.mean(predicted)
+        mean_actual = statistics.mean(actual)
+        
+        numerator = sum((p - mean_pred) * (a - mean_actual) for p, a in zip(predicted, actual))
+        denom_pred = math.sqrt(sum((p - mean_pred)**2 for p in predicted))
+        denom_actual = math.sqrt(sum((a - mean_actual)**2 for a in actual))
+        
+        if denom_pred > 0 and denom_actual > 0:
+            correlation = numerator / (denom_pred * denom_actual)
+        else:
+            correlation = 0
+    else:
+        correlation = None
+    
+    # Position breakdown
+    pos_breakdown = {}
+    for pos, data in position_stats.items():
+        if data["errors"]:
+            pos_mae = sum(abs(e) for e in data["errors"]) / len(data["errors"])
+            pos_breakdown[pos] = {
+                "count": data["count"],
+                "mae": round(pos_mae, 2),
+                "avg_error": round(statistics.mean(data["errors"]), 2),
+            }
+    
+    # Sort results by absolute error (worst predictions first)
+    results.sort(key=lambda x: -x["abs_error"])
+    
+    return {
+        "gw": gw,
+        "sample_size": len(results),
+        "aggregate_stats": {
+            "mae": round(mae, 2),
+            "rmse": round(rmse, 2),
+            "correlation": round(correlation, 3) if correlation else None,
+            "avg_error": round(statistics.mean(errors), 2),
+            "std_error": round(statistics.stdev(errors), 2) if len(errors) > 1 else None,
+        },
+        "position_breakdown": pos_breakdown,
+        "worst_predictions": results[:10],
+        "best_predictions": sorted(results, key=lambda x: x["abs_error"])[:10],
+        "all_results": results[:limit],
+    }
+
+
+@app.get("/api/backtest/summary")
+async def backtest_summary(
+    gw_start: int = Query(1, ge=1, le=38),
+    gw_end: int = Query(10, ge=1, le=38),
+):
+    """
+    Backtest summary across multiple gameweeks.
+    
+    Returns aggregate model performance metrics.
+    """
+    all_errors = []
+    gw_stats = []
+    
+    for gw in range(gw_start, min(gw_end + 1, 39)):
+        try:
+            result = await backtest_gameweek(gw=gw, limit=200)
+            if "error" not in result:
+                all_errors.extend([r["error"] for r in result.get("all_results", [])])
+                gw_stats.append({
+                    "gw": gw,
+                    "mae": result["aggregate_stats"]["mae"],
+                    "correlation": result["aggregate_stats"]["correlation"],
+                    "sample_size": result["sample_size"],
+                })
+        except Exception as e:
+            logger.warning(f"Backtest failed for GW{gw}: {e}")
+            continue
+    
+    if not all_errors:
+        return {"error": "No valid backtest data"}
+    
+    import statistics
+    
+    return {
+        "gw_range": f"GW{gw_start}-GW{gw_end}",
+        "total_predictions": len(all_errors),
+        "overall_mae": round(sum(abs(e) for e in all_errors) / len(all_errors), 2),
+        "overall_rmse": round(math.sqrt(sum(e**2 for e in all_errors) / len(all_errors)), 2),
+        "avg_correlation": round(statistics.mean([g["correlation"] for g in gw_stats if g["correlation"]]), 3) if gw_stats else None,
+        "gw_breakdown": gw_stats,
+    }
+
+
+# ============ HEALTH CHECK ============
+
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint with cache status."""
+    return {
+        "status": "ok",
+        "cache": {
+            "bootstrap_data": cache.bootstrap_data is not None,
+            "fixtures_data": cache.fixtures_data is not None,
+            "fdr_data_teams": len(cache.fdr_data),
+            "player_histories_cached": len(cache.player_histories),
+            "minutes_overrides": len(cache.minutes_overrides),
+            "predicted_minutes": len(cache.predicted_minutes),
+        },
+        "fdr_last_update": cache.fdr_last_update.isoformat() if cache.fdr_last_update else None,
+    }
 
 
 if __name__ == "__main__":

@@ -721,7 +721,16 @@
         .player-team { font-size: 0.75rem; color: var(--text-muted); }
 
         .stat-value { font-family: 'JetBrains Mono', monospace; font-weight: 500; }
-        .stat-highlight { color: var(--accent-primary); font-weight: 600; }
+        .stat-highlight { color: var(--accent-primary); font-weight: 600; position: relative; }
+        .stat-highlight:hover .xpts-range { opacity: 1; }
+        .xpts-range { 
+            display: block;
+            font-size: 0.65rem; 
+            color: var(--text-muted); 
+            font-weight: 400;
+            opacity: 0.7;
+            margin-top: 2px;
+        }
         .ownership-cell { display: flex; align-items: center; gap: 0.25rem; }
         .ownership-tier { font-size: 0.75rem; cursor: help; }
         .stat-positive { color: var(--fdr-1); }
@@ -789,9 +798,10 @@
         
         .fdr-grid {
             display: grid;
-            grid-template-columns: 100px repeat(38, minmax(42px, 1fr));
+            /* Default: ~17 GWs (22-38), updated dynamically by JS */
+            grid-template-columns: 100px repeat(17, minmax(50px, 1fr));
             min-width: max-content;
-            font-size: 0.7rem;
+            font-size: 0.75rem;
         }
         
         .fdr-grid-header {
@@ -1405,32 +1415,102 @@
         }
 
         /* PLANNER STYLES */
-        .planner-header { text-align: center; margin-bottom: 1.5rem; }
-        .planner-header h2 { font-size: 1.5rem; margin-bottom: 0.35rem; }
-        .planner-subtitle { color: var(--text-muted); font-size: 0.9rem; }
+        .planner-header { text-align: center; margin-bottom: 2rem; }
+        .planner-header h2 { 
+            font-size: 1.75rem; 
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-primary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .planner-subtitle { color: var(--text-muted); font-size: 1rem; line-height: 1.5; }
         
-        .planner-setup { background: var(--surface); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.75rem; }
-        .planner-input-row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end; margin-bottom: 0.75rem; }
-        .planner-input-row .control-group { flex: 1; min-width: 140px; }
+        .planner-setup { 
+            background: linear-gradient(180deg, var(--bg-card) 0%, var(--surface) 100%);
+            border-radius: 16px; 
+            padding: 1.5rem; 
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }
+        .planner-input-row { 
+            display: flex; 
+            gap: 1rem; 
+            flex-wrap: wrap; 
+            align-items: flex-end; 
+            margin-bottom: 1rem;
+        }
+        .planner-input-row .control-group { flex: 1; min-width: 150px; }
+        .planner-input-row .control-group label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+        .planner-input-row input[type="number"],
+        .planner-input-row select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+        .planner-input-row input[type="number"]:focus,
+        .planner-input-row select:focus {
+            border-color: var(--accent-primary);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.1);
+        }
         
-        .planner-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 4rem 2rem; background: var(--surface); border-radius: 12px; margin-bottom: 1.5rem; }
+        /* Horizon Slider */
+        .horizon-slider-container { margin-bottom: 0; }
+        .horizon-slider-container label { display: block; margin-bottom: 0.75rem; }
+        .horizon-slider { 
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            background: linear-gradient(90deg, var(--accent-primary) 0%, var(--bg-tertiary) 100%);
+            border-radius: 3px;
+            outline: none;
+        }
+        .horizon-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: var(--accent-primary);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(45, 212, 191, 0.4);
+            transition: all 0.2s ease;
+        }
+        .horizon-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+        }
+        
+        .planner-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 4rem 2rem; background: var(--surface); border-radius: 16px; margin-bottom: 1.5rem; border: 1px solid var(--border-color); }
         .planner-loading .loading-spinner { width: 48px; height: 48px; }
         .planner-loading span { font-size: 1.1rem; color: var(--text-secondary); }
-        .planner-loading .loading-sub { font-size: 0.85rem; color: var(--text-muted); margin: 0; }
+        .planner-loading .loading-sub { font-size: 0.9rem; color: var(--text-muted); margin: 0; }
         
-        .loading-progress { width: 200px; height: 4px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden; margin-top: 0.5rem; }
-        .loading-progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-primary), var(--accent-blue)); border-radius: 2px; transition: width 0.3s ease; animation: progressPulse 2s ease-in-out infinite; }
+        .loading-progress { width: 240px; height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden; margin-top: 0.5rem; }
+        .loading-progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-primary), var(--accent-blue)); border-radius: 3px; transition: width 0.3s ease; animation: progressPulse 2s ease-in-out infinite; }
         @keyframes progressPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         
-        .loading-steps { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; font-size: 0.85rem; }
+        .loading-steps { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; font-size: 0.9rem; }
         .loading-step { color: var(--text-muted); opacity: 0.5; transition: all 0.3s ease; }
         .loading-step.active { color: var(--accent-primary); opacity: 1; }
         .loading-step.done { color: var(--fdr-1); opacity: 0.8; }
         .loading-step.done::before { content: '✓ '; }
         
-        .planner-error { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 3rem 2rem; background: var(--surface); border-radius: 12px; margin-bottom: 1.5rem; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .planner-error { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 3rem 2rem; background: var(--surface); border-radius: 16px; margin-bottom: 1.5rem; border: 1px solid rgba(239, 68, 68, 0.3); }
         .planner-error .error-icon { font-size: 2.5rem; }
-        .planner-error .error-message { color: #ef4444; text-align: center; }
+        .planner-error .error-message { color: #ef4444; text-align: center; font-size: 1rem; }
         
         .chips-config { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
         .chips-config h3 { font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-secondary); }
@@ -1447,17 +1527,85 @@
         .chip-badge.fh { background: #3b82f6; color: #fff; }
         
         
-        /* Advanced Options - Compact */
-        .advanced-toggle { margin-top: 0.35rem; }
-        .advanced-toggle .btn { font-size: 0.65rem; padding: 0.2rem 0.4rem; }
-        .advanced-options { margin-top: 0.35rem; padding: 0.4rem 0.5rem; background: var(--bg-tertiary); border-radius: 5px; border: 1px solid var(--border-color); font-size: 0.75rem; }
-        .advanced-section { margin-bottom: 0.35rem; }
-        .advanced-section:last-child { margin-bottom: 0; }
-        .advanced-section h4 { font-size: 0.7rem; color: var(--text-secondary); margin-bottom: 0.25rem; }
-        .advanced-help { font-size: 0.6rem; color: var(--text-muted); margin-bottom: 0.25rem; }
-        .chip-schedule-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.35rem; }
-        .chip-schedule-item { display: flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.4rem; background: var(--bg-secondary); border-radius: 4px; }
-        .chip-schedule-item input { width: 40px; padding: 0.2rem; border: 1px solid var(--border-color); border-radius: 3px; background: var(--bg-primary); color: var(--text-primary); font-size: 0.7rem; text-align: center; }
+        /* Advanced Options - Sleek Design */
+        .advanced-toggle { margin-top: 0.75rem; }
+        .advanced-toggle .btn { 
+            font-size: 0.8rem; 
+            padding: 0.5rem 1rem; 
+            background: linear-gradient(135deg, var(--bg-tertiary), var(--bg-secondary));
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+        }
+        .advanced-toggle .btn:hover {
+            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary));
+            border-color: var(--accent-primary);
+        }
+        .advanced-options { 
+            margin-top: 0.75rem; 
+            padding: 1.25rem; 
+            background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+            border-radius: 12px; 
+            border: 1px solid var(--border-color); 
+        }
+        .advanced-section { 
+            margin-bottom: 1.25rem; 
+            padding-bottom: 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .advanced-section:last-child { 
+            margin-bottom: 0; 
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        .advanced-section h4 { 
+            font-size: 0.95rem; 
+            font-weight: 600;
+            color: var(--text-primary); 
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .advanced-help { 
+            font-size: 0.85rem; 
+            color: var(--text-muted); 
+            margin-bottom: 0.75rem;
+            line-height: 1.4;
+        }
+        .chip-schedule-grid { 
+            display: grid; 
+            grid-template-columns: repeat(4, 1fr); 
+            gap: 0.75rem; 
+        }
+        .chip-schedule-item { 
+            display: flex; 
+            align-items: center; 
+            gap: 0.5rem; 
+            padding: 0.6rem 0.75rem; 
+            background: var(--bg-card); 
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            transition: all 0.2s ease;
+        }
+        .chip-schedule-item:hover {
+            border-color: var(--accent-primary);
+            box-shadow: 0 2px 8px rgba(45, 212, 191, 0.1);
+        }
+        .chip-schedule-item input { 
+            width: 50px; 
+            padding: 0.4rem; 
+            border: 1px solid var(--border-color); 
+            border-radius: 6px; 
+            background: var(--bg-primary); 
+            color: var(--text-primary); 
+            font-size: 0.85rem; 
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .chip-schedule-item input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
         
         /* Planner Result Header */
         .planner-result-header {
@@ -1489,22 +1637,92 @@
             font-family: 'JetBrains Mono', monospace;
         }
         
-        /* Booked Transfers */
-        .booked-transfers { display: flex; flex-direction: column; gap: 0.4rem; }
-        .booked-transfer-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; position: relative; }
-        .book-gw-select { width: 70px; padding: 0.35rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
-        .book-player-input { width: 150px; padding: 0.35rem 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
+        /* Booked Transfers - Sleek Design */
+        .booked-transfers { display: flex; flex-direction: column; gap: 0.75rem; }
+        .booked-transfer-row { 
+            display: flex; 
+            align-items: center; 
+            gap: 0.75rem; 
+            flex-wrap: wrap; 
+            position: relative;
+            padding: 0.75rem;
+            background: var(--bg-card);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        .book-gw-select { 
+            width: 80px; 
+            padding: 0.5rem; 
+            border: 1px solid var(--border-color); 
+            border-radius: 6px; 
+            background: var(--bg-secondary); 
+            color: var(--text-primary); 
+            font-size: 0.85rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .book-gw-select:focus { border-color: var(--accent-primary); outline: none; }
+        .book-player-input { 
+            width: 160px; 
+            padding: 0.5rem 0.75rem; 
+            border: 1px solid var(--border-color); 
+            border-radius: 6px; 
+            background: var(--bg-secondary); 
+            color: var(--text-primary); 
+            font-size: 0.85rem;
+        }
         .book-player-input:focus { border-color: var(--accent-primary); outline: none; }
-        .book-arrow { color: var(--accent-primary); font-weight: bold; font-size: 1rem; }
-        .book-add-btn { padding: 0.35rem 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-secondary); font-size: 0.8rem; cursor: pointer; transition: all 0.2s; }
-        .book-add-btn:hover { background: #10b981; color: #fff; border-color: #10b981; }
-        .booked-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.6rem; background: var(--bg-secondary); border-radius: 4px; font-size: 0.8rem; border: 1px solid var(--accent-primary); }
-        .booked-item .gw-label { color: var(--text-muted); font-size: 0.7rem; }
+        .book-player-input::placeholder { color: var(--text-muted); }
+        .book-arrow { 
+            color: var(--accent-primary); 
+            font-weight: bold; 
+            font-size: 1.1rem;
+            opacity: 0.8;
+        }
+        .book-add-btn { 
+            padding: 0.5rem 1rem; 
+            background: linear-gradient(135deg, var(--bg-tertiary), var(--bg-secondary));
+            border: 1px solid var(--border-color); 
+            border-radius: 6px; 
+            color: var(--text-secondary); 
+            font-size: 0.85rem; 
+            font-weight: 500;
+            cursor: pointer; 
+            transition: all 0.2s ease;
+        }
+        .book-add-btn:hover { 
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: #fff; 
+            border-color: #10b981;
+            transform: translateY(-1px);
+        }
+        .booked-item { 
+            display: flex; 
+            align-items: center; 
+            gap: 0.75rem; 
+            padding: 0.6rem 1rem; 
+            background: var(--bg-card); 
+            border-radius: 8px; 
+            font-size: 0.85rem; 
+            border: 1px solid var(--accent-primary);
+            box-shadow: 0 2px 8px rgba(45, 212, 191, 0.1);
+        }
+        .booked-item .gw-label { 
+            color: var(--text-muted); 
+            font-size: 0.8rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
         .booked-item .out { color: #ef4444; font-weight: 600; }
         .booked-item .in { color: #10b981; font-weight: 600; }
-        .booked-item .remove-btn { cursor: pointer; color: var(--text-muted); margin-left: auto; padding: 0 0.25rem; font-size: 0.9rem; }
-        .booked-item .remove-btn:hover { color: #ef4444; }
-        .booked-item .remove-btn:hover { color: #ef4444; }
+        .booked-item .remove-btn { 
+            cursor: pointer; 
+            color: var(--text-muted); 
+            margin-left: auto; 
+            padding: 0.25rem 0.5rem; 
+            font-size: 1rem;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+        .booked-item .remove-btn:hover { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
         
         /* Player Autocomplete */
         .player-autocomplete { position: absolute; top: 100%; left: 0; min-width: 250px; max-height: 200px; overflow-y: auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 9999; display: none; }
@@ -2439,9 +2657,9 @@
                 <div class="control-group">
                     <label>GW Range</label>
                     <div class="control-row">
-                        <input type="number" id="gwStart" value="1" min="1" max="38">
+                        <input type="number" id="gwStart" value="22" min="1" max="38">
                         <span style="color: var(--text-muted)">to</span>
-                        <input type="number" id="gwEnd" value="8" min="1" max="38">
+                        <input type="number" id="gwEnd" value="27" min="1" max="38">
                     </div>
                 </div>
                 <div class="control-group">
@@ -2719,10 +2937,12 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
         let rankingsData = [];
         let currentSort = { field: 'xpts', order: 'desc' };
         let fixturesLoaded = false;
+        let rankingsLoaded = false;
+        let bootstrapLoaded = false;
 
         document.addEventListener('DOMContentLoaded', async () => {
             document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.addEventListener('click', () => {
+                tab.addEventListener('click', async () => {
                     document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
                     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
                     tab.classList.add('active');
@@ -2732,6 +2952,12 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                     if (tab.dataset.section === 'fixtures' && !fixturesLoaded) {
                         loadFixtureRatings();
                         fixturesLoaded = true;
+                    }
+                    
+                    // Load rankings on first visit to rankings tab (after bootstrap loaded)
+                    if (tab.dataset.section === 'rankings' && !rankingsLoaded && bootstrapLoaded) {
+                        loadRankings();
+                        rankingsLoaded = true;
                     }
                 });
             });
@@ -2803,8 +3029,12 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                 const rankingsGw = nextEvent ? nextEvent.id : (currentGw + 1);
                 document.getElementById('gwStart').value = Math.min(rankingsGw, 38);
                 document.getElementById('gwEnd').value = Math.min(rankingsGw + 5, 38);
+                
+                bootstrapLoaded = true;
             } catch (error) {
                 console.error('Failed to load bootstrap:', error);
+                // Still mark as loaded so rankings can proceed with defaults
+                bootstrapLoaded = true;
             }
         }
 
@@ -3488,7 +3718,10 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                     <tr>
                         <td>${i + 1}</td>
                         <td><div class="player-info"><span class="player-name">${p.name}</span><span class="player-team">${p.team}</span></div></td>
-                        <td class="stat-value stat-highlight">${p.xpts.toFixed(1)}</td>
+                        <td class="stat-value stat-highlight" title="Range: ${(p.xpts_floor || p.xpts * 0.7).toFixed(1)} - ${(p.xpts_ceiling || p.xpts * 1.2).toFixed(1)}">
+                            ${p.xpts.toFixed(1)}
+                            <span class="xpts-range">${(p.xpts_floor || p.xpts * 0.7).toFixed(1)}-${(p.xpts_ceiling || p.xpts * 1.2).toFixed(1)}</span>
+                        </td>
                         <td>
                             <div class="exp-mins-cell ${p.minutes_reason === 'user_override' ? 'has-override' : ''} ${p.minutes_reason === 'predicted' ? 'has-prediction' : ''}">
                                 <input type="number" class="exp-mins-input ${p.minutes_reason === 'user_override' ? 'override-active' : ''}" 
@@ -3496,7 +3729,7 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                                     value="${p.expected_minutes.toFixed(0)}" 
                                     min="0" max="90" step="1"
                                     onchange="setMinutesOverride(${p.id}, this.value)"
-                                    title="Edit to override expected minutes">
+                                    title="Edit to override expected minutes (${((p.prob_60_plus || 0.8) * 100).toFixed(0)}% chance of 60+ mins)">
                                 <span class="exp-mins-reason ${p.minutes_reason}">${p.minutes_reason === 'user_override' ? '✓ override' : (p.minutes_reason === 'predicted' ? '⚡ predicted' : p.minutes_reason.replace('_', ' '))}</span>
                             </div>
                         </td>
@@ -3758,23 +3991,29 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
             try {
                 const response = await fetch(`${API_BASE}/api/fdr-grid`);
                 const data = await response.json();
-                const currentGW = data.current_gw;
+                const currentGW = data.current_gw || 22;
+                const endGW = 38;
+                const numGWs = endGW - currentGW + 1;
                 
-                // Build header row
+                // Update grid template columns dynamically
+                const gridEl = document.getElementById('fdrGrid');
+                gridEl.style.gridTemplateColumns = `100px repeat(${numGWs}, minmax(45px, 1fr))`;
+                
+                // Build header row - only show current GW onwards
                 let html = '<div class="fdr-grid-header">';
                 html += '<div class="team-col">Team</div>';
-                for (let gw = 1; gw <= 38; gw++) {
+                for (let gw = currentGW; gw <= endGW; gw++) {
                     const isCurrent = gw === currentGW;
                     html += `<div class="gw-col ${isCurrent ? 'current' : ''}">${gw}</div>`;
                 }
                 html += '</div>';
                 
-                // Build team rows
+                // Build team rows - only show current GW onwards
                 for (const team of data.teams) {
                     html += '<div class="fdr-grid-row">';
                     html += `<div class="team-col">${team.team_short}</div>`;
                     
-                    for (let gw = 1; gw <= 38; gw++) {
+                    for (let gw = currentGW; gw <= endGW; gw++) {
                         const fixtures = team.fixtures[gw] || [];
                         
                         if (fixtures.length === 0) {
