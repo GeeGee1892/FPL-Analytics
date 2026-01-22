@@ -3584,18 +3584,18 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                             display: true,
                             position: 'left',
                             reverse: true,  // Lower rank is better (top of chart)
-                            min: 1000,       // Top 1K at top
+                            min: 100000,     // Top 100K at top
                             max: 12000000,   // 12M at bottom
                             afterBuildTicks: function(axis) {
                                 // Force specific tick values for better readability
                                 axis.ticks = [
-                                    { value: 1000 },
-                                    { value: 10000 },
                                     { value: 100000 },
+                                    { value: 250000 },
                                     { value: 500000 },
                                     { value: 1000000 },
-                                    { value: 3000000 },
-                                    { value: 6000000 },
+                                    { value: 2000000 },
+                                    { value: 4000000 },
+                                    { value: 8000000 },
                                     { value: 12000000 }
                                 ];
                             },
