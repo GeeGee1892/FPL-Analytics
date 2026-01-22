@@ -234,6 +234,40 @@ RED_CARD_RATE_PENALTY = -0.02  # Very rare
 # Own goal probability (very low)
 OWN_GOAL_PENALTY = -0.02  # ~2% chance per 90 for defenders
 
+
+def calculate_goals_conceded_penalty(xGA: float) -> float:
+    """
+    Calculate expected FPL penalty for goals conceded using Poisson distribution.
+    
+    FPL rules: -1 per 2 goals conceded (for GKP/DEF playing 60+ mins)
+    
+    Using Poisson: E[penalty] = Σ P(k goals) × floor(k/2)
+    
+    This is more accurate than linear approximation because:
+    - 0-1 goals = 0 penalty (not -0.5 each)
+    - The stepped nature means low xGA is less penalized than linear model suggests
+    
+    Args:
+        xGA: Expected goals against for this fixture
+    
+    Returns:
+        Expected penalty (negative number)
+    """
+    if xGA <= 0:
+        return 0.0
+    
+    penalty = 0.0
+    prob = math.exp(-xGA)  # P(0 goals) - Poisson
+    
+    # Sum over reasonable range of goals (0-12 covers >99.99% of probability)
+    for k in range(13):
+        fpl_deduction = k // 2  # floor(k/2) = FPL's -1 per 2 goals rule
+        penalty += prob * fpl_deduction
+        prob *= xGA / (k + 1)  # P(k+1) = P(k) * λ / (k+1)
+    
+    return penalty
+
+
 # Admin manager ID - overrides from this account become global
 ADMIN_MANAGER_ID = 616495  # Gerti's manager ID for global overrides
 
@@ -1271,6 +1305,7 @@ def calculate_expected_points(
     yellow_cards = int(player.get("yellow_cards", 0) or 0)
     red_cards = int(player.get("red_cards", 0) or 0)
     own_goals = int(player.get("own_goals", 0) or 0)
+    goals_conceded = int(player.get("goals_conceded", 0) or 0)  # Actual goals conceded
     
     team_id = player["team"]
     team_name = teams_dict.get(team_id, {}).get("name", "")
@@ -1286,8 +1321,31 @@ def calculate_expected_points(
     xG90 = xG / mins90
     xA90 = xA / mins90
     xGC90 = xGC / mins90
-    yellow_per_90 = yellow_cards / mins90 if mins90 > 1 else 0.1
     og_per_90 = own_goals / mins90 if mins90 > 1 else 0.01
+    
+    # ==================== YELLOW CARD MODEL ====================
+    # Yellow card probability based on:
+    # 1. Historical yellow card rate
+    # 2. Position (DEF/MID get more yellows than FWD/GKP)
+    # 3. Fouls committed per 90 (FPL doesn't provide this directly, estimate from position)
+    
+    historical_yellow_rate = yellow_cards / mins90 if mins90 > 1 else 0
+    
+    # Position-based yellow card baseline (from PL averages)
+    position_yellow_baseline = {
+        1: 0.02,   # GKP - rarely get yellows
+        2: 0.12,   # DEF - tackles, fouls
+        3: 0.10,   # MID - mixed
+        4: 0.06,   # FWD - fewer defensive duties
+    }.get(position, 0.08)
+    
+    # Blend historical with baseline (more games = trust historical more)
+    if mins90 >= 15:
+        yellow_per_90 = 0.75 * historical_yellow_rate + 0.25 * position_yellow_baseline
+    elif mins90 >= 5:
+        yellow_per_90 = 0.50 * historical_yellow_rate + 0.50 * position_yellow_baseline
+    else:
+        yellow_per_90 = position_yellow_baseline
     
     # Calculate component stats
     defcon_per_90, defcon_prob, defcon_pts_total = calculate_defcon_per_90(player, position)
@@ -1310,8 +1368,14 @@ def calculate_expected_points(
         cs_prob = team_base_cs
         base_xpts = app_pts + (cs_pts * cs_prob) + (goal_pts * xG90) + (3 * xA90) + expected_bonus
         
+        # Estimate expected goals against from team CS rate
+        est_xg_against = -math.log(max(0.05, team_base_cs))  # Invert Poisson
+        
         if position == 1:
-            base_xpts += save_pts_per_90
+            # For GKPs without fixture data, estimate saves
+            est_shots = est_xg_against * 2.8
+            est_saves = est_shots * 0.70
+            base_xpts += est_saves / 3.0
         if position in [2, 3]:
             base_xpts += defcon_prob * DEFCON_POINTS
         
@@ -1319,6 +1383,7 @@ def calculate_expected_points(
         base_xpts -= yellow_per_90 * 1.0  # -1 per yellow
         if position in [1, 2]:
             base_xpts -= og_per_90 * 2.0  # -2 per OG
+            base_xpts -= calculate_goals_conceded_penalty(est_xg_against)  # Poisson-based
         
         minutes_factor = exp_mins / 90.0
         total_xpts = base_xpts * minutes_factor
@@ -1424,18 +1489,100 @@ def calculate_expected_points(
         # CS points
         fixture_cs_pts = cs_pts * fixture_cs_prob
         
-        # Bonus
-        fixture_bonus_pts = fixture_bonus
+        # ==================== FIXTURE-SPECIFIC SAVES (GKP) - Calculate First ====================
+        # Saves are correlated with xG against - more shots = more saves but LOWER CS
+        # Need to calculate saves BEFORE bonus since GKP bonus depends on saves
+        fixture_expected_saves = 0
+        fixture_save_pts = 0
         
-        # Saves (GKP) - more saves against stronger attacks
-        fixture_save_pts = save_pts_per_90 * (1 + (opp_attack_fdr - 5) * 0.05) if position == 1 else 0
+        if position == 1:
+            # Constants for save calculation
+            SHOTS_ON_TARGET_PER_XG = 2.8  # ~2.8 shots on target per xG (league average)
+            
+            # Calculate keeper's save rate from their historical data
+            if xGC90 > 0.1 and saves_per_90 > 0:
+                est_shots_on_target_per_90 = xGC90 * SHOTS_ON_TARGET_PER_XG
+                keeper_save_rate = min(0.80, saves_per_90 / max(1, est_shots_on_target_per_90))
+            else:
+                keeper_save_rate = 0.70  # League average save rate
+            
+            # Expected shots on target THIS FIXTURE (based on expected_goals_against)
+            fixture_shots_on_target = expected_goals_against * SHOTS_ON_TARGET_PER_XG
+            
+            # Expected saves THIS FIXTURE
+            fixture_expected_saves = fixture_shots_on_target * keeper_save_rate
+            
+            # Save points (1 per 3 saves)
+            fixture_save_pts = fixture_expected_saves / 3.0
+        
+        # ==================== FIXTURE-SPECIFIC BONUS ====================
+        # Bonus has two components:
+        # 1. Attack-driven (goals/assists) - correlates with opponent defensive weakness
+        # 2. CS-driven (GKP/DEF get +12 BPS, MID gets +6 BPS for clean sheet)
+        
+        # Attack-driven bonus
+        attack_bonus = expected_bonus * attack_multiplier
+        
+        if position == 1:  # GKP
+            # When a GKP keeps a CS, bonus depends on saves made in that game
+            # Keepers behind weaker defences make more saves even in CS games
+            # Expected saves in a CS game ≈ saves_per_90 × 0.85 (slight reduction since fewer goals)
+            expected_saves_in_cs = saves_per_90 * 0.85
+            
+            # BPS calculation for CS scenario: +12 (CS) + ~2 per save
+            cs_bps = 12 + (expected_saves_in_cs * 2)
+            
+            # Convert BPS to expected bonus
+            if cs_bps >= 28:
+                bonus_given_cs = 2.5
+            elif cs_bps >= 24:
+                bonus_given_cs = 2.0
+            elif cs_bps >= 20:
+                bonus_given_cs = 1.3
+            elif cs_bps >= 17:
+                bonus_given_cs = 0.8
+            else:
+                bonus_given_cs = 0.4
+            
+            # CS bonus: probability × expected bonus if CS happens
+            cs_bonus_component = fixture_cs_prob * bonus_given_cs
+            
+            # Non-CS games: saves still contribute to bonus but much harder to win
+            # ~2 BPS per save, need 25+ to compete, so 5+ saves for any bonus chance
+            non_cs_save_bonus = (1 - fixture_cs_prob) * max(0, (fixture_expected_saves - 3) * 0.06)
+            
+            fixture_bonus_pts = cs_bonus_component + non_cs_save_bonus
+            
+        elif position == 2:  # DEF
+            # DEF bonus from CS + attacking returns
+            cs_bonus_component = fixture_cs_prob * 0.9  # +12 BPS for CS → ~0.9 expected bonus
+            fixture_bonus_pts = attack_bonus * 0.5 + cs_bonus_component
+            
+        elif position == 3:  # MID
+            # MID bonus mostly attack-driven, small CS component
+            cs_bonus_component = fixture_cs_prob * 0.4  # +6 BPS for CS
+            fixture_bonus_pts = attack_bonus * 0.85 + cs_bonus_component * 0.15
+            
+        else:  # FWD
+            fixture_bonus_pts = attack_bonus  # FWD bonus purely attack-driven
         
         # DEFCON
         fixture_defcon_pts = (defcon_prob * DEFCON_POINTS) if position in [2, 3] else 0
         
-        # Deductions
+        # ==================== DEDUCTIONS ====================
+        
+        # Yellow cards: -1 per yellow
         fixture_yellow_deduction = yellow_per_90 * 1.0
-        fixture_og_deduction = (og_per_90 * 2.0) if position in [1, 2] else 0
+        
+        # Own goals: -2 per OG (GKP/DEF only, but can happen to anyone technically)
+        fixture_og_deduction = (og_per_90 * 2.0) if position in [1, 2] else (og_per_90 * 2.0 * 0.2)
+        
+        # Goals conceded: -1 per 2 goals for GKP/DEF (stepped rule)
+        # Use Poisson model to properly calculate expected penalty
+        if position in [1, 2]:
+            fixture_goals_conceded_deduction = calculate_goals_conceded_penalty(expected_goals_against)
+        else:
+            fixture_goals_conceded_deduction = 0
         
         # Total for this fixture (per 90)
         fixture_xpts_per_90 = (
@@ -1447,7 +1594,8 @@ def calculate_expected_points(
             fixture_save_pts +
             fixture_defcon_pts -
             fixture_yellow_deduction -
-            fixture_og_deduction
+            fixture_og_deduction -
+            fixture_goals_conceded_deduction
         )
         
         # Add to weighted total

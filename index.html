@@ -1326,35 +1326,47 @@
         .chip-available { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: var(--surface-raised); border-radius: 8px; }
         .chip-available.used { opacity: 0.5; text-decoration: line-through; }
         
-        .chip-badge { padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 700; }
+        .chip-badge { padding: 0.35rem 0.6rem; border-radius: 5px; font-size: 0.85rem; font-weight: 700; }
         .chip-badge.wc { background: #f59e0b; color: #000; }
         .chip-badge.tc { background: #8b5cf6; color: #fff; }
         .chip-badge.bb { background: #10b981; color: #fff; }
         .chip-badge.fh { background: #3b82f6; color: #fff; }
         
-        .chip-schedule-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
-        .chip-schedule-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: var(--bg-tertiary); border-radius: 8px; }
-        .chip-schedule-item input { width: 50px; padding: 0.3rem 0.4rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; text-align: center; }
+        .chip-schedule-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+        .chip-schedule-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; background: var(--bg-tertiary); border-radius: 8px; }
+        .chip-schedule-item input { width: 60px; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.9rem; text-align: center; }
         
         /* Advanced Options */
         .advanced-toggle { margin-top: 1rem; }
-        .advanced-options { margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 10px; border: 1px solid var(--border-color); }
-        .advanced-section { margin-bottom: 1rem; }
+        .advanced-options { margin-top: 1rem; padding: 1.25rem; background: var(--bg-tertiary); border-radius: 10px; border: 1px solid var(--border-color); }
+        .advanced-section { margin-bottom: 1.25rem; }
         .advanced-section:last-child { margin-bottom: 0; }
-        .advanced-section h4 { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem; }
-        .advanced-help { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+        .advanced-section h4 { font-size: 1rem; color: var(--text-secondary); margin-bottom: 0.75rem; }
+        .advanced-help { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem; }
         
         /* Booked Transfers */
-        .booked-transfers { display: flex; flex-direction: column; gap: 0.5rem; }
-        .booked-transfer-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-        .book-gw-select { width: 70px; padding: 0.35rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
-        .book-player-input { width: 110px; padding: 0.35rem 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem; }
-        .book-arrow { color: var(--text-muted); font-weight: bold; }
-        .booked-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; background: var(--bg-secondary); border-radius: 6px; font-size: 0.8rem; border: 1px solid var(--accent-primary); }
-        .booked-item .out { color: #ef4444; }
-        .booked-item .in { color: #10b981; }
-        .booked-item .remove-btn { cursor: pointer; color: var(--text-muted); margin-left: auto; padding: 0 0.25rem; }
+        .booked-transfers { display: flex; flex-direction: column; gap: 0.75rem; }
+        .booked-transfer-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; position: relative; }
+        .book-gw-select { width: 80px; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.9rem; }
+        .book-player-input { width: 160px; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.9rem; }
+        .book-player-input:focus { border-color: var(--accent-primary); outline: none; }
+        .book-arrow { color: var(--accent-primary); font-weight: bold; font-size: 1.1rem; }
+        .booked-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 1rem; background: var(--bg-secondary); border-radius: 8px; font-size: 0.9rem; border: 1px solid var(--accent-primary); }
+        .booked-item .out { color: #ef4444; font-weight: 600; }
+        .booked-item .in { color: #10b981; font-weight: 600; }
+        .booked-item .remove-btn { cursor: pointer; color: var(--text-muted); margin-left: auto; padding: 0 0.25rem; font-size: 1.1rem; }
         .booked-item .remove-btn:hover { color: #ef4444; }
+        
+        /* Player Autocomplete */
+        .player-autocomplete { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1000; display: none; }
+        .player-autocomplete.active { display: block; }
+        .autocomplete-item { padding: 0.6rem 0.75rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); }
+        .autocomplete-item:last-child { border-bottom: none; }
+        .autocomplete-item:hover, .autocomplete-item.active { background: var(--bg-hover); }
+        .autocomplete-item .player-name { font-weight: 500; }
+        .autocomplete-item .player-team { color: var(--text-muted); font-size: 0.8rem; }
+        .autocomplete-item .player-price { color: var(--accent-primary); font-weight: 600; font-size: 0.8rem; }
+        .autocomplete-wrapper { position: relative; }
         
         @media (max-width: 768px) {
             .chip-schedule-grid { grid-template-columns: repeat(2, 1fr); }
@@ -2266,9 +2278,15 @@
                                     <option value="">GW</option>
                                     <script>for(let i=1;i<=38;i++)document.write(`<option value="${i}">${i}</option>`)</script>
                                 </select>
-                                <input type="text" id="bookTransferOut" placeholder="Player out" class="book-player-input">
+                                <div class="autocomplete-wrapper">
+                                    <input type="text" id="bookTransferOut" placeholder="Player out" class="book-player-input" autocomplete="off">
+                                    <div class="player-autocomplete" id="autocompleteOut"></div>
+                                </div>
                                 <span class="book-arrow">→</span>
-                                <input type="text" id="bookTransferIn" placeholder="Player in" class="book-player-input">
+                                <div class="autocomplete-wrapper">
+                                    <input type="text" id="bookTransferIn" placeholder="Player in" class="book-player-input" autocomplete="off">
+                                    <div class="player-autocomplete" id="autocompleteIn"></div>
+                                </div>
                                 <button class="btn btn-sm" onclick="addBookedTransfer()">+ Add</button>
                             </div>
                             <div id="bookedTransfersList"></div>
@@ -3248,6 +3266,116 @@
                 icon.textContent = '▼';
             }
         }
+        
+        // ==================== PLAYER AUTOCOMPLETE ====================
+        let allPlayersCache = [];
+        
+        async function loadPlayersForAutocomplete() {
+            if (allPlayersCache.length > 0) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/rankings?min_minutes=0`);
+                if (res.ok) {
+                    const data = await res.json();
+                    allPlayersCache = data.players || [];
+                }
+            } catch (e) {
+                console.error('Failed to load players for autocomplete:', e);
+            }
+        }
+        
+        function setupAutocomplete(inputId, dropdownId) {
+            const input = document.getElementById(inputId);
+            const dropdown = document.getElementById(dropdownId);
+            if (!input || !dropdown) return;
+            
+            input.addEventListener('input', async function() {
+                const query = this.value.trim().toLowerCase();
+                
+                // Only show suggestions after 3 characters
+                if (query.length < 3) {
+                    dropdown.classList.remove('active');
+                    return;
+                }
+                
+                // Ensure players are loaded
+                await loadPlayersForAutocomplete();
+                
+                // Filter matching players
+                const matches = allPlayersCache.filter(p => 
+                    p.name.toLowerCase().includes(query) ||
+                    (p.team && p.team.toLowerCase().includes(query))
+                ).slice(0, 10);
+                
+                if (matches.length === 0) {
+                    dropdown.classList.remove('active');
+                    return;
+                }
+                
+                dropdown.innerHTML = matches.map(p => `
+                    <div class="autocomplete-item" data-name="${p.name}">
+                        <div>
+                            <span class="player-name">${p.name}</span>
+                            <span class="player-team">${p.team || ''}</span>
+                        </div>
+                        <span class="player-price">£${p.price?.toFixed(1) || '?'}</span>
+                    </div>
+                `).join('');
+                
+                dropdown.classList.add('active');
+                
+                // Add click handlers to suggestions
+                dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+                    item.addEventListener('click', function() {
+                        input.value = this.dataset.name;
+                        dropdown.classList.remove('active');
+                    });
+                });
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                    dropdown.classList.remove('active');
+                }
+            });
+            
+            // Close on escape
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    dropdown.classList.remove('active');
+                }
+                // Allow arrow key navigation and enter selection
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
+                    const items = dropdown.querySelectorAll('.autocomplete-item');
+                    if (items.length === 0) return;
+                    
+                    const active = dropdown.querySelector('.autocomplete-item.active');
+                    let index = active ? Array.from(items).indexOf(active) : -1;
+                    
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        index = Math.min(index + 1, items.length - 1);
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        index = Math.max(index - 1, 0);
+                    } else if (e.key === 'Enter' && active) {
+                        e.preventDefault();
+                        input.value = active.dataset.name;
+                        dropdown.classList.remove('active');
+                        return;
+                    }
+                    
+                    items.forEach(i => i.classList.remove('active'));
+                    if (index >= 0) items[index].classList.add('active');
+                }
+            });
+        }
+        
+        // Initialize autocomplete on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            setupAutocomplete('bookTransferOut', 'autocompleteOut');
+            setupAutocomplete('bookTransferIn', 'autocompleteIn');
+        });
         
         // Booked transfers management
         let bookedTransfers = [];
