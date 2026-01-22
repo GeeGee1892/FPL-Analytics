@@ -181,7 +181,7 @@ class FDRConfig:
     
     # Home/away FDR adjustment
     home_fdr_multiplier: float = 0.88
-    away_fdr_multiplier: float = 1.12
+    away_fdr_multiplier: float = 1.08
 
 
 @dataclass  
@@ -925,7 +925,7 @@ ANALYTIC_FPL_TO_ID = {
     "Wolves": 20, "Wolverhampton": 20, "Wolverhampton Wanderers": 20,
 }
 
-HOME_AWAY_FDR_ADJUSTMENT = {'home': 0.85, 'away': 1.15}
+HOME_AWAY_FDR_ADJUSTMENT = {'home': 0.88, 'away': 1.08}
 
 
 # ============ ENUMS & MODELS ============
