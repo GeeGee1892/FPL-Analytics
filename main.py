@@ -17,7 +17,7 @@ import json
 import httpx
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -5899,7 +5899,7 @@ async def get_transfer_plan(
 
 @app.get("/api/backtest/gw/{gw}")
 async def backtest_gameweek(
-    gw: int = Query(..., ge=1, le=38),
+    gw: int = Path(..., ge=1, le=38),
     position: Optional[Position] = None,
     min_minutes: int = Query(200, ge=0),
     limit: int = Query(50, ge=1, le=200)
