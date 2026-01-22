@@ -223,9 +223,11 @@ STABLE_MANAGERS = {"Arsenal": 1.0, "Liverpool": 0.98, "Fulham": 1.0, "Bournemout
 LEAGUE_AVG_GOALS_PER_GAME = 1.35  # ~2.7 total goals per match
 LEAGUE_AVG_CS_RATE = 0.27  # About 27% of teams keep clean sheets
 
-# Home advantage factors
-HOME_ATTACK_BOOST = 1.15  # Teams score ~15% more at home
-HOME_DEFENCE_BOOST = 1.10  # Teams concede ~10% less at home
+# Home advantage factors (asymmetric - PL data shows home boost > away penalty)
+HOME_ATTACK_BOOST = 1.19  # Teams score ~19% more at home
+HOME_DEFENCE_BOOST = 1.15  # Teams concede ~15% less at home
+AWAY_ATTACK_PENALTY = 0.87  # Teams score ~13% less away (not symmetric with home boost)
+AWAY_DEFENCE_PENALTY = 0.90  # Teams concede ~10% more away
 
 # Yellow/Red card expected points deduction per 90
 YELLOW_CARD_RATE_PENALTY = -0.15  # Avg ~0.15 yellows/90 for most players
@@ -233,6 +235,54 @@ RED_CARD_RATE_PENALTY = -0.02  # Very rare
 
 # Own goal probability (very low)
 OWN_GOAL_PENALTY = -0.02  # ~2% chance per 90 for defenders
+
+# Penalty takers - xG boost from penalties (~0.3-0.4 xG/90 for main takers)
+# Format: player_id -> (penalty_xG_per_90, confidence)
+# Updated for 2024/25 season - these are MAIN takers
+PENALTY_TAKERS = {
+    # Liverpool
+    351: (0.35, 1.0),   # Salah - nailed
+    # Man City  
+    355: (0.38, 1.0),   # Haaland - nailed
+    # Chelsea
+    506: (0.32, 0.95),  # Palmer - main taker
+    # Arsenal
+    19: (0.28, 0.90),   # Saka - shares with others
+    # Spurs
+    494: (0.30, 0.85),  # Son - main taker
+    # Newcastle
+    24: (0.28, 0.85),   # Isak - when on pitch
+    # Aston Villa
+    495: (0.25, 0.80),  # Watkins
+    # Brentford
+    231: (0.30, 0.90),  # Mbeumo
+    # West Ham
+    556: (0.25, 0.85),  # Kudus - secondary
+    318: (0.28, 0.85),  # Bowen - main
+    # Brighton
+    582: (0.30, 0.90),  # Joao Pedro
+    # Bournemouth
+    322: (0.25, 0.85),  # Kluivert
+    # Wolves
+    627: (0.25, 0.90),  # Cunha
+    # Fulham
+    326: (0.25, 0.85),  # Jimenez
+    # Crystal Palace
+    420: (0.28, 0.85),  # Eze
+}
+
+# Horizon uncertainty - longer horizons have more variance
+# Apply small regression that increases with fixtures ahead
+HORIZON_REGRESSION = {
+    1: 1.00,   # Next GW - trust model
+    2: 0.99,
+    3: 0.98,
+    4: 0.97,
+    5: 0.96,
+    6: 0.95,
+    7: 0.94,
+    8: 0.93,   # 8 GWs out - 7% regression
+}
 
 
 def calculate_goals_conceded_penalty(xGA: float) -> float:
@@ -1431,21 +1481,19 @@ def calculate_expected_points(
     xGC90 = xGC / mins90
     og_per_90 = own_goals / mins90 if mins90 > 1 else 0.01
     
-    # ==================== REGRESSION FOR HIGH-xG PLAYERS ====================
-    # Elite players (Haaland, Salah) historically slightly underperform their xG
-    # Apply small regression factor to avoid overrating
-    xGI90 = xG90 + xA90
-    if xGI90 > 0.9:
-        regression_factor = 0.92  # Elite attackers (Haaland, Salah level)
-    elif xGI90 > 0.7:
-        regression_factor = 0.95  # Premium attackers
-    elif xGI90 > 0.5:
-        regression_factor = 0.98  # Good attackers
-    else:
-        regression_factor = 1.0  # No regression for average/below
-    
-    xG90 *= regression_factor
-    xA90 *= regression_factor
+    # ==================== PENALTY TAKER BOOST ====================
+    # Main penalty takers get significant xG from pens - ensure we account for this
+    # FPL xG includes penalties, but if a player's pen share changed mid-season,
+    # their historical xG may understate current expected output
+    player_id = player.get("id")
+    penalty_boost = 0.0
+    if player_id in PENALTY_TAKERS:
+        pen_xg, confidence = PENALTY_TAKERS[player_id]
+        # Only boost if their historical xG90 seems low relative to pen contribution
+        # This handles cases where a player became the main taker recently
+        if xG90 < pen_xg * 0.8:  # Their xG seems to understate pen contribution
+            penalty_boost = (pen_xg - xG90 * 0.3) * confidence * 0.5  # Conservative boost
+            penalty_boost = max(0, min(0.15, penalty_boost))  # Cap at 0.15 xG/90 boost
     
     # ==================== YELLOW CARD MODEL ====================
     # Yellow card probability based on:
@@ -1558,13 +1606,13 @@ def calculate_expected_points(
             opp_xg_per_game = TEAM_BASE_XG.get(opponent_name, LEAGUE_AVG_GOALS_PER_GAME)
             opp_attack_fdr = 5  # Neutral
         
-        # Adjust for home/away
+        # Adjust for home/away (asymmetric - home advantage > away disadvantage)
         if is_home:
-            # Playing at home - opponent's attack is weaker
-            opp_xg_adjusted = opp_xg_per_game * 0.90
+            # Playing at home - opponent's attack is weaker (they're away)
+            opp_xg_adjusted = opp_xg_per_game * AWAY_ATTACK_PENALTY  # 0.87
         else:
-            # Playing away - opponent's attack is stronger (at their home)
-            opp_xg_adjusted = opp_xg_per_game * 1.10
+            # Playing away - opponent's attack is stronger (they're at home)
+            opp_xg_adjusted = opp_xg_per_game * HOME_ATTACK_BOOST  # 1.19
         
         # CS probability using Poisson: P(0 goals) = e^(-lambda)
         # Lambda = expected goals conceded by our team this fixture
@@ -1594,14 +1642,17 @@ def calculate_expected_points(
         # Easier defence = more goals expected
         attack_multiplier = FDR_MULTIPLIERS_10.get(round(opp_def_fdr), 1.0)
         
-        # Home boost for attacking
+        # Home/away adjustment for attacking (asymmetric)
         if is_home:
-            attack_multiplier *= HOME_ATTACK_BOOST
+            attack_multiplier *= HOME_ATTACK_BOOST  # 1.19
+        else:
+            attack_multiplier *= AWAY_ATTACK_PENALTY  # 0.87
         
-        # CAP TOTAL FIXTURE BOOST AT 20% - prevents over-inflation of MID/FWD xPts
-        attack_multiplier = min(1.20, max(0.80, attack_multiplier))
+        # CAP TOTAL FIXTURE BOOST AT 25% - allows for juicy home games vs weak defences
+        attack_multiplier = min(1.25, max(0.75, attack_multiplier))
         
-        fixture_xG90 = xG90 * attack_multiplier
+        # Apply penalty boost to xG if player is a penalty taker
+        fixture_xG90 = (xG90 + penalty_boost) * attack_multiplier
         fixture_xA90 = xA90 * attack_multiplier
         
         # ==================== FIXTURE-SPECIFIC BONUS ====================
@@ -1655,9 +1706,19 @@ def calculate_expected_points(
         
         if position == 1:  # GKP
             # When a GKP keeps a CS, bonus depends on saves made in that game
-            # Keepers behind weaker defences make more saves even in CS games
-            # Expected saves in a CS game ≈ saves_per_90 × 0.85 (slight reduction since fewer goals)
-            expected_saves_in_cs = saves_per_90 * 0.85
+            # Saves in CS games correlate with opponent quality - stronger opponents
+            # still create chances even when they don't score
+            # 
+            # Key insight: expected_goals_against tells us opponent strength.
+            # In CS games, the keeper typically faces 60-75% of normal shot volume
+            # (some games are 0-0 due to few chances, others are lucky CS)
+            
+            # Calculate expected saves in THIS fixture's CS scenario
+            # More dangerous opponents = more saves even in CS games
+            cs_shot_ratio = 0.65 + (expected_goals_against / 4.0) * 0.15  # 0.65-0.80 range
+            cs_shot_ratio = min(0.80, max(0.55, cs_shot_ratio))
+            
+            expected_saves_in_cs = fixture_expected_saves * cs_shot_ratio
             
             # BPS calculation for CS scenario: +12 (CS) + ~2 per save
             cs_bps = 12 + (expected_saves_in_cs * 2)
@@ -1728,15 +1789,19 @@ def calculate_expected_points(
             fixture_goals_conceded_deduction
         )
         
+        # Apply horizon regression - further fixtures have more uncertainty
+        # This is the RIGHT place for regression - on future predictions, not baseline xGI
+        horizon_regression = HORIZON_REGRESSION.get(i + 1, 0.93)
+        fixture_xpts_per_90 *= horizon_regression
+        
         # Add to weighted total
         total_xpts += fixture_xpts_per_90 * weight
     
     # Scale by number of fixtures in horizon
     total_xpts_per_90 = total_xpts * len(horizon)
     
-    # Blend with historical PPG (20% PPG, 80% model)
-    # PPG provides regression to mean for model uncertainty
-    blended_per_90 = 0.80 * (total_xpts_per_90 / max(1, len(horizon))) + 0.20 * points_per_game
+    # Calculate clean per-90 rate (no PPG blend - that double-counts fixture variance)
+    model_per_90 = total_xpts_per_90 / max(1, len(horizon))
     
     # Apply minutes factor
     minutes_factor = exp_mins / 90.0
@@ -1744,7 +1809,7 @@ def calculate_expected_points(
     
     return {
         "xpts": round(final_xpts, 2),
-        "xpts_per_90": round(blended_per_90, 2),
+        "xpts_per_90": round(model_per_90, 2),
         "expected_minutes": exp_mins,
         "minutes_reason": mins_reason,
         "minutes_factor": round(minutes_factor, 3),
@@ -2736,11 +2801,57 @@ async def get_manager_stats(manager_id: int):
     # Find best GW (highest points) - include rank for that GW
     best_gw = max(gw_history, key=lambda x: x.get("points", 0))
     
-    # OR progression for graph
-    or_progression = [
-        {"gw": gw["event"], "or": gw.get("overall_rank", 0), "points": gw.get("points", 0), "rank": gw.get("rank", 0)}
-        for gw in gw_history
-    ]
+    # Process chips for easy lookup
+    chip_gws = {}
+    for chip in history.get("chips", []):
+        chip_gws[chip.get("event", 0)] = chip.get("name", "")
+    
+    # OR progression for graph with annotations
+    or_progression = []
+    prev_or = None
+    biggest_green_arrow = None
+    biggest_red_arrow = None
+    total_hits = 0
+    total_hit_cost = 0
+    
+    for gw in gw_history:
+        gw_num = gw["event"]
+        current_or = gw.get("overall_rank", 0)
+        gw_points = gw.get("points", 0)
+        transfers_cost = gw.get("event_transfers_cost", 0)
+        
+        # Track hits
+        if transfers_cost > 0:
+            total_hits += transfers_cost // 4
+            total_hit_cost += transfers_cost
+        
+        # Calculate rank change
+        rank_change = 0
+        if prev_or and current_or:
+            rank_change = prev_or - current_or  # Positive = green arrow
+            
+            if biggest_green_arrow is None or rank_change > biggest_green_arrow["change"]:
+                biggest_green_arrow = {"gw": gw_num, "change": rank_change, "from": prev_or, "to": current_or}
+            if biggest_red_arrow is None or rank_change < biggest_red_arrow["change"]:
+                biggest_red_arrow = {"gw": gw_num, "change": rank_change, "from": prev_or, "to": current_or}
+        
+        or_progression.append({
+            "gw": gw_num,
+            "or": current_or,
+            "points": gw_points,
+            "rank": gw.get("rank", 0),
+            "rank_change": rank_change,
+            "chip": chip_gws.get(gw_num, None),
+            "hit_cost": transfers_cost,
+            "bench_pts": gw.get("points_on_bench", 0),
+        })
+        
+        prev_or = current_or
+    
+    # Calculate averages
+    total_gws = len(gw_history)
+    avg_gw_points = sum(gw.get("points", 0) for gw in gw_history) / max(1, total_gws)
+    total_points = sum(gw.get("points", 0) for gw in gw_history)
     
     # Calculate highest bench points
     highest_bench = {"gw": 0, "points": 0}
@@ -3061,6 +3172,15 @@ async def get_manager_stats(manager_id: int):
         "or_progression": or_progression,
         "best_transfer": best_transfer,
         "worst_transfer": worst_transfer,
+        # Fun stats
+        "biggest_green_arrow": biggest_green_arrow,
+        "biggest_red_arrow": biggest_red_arrow,
+        "total_hits": total_hits,
+        "total_hit_cost": total_hit_cost,
+        "avg_gw_points": round(avg_gw_points, 1),
+        "total_points": total_points,
+        "total_gws_played": total_gws,
+        # Chip analysis
         "wc1_analysis": wc1_analysis,
         "wc2_analysis": wc2_analysis,
         "fh1_analysis": fh1_analysis,

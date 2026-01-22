@@ -1332,17 +1332,48 @@
         .chip-badge.bb { background: #10b981; color: #fff; }
         .chip-badge.fh { background: #3b82f6; color: #fff; }
         
-        .chip-schedule-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
-        .chip-schedule-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; background: var(--bg-tertiary); border-radius: 8px; }
-        .chip-schedule-item input { width: 60px; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.9rem; text-align: center; }
         
-        /* Advanced Options */
-        .advanced-toggle { margin-top: 1rem; }
-        .advanced-options { margin-top: 1rem; padding: 1.25rem; background: var(--bg-tertiary); border-radius: 10px; border: 1px solid var(--border-color); }
-        .advanced-section { margin-bottom: 1.25rem; }
+        /* Advanced Options - Compact */
+        .advanced-toggle { margin-top: 0.75rem; }
+        .advanced-toggle .btn { font-size: 0.75rem; padding: 0.35rem 0.75rem; }
+        .advanced-options { margin-top: 0.75rem; padding: 0.75rem 1rem; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border-color); }
+        .advanced-section { margin-bottom: 0.75rem; }
         .advanced-section:last-child { margin-bottom: 0; }
-        .advanced-section h4 { font-size: 1rem; color: var(--text-secondary); margin-bottom: 0.75rem; }
-        .advanced-help { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem; }
+        .advanced-section h4 { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem; }
+        .advanced-help { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.5rem; }
+        .chip-schedule-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
+        .chip-schedule-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.6rem; background: var(--bg-secondary); border-radius: 6px; }
+        .chip-schedule-item input { width: 50px; padding: 0.35rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); font-size: 0.8rem; text-align: center; }
+        
+        /* Planner Result Header */
+        .planner-result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 0.6rem 1rem;
+            margin-bottom: 1rem;
+        }
+        .planner-result-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .planner-horizon {
+            font-weight: 600;
+            color: var(--accent-primary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .planner-ft, .planner-bank {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            background: var(--bg-tertiary);
+            padding: 0.25rem 0.6rem;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+        }
         
         /* Booked Transfers */
         .booked-transfers { display: flex; flex-direction: column; gap: 0.75rem; }
@@ -1782,8 +1813,18 @@
         .chip-buttons-grid-8 {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: auto auto;
             gap: 0.5rem;
         }
+        /* Reorder chips: WC1, FH1, TC1, BB1 on row 1; WC2, FH2, TC2, BB2 on row 2 */
+        .chip-buttons-grid-8 .chip-btn:nth-child(1) { order: 1; } /* WC1 */
+        .chip-buttons-grid-8 .chip-btn:nth-child(3) { order: 2; } /* FH1 */
+        .chip-buttons-grid-8 .chip-btn:nth-child(5) { order: 3; } /* TC1 */
+        .chip-buttons-grid-8 .chip-btn:nth-child(7) { order: 4; } /* BB1 */
+        .chip-buttons-grid-8 .chip-btn:nth-child(2) { order: 5; } /* WC2 */
+        .chip-buttons-grid-8 .chip-btn:nth-child(4) { order: 6; } /* FH2 */
+        .chip-buttons-grid-8 .chip-btn:nth-child(6) { order: 7; } /* TC2 */
+        .chip-buttons-grid-8 .chip-btn:nth-child(8) { order: 8; } /* BB2 */
         .stats-summary-grid-5 {
             display: grid;
             grid-template-columns: repeat(5, 1fr);
@@ -1802,6 +1843,45 @@
             .stats-summary-grid-5 { grid-template-columns: repeat(2, 1fr); }
         }
         .stat-summary-card.differential { border-left: 4px solid #f59e0b; }
+        .stat-summary-card.green-arrow { border-left: 4px solid #10b981; }
+        .stat-summary-card.red-arrow { border-left: 4px solid #ef4444; }
+        .stat-summary-card.hits { border-left: 4px solid #ef4444; }
+        .stat-summary-card.average { border-left: 4px solid #3b82f6; }
+        .stat-summary-card.gws-played { border-left: 4px solid #8b5cf6; }
+        
+        /* Chart Legend */
+        .chart-legend {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.75rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .legend-marker {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            display: inline-block;
+            font-size: 0.7rem;
+            line-height: 10px;
+            text-align: center;
+            color: white;
+        }
+        .legend-marker.triangle {
+            width: 0;
+            height: 0;
+            background: transparent !important;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-bottom: 8px solid;
+            border-radius: 0;
+        }
         .chip-btn {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -2118,9 +2198,60 @@
                             </div>
                         </div>
 
+                        <!-- Second row of fun stats -->
+                        <div class="stats-summary-grid-5" style="margin-top: 0;">
+                            <div class="stat-summary-card green-arrow">
+                                <div class="stat-summary-icon">🟢</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Biggest Green</div>
+                                    <div class="stat-summary-value" id="biggestGreenValue">-</div>
+                                    <div class="stat-summary-sub" id="biggestGreenDetail">GW -</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card red-arrow">
+                                <div class="stat-summary-icon">🔴</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Biggest Red</div>
+                                    <div class="stat-summary-value" id="biggestRedValue">-</div>
+                                    <div class="stat-summary-sub" id="biggestRedDetail">GW -</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card hits">
+                                <div class="stat-summary-icon">🔻</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Total Hits</div>
+                                    <div class="stat-summary-value" id="totalHitsValue">-</div>
+                                    <div class="stat-summary-sub" id="totalHitsCost">-</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card average">
+                                <div class="stat-summary-icon">📊</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Avg GW Points</div>
+                                    <div class="stat-summary-value" id="avgGwPoints">-</div>
+                                    <div class="stat-summary-sub" id="totalPointsSub">- total</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card gws-played">
+                                <div class="stat-summary-icon">📅</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">GWs Played</div>
+                                    <div class="stat-summary-value" id="gwsPlayedValue">-</div>
+                                    <div class="stat-summary-sub" id="gwsPlayedSub">gameweeks</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- OR Graph -->
                         <div class="stats-section">
                             <h3>📈 Overall Rank Progression</h3>
+                            <div class="chart-legend">
+                                <span class="legend-item"><span class="legend-marker" style="background: #f59e0b;">★</span> Wildcard</span>
+                                <span class="legend-item"><span class="legend-marker" style="background: #ec4899;">★</span> Triple Captain</span>
+                                <span class="legend-item"><span class="legend-marker" style="background: #3b82f6;">★</span> Bench Boost</span>
+                                <span class="legend-item"><span class="legend-marker" style="background: #8b5cf6;">★</span> Free Hit</span>
+                                <span class="legend-item"><span class="legend-marker triangle" style="border-bottom-color: #ef4444;"></span> Hit</span>
+                            </div>
                             <div class="or-chart-container">
                                 <canvas id="orChart"></canvas>
                             </div>
@@ -2329,6 +2460,16 @@
             </div>
 
             <div id="plannerResult" style="display: none;">
+                <!-- Result header with recalculate option -->
+                <div class="planner-result-header">
+                    <div class="planner-result-info">
+                        <span class="planner-horizon" id="plannerHorizonDisplay">GW23-GW25</span>
+                        <span class="planner-ft" id="plannerFtDisplay">FT: 1</span>
+                        <span class="planner-bank" id="plannerBankDisplay">Bank: £0.0m</span>
+                    </div>
+                    <button class="btn btn-sm btn-secondary" onclick="showPlannerSetup()">⚙️ Recalculate</button>
+                </div>
+                
                 <div class="plan-summary">
                     <div class="plan-summary-card">
                         <div class="plan-stat-label">Total xPts</div>
@@ -2441,13 +2582,18 @@
             try {
                 const response = await fetch(`${API_BASE}/api/bootstrap`);
                 const data = await response.json();
-                const event = data.events.find(e => e.is_current) || data.events.find(e => e.is_next);
-                if (event) {
-                    currentGw = event.id;
+                const currentEvent = data.events.find(e => e.is_current);
+                const nextEvent = data.events.find(e => e.is_next);
+                
+                if (currentEvent) {
+                    currentGw = currentEvent.id;
                     document.getElementById('currentGwDisplay').textContent = `GW ${currentGw}`;
-                    document.getElementById('gwStart').value = currentGw;
-                    document.getElementById('gwEnd').value = Math.min(currentGw + 5, 38);
                 }
+                
+                // For rankings, use NEXT GW since current deadline has passed
+                const rankingsGw = nextEvent ? nextEvent.id : (currentGw + 1);
+                document.getElementById('gwStart').value = Math.min(rankingsGw, 38);
+                document.getElementById('gwEnd').value = Math.min(rankingsGw + 5, 38);
             } catch (error) {
                 console.error('Failed to load bootstrap:', error);
             }
@@ -2842,6 +2988,43 @@
                 document.getElementById('bestDiffDetail').textContent = 'No differentials (<10%)';
             }
             
+            // Biggest Green Arrow
+            const formatRankChange = (change) => {
+                const abs = Math.abs(change);
+                if (abs >= 1000000) return (abs/1000000).toFixed(1) + 'M';
+                if (abs >= 1000) return (abs/1000).toFixed(0) + 'K';
+                return abs.toString();
+            };
+            
+            if (stats.biggest_green_arrow && stats.biggest_green_arrow.change > 0) {
+                document.getElementById('biggestGreenValue').textContent = `↑ ${formatRankChange(stats.biggest_green_arrow.change)}`;
+                document.getElementById('biggestGreenDetail').textContent = `GW ${stats.biggest_green_arrow.gw}`;
+            } else {
+                document.getElementById('biggestGreenValue').textContent = '-';
+                document.getElementById('biggestGreenDetail').textContent = 'No green arrows';
+            }
+            
+            // Biggest Red Arrow
+            if (stats.biggest_red_arrow && stats.biggest_red_arrow.change < 0) {
+                document.getElementById('biggestRedValue').textContent = `↓ ${formatRankChange(stats.biggest_red_arrow.change)}`;
+                document.getElementById('biggestRedDetail').textContent = `GW ${stats.biggest_red_arrow.gw}`;
+            } else {
+                document.getElementById('biggestRedValue').textContent = '-';
+                document.getElementById('biggestRedDetail').textContent = 'No red arrows';
+            }
+            
+            // Total Hits
+            document.getElementById('totalHitsValue').textContent = stats.total_hits || 0;
+            document.getElementById('totalHitsCost').textContent = stats.total_hit_cost > 0 ? `-${stats.total_hit_cost} pts` : '0 pts';
+            
+            // Average GW Points & Total
+            document.getElementById('avgGwPoints').textContent = stats.avg_gw_points || '-';
+            document.getElementById('totalPointsSub').textContent = `${stats.total_points || 0} total`;
+            
+            // GWs Played
+            document.getElementById('gwsPlayedValue').textContent = stats.total_gws_played || 0;
+            document.getElementById('gwsPlayedSub').textContent = 'gameweeks';
+            
             // Chip Analysis Buttons
             renderChipButtons(stats);
             
@@ -2927,6 +3110,32 @@
             const orData = progression.map(d => d.or);
             const pointsData = progression.map(d => d.points);
             
+            // Create point styles - chips and hits get special markers
+            const chipColors = {
+                'wildcard': '#f59e0b',
+                '3xc': '#ec4899',
+                'bboost': '#3b82f6',
+                'freehit': '#8b5cf6',
+            };
+            
+            const pointBackgrounds = progression.map(d => {
+                if (d.chip) return chipColors[d.chip] || '#00d4aa';
+                if (d.hit_cost > 0) return '#ef4444';  // Red for hits
+                return '#00d4aa';
+            });
+            
+            const pointRadii = progression.map(d => {
+                if (d.chip) return 8;  // Bigger for chips
+                if (d.hit_cost > 0) return 6;  // Medium for hits
+                return 3;  // Default
+            });
+            
+            const pointStyles = progression.map(d => {
+                if (d.chip) return 'star';
+                if (d.hit_cost > 0) return 'triangle';
+                return 'circle';
+            });
+            
             orChart = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -2939,6 +3148,11 @@
                         fill: true,
                         tension: 0.3,
                         yAxisID: 'y',
+                        pointBackgroundColor: pointBackgrounds,
+                        pointRadius: pointRadii,
+                        pointStyle: pointStyles,
+                        pointBorderColor: pointBackgrounds,
+                        pointBorderWidth: 2,
                     }, {
                         label: 'GW Points',
                         data: pointsData,
@@ -2947,6 +3161,7 @@
                         borderDash: [5, 5],
                         tension: 0.3,
                         yAxisID: 'y1',
+                        pointRadius: 0,  // Hide points for cleaner look
                     }]
                 },
                 options: {
@@ -2959,6 +3174,34 @@
                     plugins: {
                         legend: {
                             labels: { color: '#9090a0' }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                afterBody: function(context) {
+                                    const idx = context[0].dataIndex;
+                                    const d = progression[idx];
+                                    let lines = [];
+                                    
+                                    if (d.rank_change) {
+                                        const arrow = d.rank_change > 0 ? '🟢 ↑' : '🔴 ↓';
+                                        const change = Math.abs(d.rank_change);
+                                        const formatted = change >= 1000000 ? (change/1000000).toFixed(1) + 'M' :
+                                                         change >= 1000 ? (change/1000).toFixed(0) + 'K' : change;
+                                        lines.push(`${arrow} ${formatted} places`);
+                                    }
+                                    if (d.chip) {
+                                        const chipNames = { wildcard: 'Wildcard', '3xc': 'Triple Captain', bboost: 'Bench Boost', freehit: 'Free Hit' };
+                                        lines.push(`⭐ ${chipNames[d.chip] || d.chip}`);
+                                    }
+                                    if (d.hit_cost > 0) {
+                                        lines.push(`🔻 -${d.hit_cost} pts (hit)`);
+                                    }
+                                    if (d.bench_pts > 5) {
+                                        lines.push(`🪑 ${d.bench_pts} pts on bench`);
+                                    }
+                                    return lines;
+                                }
+                            }
                         }
                     },
                     scales: {
@@ -3280,10 +3523,14 @@
                 // Render results
                 renderPlanResults(data);
                 
-                // Short delay to show complete progress
+                // Short delay to show complete progress, then hide setup and show results
                 setTimeout(() => {
                     document.getElementById('plannerLoading').style.display = 'none';
+                    document.getElementById('plannerSetup').style.display = 'none';  // Hide setup
                     document.getElementById('plannerResult').style.display = 'block';
+                    
+                    // Scroll to results
+                    document.getElementById('plannerResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }, 300);
                 
             } catch (error) {
@@ -3306,6 +3553,13 @@
                 options.style.display = 'none';
                 icon.textContent = '▼';
             }
+        }
+        
+        // Show planner setup (for recalculate)
+        function showPlannerSetup() {
+            document.getElementById('plannerSetup').style.display = 'block';
+            document.getElementById('plannerResult').style.display = 'none';
+            document.getElementById('plannerSetup').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
         
         // ==================== PLAYER AUTOCOMPLETE ====================
@@ -3466,6 +3720,11 @@
         function renderPlanResults(data) {
             plannerData = data;
             const plan = data.plan;
+            
+            // Update result header with FT, bank, horizon
+            document.getElementById('plannerHorizonDisplay').textContent = data.planning_horizon || `GW${data.current_gw + 1}`;
+            document.getElementById('plannerFtDisplay').textContent = `FT: ${data.free_transfers || 1}`;
+            document.getElementById('plannerBankDisplay').textContent = `Bank: £${(data.bank || 0).toFixed(1)}m`;
             
             // Summary stats
             document.getElementById('planTotalXpts').textContent = plan.total_xpts.toFixed(1);
