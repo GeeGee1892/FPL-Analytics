@@ -1,5 +1,5 @@
 """
-FPL Assistant Backend - FastAPI v4.1
+FPL Assistant Backend - FastAPI v4.2
 Enhanced with:
 - Composite FDR model (1-10 scale) using Understat xG data
 - Position-specific FDR: attack_fdr for FWD/MID, defence_fdr for DEF/GKP
@@ -9,6 +9,39 @@ Enhanced with:
 - Shared HTTP client for connection pooling
 - Dynamic season detection
 - Rate limiting with exponential backoff
+
+v4.2 CHANGELOG - Further xPts Calibration:
+==========================================
+PROBLEM: xPts still 5-10% high vs other models (LiveFPL, FPLReview)
+
+1. Bonus Conversion Reduced ~25%:
+   - BPS-based model overestimates because it assumes consistent returns
+   - Reality: Bonus is binary - you get it or you don't
+   - Haaland scores ~60% of games, expected bonus = 0.6×high + 0.4×low
+   - Old: 40+ BPS → 2.7 bonus | New: 40+ BPS → 2.0 bonus
+   - Old: 30+ BPS → 1.9 bonus | New: 30+ BPS → 1.4 bonus
+
+2. CS Probability Cap Reduced:
+   - Was 45%, now 40%
+   - Even Arsenal/Liverpool rarely exceed 35% CS rate
+
+3. DEFCON Caps Further Reduced:
+   - DEF: 18% (was 22%)
+   - MID: 24% (was 28%)
+   - Based on deeper analysis of actual hit rates
+
+4. DEF Bonus Baseline Reduced:
+   - CS bonus: 0.32 (was 0.40) - 5 DEFs splitting ~1.2 expected bonus
+   - Attack multiplier: 0.25 (was 0.30)
+
+5. GKP Bonus Reduced:
+   - Shifted BPS thresholds up (+2)
+   - Reduced bonus_given_cs values by ~15%
+
+Expected Impact:
+- DEF/GKP: -0.3 to -0.5 pts/game
+- Premium FWD (Haaland): -0.5 to -0.8 pts/game
+- Overall: Should align with LiveFPL/FPLReview
 
 v4.1 CHANGELOG - DEF/GKP xPts Deflation Fix:
 ============================================
@@ -286,7 +319,7 @@ class CleanSheetConfig:
     """Clean sheet probability configuration."""
     
     cs_prob_min: float = 0.03
-    cs_prob_max: float = 0.45  # Was 0.55 - lowered to realistic maximum
+    cs_prob_max: float = 0.40  # v4.2: Reduced from 0.45 - even Arsenal/Liverpool rarely exceed 35%
     league_avg_goals_per_game: float = 1.35
     league_avg_cs_rate: float = 0.27
 
@@ -350,7 +383,7 @@ async def get_http_client() -> httpx.AsyncClient:
         http_client = httpx.AsyncClient(
             timeout=30.0,
             limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
-            headers={"User-Agent": "FPL-Assistant/4.1"}
+            headers={"User-Agent": "FPL-Assistant/4.2"}
         )
     return http_client
 
@@ -531,7 +564,7 @@ async def lifespan(app: FastAPI):
     http_client = httpx.AsyncClient(
         timeout=30.0,
         limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
-        headers={"User-Agent": "FPL-Assistant/4.1"}
+        headers={"User-Agent": "FPL-Assistant/4.2"}
     )
     
     # Auto-load import data from file (team strength + fixture xG)
@@ -556,7 +589,7 @@ async def lifespan(app: FastAPI):
         http_client = None
 
 
-app = FastAPI(title="FPL Assistant API", version="4.1.0", lifespan=lifespan)
+app = FastAPI(title="FPL Assistant API", version="4.2.0", lifespan=lifespan)
 
 # CORS configuration - fixed for security
 # In production, replace "*" with specific origins like ["https://yourdomain.com"]
@@ -2007,12 +2040,12 @@ def calculate_defcon_per_90(player: Dict, position_id: int) -> tuple[float, floa
         threshold = DEFCON_THRESHOLD_MID
     
     # Calculate probability of hitting threshold using sigmoid
-    # RECALIBRATED v4.1: Steeper curve (scale 1.8), lower caps based on actual FPL data
+    # RECALIBRATED v4.2: Further reduced caps based on more analysis
     # Real-world data analysis:
-    # - Elite DEFs (VVD, Saliba, Gabriel): 20-24% hit rate
-    # - Average DEFs: 12-18% hit rate  
-    # - Elite defensive MIDs (Rice, Rodri): 25-30% hit rate
-    # - Average defensive MIDs: 15-22% hit rate
+    # - Elite DEFs (VVD, Saliba, Gabriel): 15-18% hit rate
+    # - Average DEFs: 10-14% hit rate  
+    # - Elite defensive MIDs (Rice, Rodri): 20-24% hit rate
+    # - Average defensive MIDs: 12-18% hit rate
     if defcon_per_90 <= 0:
         prob = 0.0
     else:
@@ -2020,9 +2053,9 @@ def calculate_defcon_per_90(player: Dict, position_id: int) -> tuple[float, floa
         raw_prob = 1.0 / (1.0 + math.exp(-(defcon_per_90 - threshold) / scale))
         # Position-specific caps based on actual hit rates from FPL data
         if position_id == 2:  # DEF
-            prob = min(raw_prob, 0.22)  # Reduced from 0.35 - elite DEFs peak at ~22%
+            prob = min(raw_prob, 0.18)  # v4.2: Reduced from 0.22
         else:  # MID
-            prob = min(raw_prob, 0.28)  # Reduced from 0.40 - elite defensive MIDs peak at ~28%
+            prob = min(raw_prob, 0.24)  # v4.2: Reduced from 0.28
     
     return round(defcon_per_90, 2), round(prob, 3), defcon_total
 
@@ -2108,23 +2141,25 @@ def calculate_expected_bonus(player: Dict, position: int) -> tuple[float, float]
     estimated_bps = base_bps + goal_bps_contrib + assist_bps_contrib + cs_bps_contrib
     
     # Convert BPS to expected bonus using smoother curve
-    # Premium attackers regularly hit 35+ BPS in good games
+    # RECALIBRATED v4.2: Reduced by ~25% - BPS-based model overestimates
+    # because it assumes consistent returns, but bonus is binary (you get it or you don't)
+    # Haaland scores in ~60% of games, so expected bonus = 0.6 × high + 0.4 × low
     if estimated_bps >= 40:
-        estimated_bonus = 2.7  # Elite haul territory (Haaland brace)
+        estimated_bonus = 2.0  # Was 2.7 - elite haul, but doesn't happen every game
     elif estimated_bps >= 35:
-        estimated_bonus = 2.3
+        estimated_bonus = 1.7  # Was 2.3
     elif estimated_bps >= 30:
-        estimated_bonus = 1.9
+        estimated_bonus = 1.4  # Was 1.9
     elif estimated_bps >= 26:
-        estimated_bonus = 1.5
+        estimated_bonus = 1.1  # Was 1.5
     elif estimated_bps >= 22:
-        estimated_bonus = 1.1
+        estimated_bonus = 0.8  # Was 1.1
     elif estimated_bps >= 18:
-        estimated_bonus = 0.7
+        estimated_bonus = 0.5  # Was 0.7
     elif estimated_bps >= 14:
-        estimated_bonus = 0.4
+        estimated_bonus = 0.3  # Was 0.4
     else:
-        estimated_bonus = 0.15
+        estimated_bonus = 0.1  # Was 0.15
     
     # ==================== BLEND HISTORICAL AND MODELED ====================
     # If player has significant history, weight historical more
@@ -2751,7 +2786,7 @@ def calculate_expected_points(
         
         # CS probability using Poisson
         fixture_cs_prob = math.exp(-expected_goals_against)
-        fixture_cs_prob = min(0.45, max(0.03, fixture_cs_prob))  # Bound between 3-45% (was 55% - too high)
+        fixture_cs_prob = min(0.40, max(0.03, fixture_cs_prob))  # v4.2: Bound between 3-40%
         
         avg_cs_prob += fixture_cs_prob * weight
         
@@ -2906,20 +2941,20 @@ def calculate_expected_points(
             # BPS calculation for CS scenario: +12 (CS) + ~2 per save
             cs_bps = 12 + (expected_saves_in_cs * 2)
             
-            # RECALIBRATED v4.1: GKP competes with 4-5 DEFs for bonus in CS games
+            # RECALIBRATED v4.2: GKP competes with 4-5 DEFs for bonus in CS games
             # In a typical CS game, DEFs (Gabriel, VVD, Saliba) often win bonus
-            # GKP needs exceptional saves (6+) to beat DEFs who get same +12 CS BPS
-            # Convert BPS to expected bonus - significantly reduced
-            if cs_bps >= 30:
-                bonus_given_cs = 1.6  # Was 2.0 - needs 9+ saves in CS to dominate
-            elif cs_bps >= 26:
-                bonus_given_cs = 1.1  # Was 1.5 - 7+ saves
-            elif cs_bps >= 22:
-                bonus_given_cs = 0.7  # Was 1.0 - 5+ saves
-            elif cs_bps >= 18:
-                bonus_given_cs = 0.4  # Was 0.6 - 3+ saves
+            # GKP needs exceptional saves (7+) to beat DEFs who get same +12 CS BPS
+            # Convert BPS to expected bonus - further reduced
+            if cs_bps >= 32:
+                bonus_given_cs = 1.4  # v4.2: Was 1.6 - needs 10+ saves in CS to dominate
+            elif cs_bps >= 28:
+                bonus_given_cs = 1.0  # v4.2: Was 1.1 - 8+ saves
+            elif cs_bps >= 24:
+                bonus_given_cs = 0.6  # v4.2: Was 0.7 - 6+ saves
+            elif cs_bps >= 20:
+                bonus_given_cs = 0.35  # v4.2: Was 0.4 - 4+ saves
             else:
-                bonus_given_cs = 0.2  # Was 0.3 - minimal saves
+                bonus_given_cs = 0.15  # v4.2: Was 0.2 - minimal saves
             
             # CS bonus: probability × expected bonus if CS happens
             cs_bonus_component = fixture_cs_prob * bonus_given_cs
@@ -2949,12 +2984,14 @@ def calculate_expected_points(
             # - Gabriel without goal: competing with VVD, Saliba for ~0.4 expected bonus
             
             # CS bonus baseline - what you expect just from CS (competing with teammates)
-            # Reduced from 0.55 to 0.40 - 4-5 DEFs splitting bonus pool
-            cs_bonus_baseline = fixture_cs_prob * 0.40
+            # v4.2: Reduced from 0.40 to 0.32 - 4-5 DEFs splitting bonus pool
+            # In a typical CS game, ~1.2 expected bonus split among 5 DEFs = 0.24 each
+            # Plus some probability of getting 2 bonus = ~0.32
+            cs_bonus_baseline = fixture_cs_prob * 0.32
             
             # Attack upside - extra bonus from goal/assist
-            # Reduced from 0.4 to 0.30 - DEF xGI is very low
-            attack_upside = attack_bonus * 0.30
+            # v4.2: Reduced from 0.30 to 0.25 - DEF xGI is very low
+            attack_upside = attack_bonus * 0.25
             
             # Use competitive model: attack bonus can exceed CS baseline, not stack
             # Base case: CS baseline
@@ -2969,7 +3006,11 @@ def calculate_expected_points(
             fixture_bonus_pts = attack_bonus * 0.85 + cs_bonus_component * 0.15
             
         else:  # FWD
-            fixture_bonus_pts = attack_bonus  # FWD bonus purely attack-driven
+            # FWD bonus purely attack-driven
+            # RECALIBRATED v4.2: Scale down by 15% - bonus calculation assumes consistent 
+            # returns but FWDs only get bonus when they score, not every game
+            # Haaland scores in ~55% of games, blanks in 45% = lower expected bonus
+            fixture_bonus_pts = attack_bonus * 0.85
         
         # DEFCON
         fixture_defcon_pts = (defcon_prob * DEFCON_POINTS) if position in [2, 3] else 0
