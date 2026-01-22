@@ -5337,8 +5337,15 @@ def get_transfer_candidates(
                 if current_count >= 3:
                     continue
                 
-                # Minimum minutes filter
-                if player.get("minutes", 0) < 200:
+                # Minimum minutes filter - need decent sample to trust projection
+                # 400 mins = ~4-5 full games minimum
+                total_minutes = player.get("minutes", 0)
+                if total_minutes < 400:
+                    continue
+                
+                # Check availability status - skip injured/doubtful
+                status = player.get("status", "a")
+                if status in ["i", "s", "u"]:  # injured, suspended, unavailable
                     continue
                 
                 # Calculate xPts over horizon
@@ -5348,6 +5355,12 @@ def get_transfer_candidates(
                 stats = calculate_expected_points(
                     player, pos_id, current_gw, upcoming, teams_dict, fixtures, []
                 )
+                
+                # Skip players with low expected minutes (rotation risks)
+                # Expected minutes < 60 per game suggests heavy rotation
+                exp_mins = stats.get("expected_minutes", 0)
+                if exp_mins < 60:
+                    continue
                 
                 # Calculate out player's xPts using full element data if available
                 out_upcoming = get_player_upcoming_fixtures(
@@ -5736,9 +5749,17 @@ def solve_transfer_plan(
                     # Option 3: Take hit for second transfer (if allowed)
                     if max_hits > 0 and working_path.hits < max_hits and len(candidates) > 1:
                         for second_transfer in candidates[i+1:i+3]:
+                            # Can't sell the same player twice!
+                            if second_transfer["out"]["id"] == transfer["out"]["id"]:
+                                continue
+                            # Can't sell what you just bought
                             if second_transfer["out"]["id"] == transfer["in"]["id"]:
                                 continue
+                            # Can't buy what you just sold
                             if second_transfer["in"]["id"] == transfer["out"]["id"]:
+                                continue
+                            # Can't buy the same player twice
+                            if second_transfer["in"]["id"] == transfer["in"]["id"]:
                                 continue
                             
                             hit_path = ft_path.copy()
