@@ -981,37 +981,40 @@
                 linear-gradient(to top, rgba(0, 212, 170, 0.03) 0%, transparent 30%);
         }
 
-        .pitch-row { display: flex; justify-content: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+        .pitch-row { display: flex; justify-content: center; gap: 0.75rem; margin-bottom: 0.75rem; }
         .pitch-row:last-child { margin-bottom: 0; }
 
         .pitch-player {
             background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 0.4rem 0.5rem;
+            border-radius: 10px;
+            padding: 0.6rem 0.75rem;
             text-align: center;
-            min-width: 75px;
+            min-width: 95px;
             transition: all 0.2s;
         }
 
         .pitch-player:hover { border-color: var(--accent-primary); transform: scale(1.05); }
-        .pitch-player.captain { border-color: var(--accent-primary); box-shadow: 0 0 12px rgba(0, 212, 170, 0.4); }
-        .pitch-player.vice { border-color: var(--accent-purple); }
+        .pitch-player.captain { border-color: var(--accent-primary); box-shadow: 0 0 15px rgba(0, 212, 170, 0.5); background: linear-gradient(135deg, rgba(0, 212, 170, 0.15) 0%, var(--bg-tertiary) 100%); }
+        .pitch-player.vice { border-color: var(--accent-purple); box-shadow: 0 0 10px rgba(139, 92, 246, 0.3); }
 
-        .pitch-player .name { font-weight: 600; font-size: 0.7rem; margin-bottom: 0.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70px; }
-        .pitch-player .team { font-size: 0.55rem; color: var(--text-muted); margin-bottom: 0.15rem; }
-        .pitch-player .xpts { font-size: 0.7rem; color: var(--accent-primary); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
-        .pitch-player .badge { font-size: 0.5rem; background: var(--accent-primary); color: var(--bg-primary); padding: 0.05rem 0.3rem; border-radius: 8px; margin-top: 0.15rem; display: inline-block; }
+        .pitch-player .name { font-weight: 600; font-size: 0.85rem; margin-bottom: 0.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 85px; }
+        .pitch-player .team { font-size: 0.65rem; color: var(--text-muted); margin-bottom: 0.2rem; }
+        .pitch-player .xpts { font-size: 0.9rem; color: var(--accent-primary); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+        .pitch-player .badge { font-size: 0.55rem; background: var(--accent-primary); color: var(--bg-primary); padding: 0.1rem 0.4rem; border-radius: 10px; margin-top: 0.2rem; display: inline-block; font-weight: 700; }
         .pitch-player .badge.vc { background: var(--accent-purple); }
-        .pitch-player .exp-mins-tag { font-size: 0.5rem; color: var(--text-muted); margin-top: 0.1rem; }
+        .pitch-player .exp-mins-tag { font-size: 0.6rem; color: var(--text-muted); margin-top: 0.15rem; }
         .pitch-player .exp-mins-tag.predicted { color: #8b5cf6; }
         .pitch-player .exp-mins-tag.override { color: #10b981; }
         .pitch-player.low-mins { border-color: #f59e0b; }
         .pitch-player.low-mins .exp-mins-tag { color: #f59e0b; }
         .pitch-player { cursor: pointer; }
 
-        .bench-row { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed var(--border-color); }
-        .bench-row .label { text-align: center; font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }
+        .bench-row { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px dashed var(--border-color); }
+        .bench-row .label { text-align: center; font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 0.75rem; font-weight: 500; }
+        .bench-row .pitch-row { gap: 0.75rem; }
+        .bench-row .pitch-player { opacity: 0.7; min-width: 90px; }
+        .bench-row .pitch-player:hover { opacity: 1; }
 
         .squad-sidebar { display: flex; flex-direction: column; gap: 0.75rem; }
 
@@ -1128,126 +1131,84 @@
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 12px;
-            padding: 1rem 1.5rem;
+            padding: 1.25rem 2rem;
             background-image: 
                 linear-gradient(to bottom, rgba(0, 212, 170, 0.05) 0%, transparent 20%),
                 linear-gradient(to top, rgba(0, 212, 170, 0.05) 0%, transparent 20%);
+            max-width: 900px;
+            margin: 0 auto;
         }
 
-        /* GW Optimizer Grid - More compact */
+        /* GW Optimizer Grid - Full width, no sidebar */
         .optimizer-grid {
-            display: grid;
-            grid-template-columns: 1fr 220px;
-            gap: 0.5rem;
-            align-items: start;
+            display: block;
         }
         
-        @media (max-width: 1024px) {
-            .optimizer-grid {
-                grid-template-columns: 1fr;
-            }
+        .optimizer-sidebar {
+            display: none;
         }
         
         .pitch-header {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 0.25rem;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .pitch-header-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
         }
         
         .pitch-header .gw-badge {
             background: var(--accent-primary);
             color: var(--bg-primary);
-            padding: 0.15rem 0.5rem;
-            border-radius: 4px;
+            padding: 0.3rem 0.75rem;
+            border-radius: 6px;
             font-weight: 700;
-            font-size: 0.7rem;
+            font-size: 0.85rem;
         }
         
         .pitch-header .pitch-xpts {
-            font-size: 0.8rem;
+            font-size: 1rem;
             color: var(--text-secondary);
         }
         
         .pitch-header .pitch-xpts strong {
             color: var(--accent-primary);
             font-family: 'JetBrains Mono', monospace;
+            font-size: 1.1rem;
         }
         
-        .optimizer-sidebar {
+        .pitch-header-right {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.8rem;
+        }
+        
+        .pitch-header-right .team-stat {
             display: flex;
             flex-direction: column;
-            gap: 0.4rem;
+            align-items: flex-end;
         }
         
-        .captain-card-highlight {
-            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, var(--bg-card) 100%);
-            border-color: rgba(245, 158, 11, 0.3);
-        }
-        
-        .captain-recommendation {
-            display: flex;
-            align-items: center;
-            gap: 0.35rem;
-            padding: 0.25rem;
-            background: var(--bg-tertiary);
-            border-radius: 4px;
-            margin-bottom: 0.2rem;
-        }
-        
-        .captain-recommendation.main {
-            background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, var(--bg-tertiary) 100%);
-            border: 1px solid rgba(245, 158, 11, 0.3);
-        }
-        
-        .captain-recommendation .badge {
-            width: 18px;
-            height: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-            font-weight: 700;
-            font-size: 0.55rem;
-        }
-        
-        .captain-recommendation .badge.c {
-            background: #f59e0b;
-            color: #000;
-        }
-        
-        .captain-recommendation .badge.vc {
-            background: var(--bg-hover);
-            color: var(--text-secondary);
-            border: 2px solid var(--border-color);
-        }
-        
-        .captain-recommendation .info {
-            flex: 1;
-        }
-        
-        .captain-recommendation .name {
-            font-weight: 600;
-            font-size: 0.65rem;
-        }
-        
-        .captain-recommendation .meta {
-            font-size: 0.5rem;
+        .pitch-header-right .team-stat .label {
             color: var(--text-muted);
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
         
-        .captain-recommendation .xpts {
+        .pitch-header-right .team-stat .value {
+            color: var(--accent-primary);
             font-family: 'JetBrains Mono', monospace;
             font-weight: 600;
-            font-size: 0.65rem;
-            color: var(--accent-primary);
         }
         
-        .bench-list {
-            display: flex;
-            flex-direction: column;
-            gap: 0.15rem;
-        }
+        /* Captain/VC badges on player cards */
         
         .bench-item {
             display: flex;
@@ -2467,24 +2428,26 @@
                     <div class="optimizer-grid">
                         <div class="pitch-container">
                             <div class="pitch-header">
-                                <span class="gw-badge" id="optimizerGwBadge">GW --</span>
-                                <span class="pitch-xpts">xPts: <strong id="optimizerTotalXpts">--</strong></span>
+                                <div class="pitch-header-left">
+                                    <span class="gw-badge" id="optimizerGwBadge">GW --</span>
+                                    <span class="pitch-xpts">xPts: <strong id="optimizerTotalXpts">--</strong></span>
+                                </div>
+                                <div class="pitch-header-right" id="teamValueHeader">
+                                    <div class="team-stat">
+                                        <span class="label">Squad</span>
+                                        <span class="value" id="squadValueDisplay">--</span>
+                                    </div>
+                                    <div class="team-stat">
+                                        <span class="label">Bank</span>
+                                        <span class="value" id="bankDisplay">--</span>
+                                    </div>
+                                    <div class="team-stat">
+                                        <span class="label">FT</span>
+                                        <span class="value" id="ftDisplay">--</span>
+                                    </div>
+                                </div>
                             </div>
                             <div class="pitch-visual" id="squadPitch"></div>
-                        </div>
-                        <div class="optimizer-sidebar">
-                            <div class="sidebar-card captain-card-highlight">
-                                <h3>👑 Captain Pick</h3>
-                                <div id="captainRecommendation"></div>
-                            </div>
-                            <div class="sidebar-card">
-                                <h3>📋 Optimal Bench Order</h3>
-                                <div id="benchOrderOptimal" class="bench-list"></div>
-                            </div>
-                            <div class="sidebar-card">
-                                <h3>💰 Team Value</h3>
-                                <div id="teamValueInfo"></div>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -3292,12 +3255,16 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                 `;
             };
 
-            // Render pitch
+            // Render pitch with bench at bottom
             document.getElementById('squadPitch').innerHTML = `
                 <div class="pitch-row">${gkp.map(renderPlayer).join('')}</div>
                 <div class="pitch-row">${def.map(renderPlayer).join('')}</div>
                 <div class="pitch-row">${mid.map(renderPlayer).join('')}</div>
                 <div class="pitch-row">${fwd.map(renderPlayer).join('')}</div>
+                <div class="bench-row">
+                    <div class="label">Bench</div>
+                    <div class="pitch-row">${optimalBench.map(renderPlayer).join('')}</div>
+                </div>
             `;
             
             // Update header
@@ -3308,51 +3275,10 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
             const totalXpts = startingXpts + captain.xpts_single_gw; // Captain counted twice
             document.getElementById('optimizerTotalXpts').textContent = totalXpts.toFixed(1);
             
-            // Render captain recommendation (captain shows 2x, VC shows actual xPts)
-            document.getElementById('captainRecommendation').innerHTML = `
-                <div class="captain-recommendation main">
-                    <div class="badge c">C</div>
-                    <div class="info">
-                        <div class="name">${captain.name}</div>
-                        <div class="meta">${captain.team} · ${captain.position}</div>
-                    </div>
-                    <div class="xpts">${(captain.xpts_single_gw * 2).toFixed(1)} xPts</div>
-                </div>
-                <div class="captain-recommendation">
-                    <div class="badge vc">V</div>
-                    <div class="info">
-                        <div class="name">${viceCaptain.name}</div>
-                        <div class="meta">${viceCaptain.team} · ${viceCaptain.position}</div>
-                    </div>
-                    <div class="xpts">${viceCaptain.xpts_single_gw.toFixed(1)} xPts</div>
-                </div>
-            `;
-            
-            // Render optimal bench order (GK first, then 1, 2, 3 for outfield)
-            document.getElementById('benchOrderOptimal').innerHTML = optimalBench.map((p, i) => `
-                <div class="bench-item">
-                    <div class="order">${i === 0 ? 'GK' : i}</div>
-                    <div class="name">${p.name}</div>
-                    <div class="pos">${p.position}</div>
-                    <div class="xpts">${p.xpts_single_gw.toFixed(1)}</div>
-                </div>
-            `).join('');
-            
-            // Render team value info
-            document.getElementById('teamValueInfo').innerHTML = `
-                <div class="value-stat">
-                    <span class="label">Squad Value</span>
-                    <span class="value">£${data.total_value.toFixed(1)}m</span>
-                </div>
-                <div class="value-stat">
-                    <span class="label">In Bank</span>
-                    <span class="value">£${data.bank.toFixed(1)}m</span>
-                </div>
-                <div class="value-stat">
-                    <span class="label">Free Transfers</span>
-                    <span class="value">${data.free_transfers}</span>
-                </div>
-            `;
+            // Update team value header
+            document.getElementById('squadValueDisplay').textContent = `£${data.total_value.toFixed(1)}m`;
+            document.getElementById('bankDisplay').textContent = `£${data.bank.toFixed(1)}m`;
+            document.getElementById('ftDisplay').textContent = data.free_transfers;
         }
 
         // ============ STATS TAB ============
@@ -3660,14 +3586,25 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                             reverse: true,  // Lower rank is better (top of chart)
                             min: 1000,       // Top 1K at top
                             max: 12000000,   // 12M at bottom
+                            afterBuildTicks: function(axis) {
+                                // Force specific tick values for better readability
+                                axis.ticks = [
+                                    { value: 1000 },
+                                    { value: 10000 },
+                                    { value: 100000 },
+                                    { value: 500000 },
+                                    { value: 1000000 },
+                                    { value: 3000000 },
+                                    { value: 6000000 },
+                                    { value: 12000000 }
+                                ];
+                            },
                             ticks: { 
                                 color: '#00d4aa',
                                 callback: function(value) {
-                                    // Only show specific tick values on log scale
-                                    const allowed = [1000, 10000, 100000, 500000, 1000000, 3000000, 6000000, 12000000];
-                                    if (!allowed.includes(value)) return '';
-                                    return value >= 1000000 ? (value/1000000).toFixed(0) + 'M' :
-                                           value >= 1000 ? (value/1000).toFixed(0) + 'K' : value;
+                                    if (value >= 1000000) return (value/1000000).toFixed(0) + 'M';
+                                    if (value >= 1000) return (value/1000).toFixed(0) + 'K';
+                                    return value;
                                 }
                             },
                             grid: { color: 'rgba(255,255,255,0.05)' },
