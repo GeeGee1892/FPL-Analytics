@@ -638,16 +638,16 @@ class DataCache:
         return False
     
     def predicted_minutes_is_stale(self) -> bool:
-        return self.predicted_minutes_last_update is None or (datetime.now() - self.predicted_minutes_last_update).seconds > 3600  # 1 hour
+        return self.predicted_minutes_last_update is None or (datetime.now() - self.predicted_minutes_last_update).total_seconds() > 3600  # 1 hour
 
     def is_stale(self) -> bool:
-        return self.last_update is None or (datetime.now() - self.last_update).seconds > self.cache_duration
+        return self.last_update is None or (datetime.now() - self.last_update).total_seconds() > self.cache_duration
 
     def fixtures_is_stale(self) -> bool:
-        return self.fixtures_last_update is None or (datetime.now() - self.fixtures_last_update).seconds > self.cache_duration
+        return self.fixtures_last_update is None or (datetime.now() - self.fixtures_last_update).total_seconds() > self.cache_duration
     
     def fdr_is_stale(self) -> bool:
-        return self.fdr_last_update is None or (datetime.now() - self.fdr_last_update).seconds > 21600  # 6 hours
+        return self.fdr_last_update is None or (datetime.now() - self.fdr_last_update).total_seconds() > 21600  # 6 hours
 
 
 cache = DataCache()
@@ -1235,10 +1235,10 @@ def calculate_expected_minutes(
     if (cache.predicted_minutes and 
         player_id in cache.predicted_minutes and 
         cache.predicted_minutes_last_update and
-        (datetime.now() - cache.predicted_minutes_last_update).seconds < 21600):
+        (datetime.now() - cache.predicted_minutes_last_update).total_seconds() < 21600):
         
-        rotowire_mins = cache.predicted_minutes[player_id]
-        return rotowire_mins, "rotowire_lineup"
+        predicted_mins = cache.predicted_minutes[player_id]
+        return predicted_mins, "predicted"
     
     # ==================== LAYER 3: BACKUP DETECTION ====================
     if all_players:
@@ -2873,6 +2873,85 @@ async def get_fixture_ratings(horizon: int = Query(8, ge=1, le=15)):
     return {"horizon": horizon, "current_gw": current_gw, "teams": team_ratings}
 
 
+@app.get("/api/fdr-grid")
+async def get_fdr_grid():
+    """Get full FDR grid for all teams and all GWs (for fixture ticker)."""
+    await refresh_fdr_data()
+    
+    data = await fetch_fpl_data()
+    fixtures = await fetch_fixtures()
+    
+    teams = {t["id"]: t for t in data["teams"]}
+    events = data["events"]
+    current_gw = get_current_gameweek(events)
+    
+    # Build fixture lookup: team_id -> gw -> fixture info
+    grid = {}
+    for team_id, team in teams.items():
+        grid[team_id] = {
+            "team_name": team["name"],
+            "team_short": team["short_name"],
+            "fixtures": {}  # gw -> fixture data
+        }
+    
+    for fix in fixtures:
+        gw = fix.get("event")
+        if not gw:
+            continue
+        
+        home_id = fix["team_h"]
+        away_id = fix["team_a"]
+        
+        # Home team fixture
+        if home_id in grid:
+            attack_fdr = get_fixture_fdr(away_id, True, 4)  # FWD perspective  
+            defence_fdr = get_fixture_fdr(away_id, True, 2)  # DEF perspective
+            composite_fdr = round((attack_fdr + defence_fdr) / 2)
+            
+            if gw not in grid[home_id]["fixtures"]:
+                grid[home_id]["fixtures"][gw] = []
+            grid[home_id]["fixtures"][gw].append({
+                "opponent": teams.get(away_id, {}).get("short_name", "???"),
+                "is_home": True,
+                "fdr": composite_fdr,
+                "attack_fdr": attack_fdr,
+                "defence_fdr": defence_fdr
+            })
+        
+        # Away team fixture
+        if away_id in grid:
+            attack_fdr = get_fixture_fdr(home_id, False, 4)
+            defence_fdr = get_fixture_fdr(home_id, False, 2)
+            composite_fdr = round((attack_fdr + defence_fdr) / 2)
+            
+            if gw not in grid[away_id]["fixtures"]:
+                grid[away_id]["fixtures"][gw] = []
+            grid[away_id]["fixtures"][gw].append({
+                "opponent": teams.get(home_id, {}).get("short_name", "???"),
+                "is_home": False,
+                "fdr": composite_fdr,
+                "attack_fdr": attack_fdr,
+                "defence_fdr": defence_fdr
+            })
+    
+    # Convert to list sorted by team name
+    team_list = []
+    for team_id, team_data in grid.items():
+        team_list.append({
+            "team_id": team_id,
+            "team_name": team_data["team_name"],
+            "team_short": team_data["team_short"],
+            "fixtures": team_data["fixtures"]
+        })
+    
+    team_list.sort(key=lambda x: x["team_name"])
+    
+    return {
+        "current_gw": current_gw,
+        "teams": team_list
+    }
+
+
 # ============ DIFFERENTIALS ============
 
 async def fetch_manager_transfers(manager_id: int) -> List[Dict]:
@@ -3666,13 +3745,17 @@ def get_transfer_candidates(
     current_gw: int,
     horizon: int,
     budget: float,
-    limit: int = 5
+    limit: int = 5,
+    elements: Dict = None  # Optional: full player data dict for proper out_player stats
 ) -> List[Dict]:
     """Get top transfer candidates for each position."""
     squad_ids = {p["id"] for p in squad}
     team_counts = defaultdict(int)
     for p in squad:
         team_counts[p["team_id"]] += 1
+    
+    # Build elements lookup if provided
+    elements_dict = elements if elements else {}
     
     candidates = []
     
@@ -3712,17 +3795,26 @@ def get_transfer_candidates(
                     player, pos_id, current_gw, upcoming, teams_dict, fixtures, []
                 )
                 
-                # Calculate out player's xPts
+                # Calculate out player's xPts using full element data if available
                 out_upcoming = get_player_upcoming_fixtures(
                     out_player["team_id"], fixtures, current_gw, current_gw + horizon, teams_dict
                 )
-                out_stats = calculate_expected_points(
-                    {"id": out_player["id"], "team": out_player["team_id"], 
-                     "minutes": out_player.get("minutes", 900), "expected_goals": 0,
-                     "expected_assists": 0, "expected_goals_conceded": 0,
-                     "points_per_game": out_player.get("form", 4), "status": "a"},
-                    pos_id, current_gw, out_upcoming, teams_dict, fixtures, []
-                )
+                
+                # Use full player data from elements if available, otherwise build synthetic
+                out_element = elements_dict.get(out_player["id"]) if elements_dict else None
+                if out_element:
+                    out_stats = calculate_expected_points(
+                        out_element, pos_id, current_gw, out_upcoming, teams_dict, fixtures, []
+                    )
+                else:
+                    # Fallback to synthetic dict (less accurate)
+                    out_stats = calculate_expected_points(
+                        {"id": out_player["id"], "team": out_player["team_id"], 
+                         "minutes": out_player.get("minutes", 900), "expected_goals": 0,
+                         "expected_assists": 0, "expected_goals_conceded": 0,
+                         "points_per_game": out_player.get("form", 4), "status": "a"},
+                        pos_id, current_gw, out_upcoming, teams_dict, fixtures, []
+                    )
                 
                 xpts_gain = stats["xpts"] - out_player.get("xpts", out_stats["xpts"])
                 
@@ -4062,7 +4154,8 @@ def solve_transfer_plan(
                 # 1. Remove a player we booked in (now or future)
                 # 2. Remove a player we plan to book out later (before their booked GW)
                 candidates = get_transfer_candidates(
-                    working_path.squad, all_players, teams_dict, fixtures, gw, end_gw - gw, working_path.bank, limit=5
+                    working_path.squad, all_players, teams_dict, fixtures, gw, end_gw - gw, 
+                    working_path.bank, limit=5, elements=elements
                 )
                 
                 def is_protected(player_id):
