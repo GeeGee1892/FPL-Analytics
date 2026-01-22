@@ -24,11 +24,11 @@
             --accent-red: #ef4444;
             --accent-pink: #ec4899;
             --border-color: #252530;
-            --fdr-1: #00ff87;
-            --fdr-2: #2dce89;
-            --fdr-3: #ffd700;
-            --fdr-4: #ff6b35;
-            --fdr-5: #ff3860;
+            --fdr-1: #14532d;
+            --fdr-2: #166534;
+            --fdr-3: #15803d;
+            --fdr-4: #84cc16;
+            --fdr-5: #facc15;
             --gradient-1: linear-gradient(135deg, #00d4aa 0%, #00a088 100%);
             --gradient-logo: linear-gradient(135deg, #00d4aa, #3b82f6, #8b5cf6, #ec4899, #00d4aa);
             --shadow-glow: 0 0 40px rgba(0, 212, 170, 0.15);
@@ -625,10 +625,10 @@
         .transfer-player .name { font-weight: 600; font-size: 1rem; }
         .transfer-player .meta { font-size: 0.8rem; color: var(--text-muted); }
         .transfer-player.out .name { color: var(--accent-red); }
-        .transfer-player.in .name { color: var(--fdr-1); }
+        .transfer-player.in .name { color: #4ade80; }
         .transfer-arrow { font-size: 1.5rem; color: var(--text-muted); }
         .transfer-gain { text-align: right; }
-        .transfer-gain .xpts { font-size: 1.25rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--fdr-1); }
+        .transfer-gain .xpts { font-size: 1.25rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: #4ade80; }
         .transfer-gain .label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
 
         /* ===== TABLES ===== */
@@ -733,8 +733,8 @@
         }
         .ownership-cell { display: flex; align-items: center; gap: 0.25rem; }
         .ownership-tier { font-size: 0.75rem; cursor: help; }
-        .stat-positive { color: var(--fdr-1); }
-        .stat-negative { color: var(--fdr-5); }
+        .stat-positive { color: #4ade80; }
+        .stat-negative { color: #f87171; }
         .stat-warning { color: var(--accent-orange); }
 
         /* ===== POSITION TABS ===== */
@@ -777,16 +777,16 @@
         .fixture-badge .gw { font-size: 0.55rem; opacity: 0.8; margin-bottom: 1px; }
         .fixture-badge .opp { font-size: 0.75rem; }
 
-        .fixture-badge.fdr-1 { background: rgba(0, 255, 135, 0.25); color: #00ff87; border: 1px solid rgba(0, 255, 135, 0.4); }
-        .fixture-badge.fdr-2 { background: rgba(45, 206, 137, 0.25); color: #2dce89; border: 1px solid rgba(45, 206, 137, 0.4); }
-        .fixture-badge.fdr-3 { background: rgba(124, 224, 138, 0.25); color: #7ce08a; border: 1px solid rgba(124, 224, 138, 0.4); }
-        .fixture-badge.fdr-4 { background: rgba(184, 224, 104, 0.25); color: #b8e068; border: 1px solid rgba(184, 224, 104, 0.4); }
-        .fixture-badge.fdr-5 { background: rgba(255, 215, 0, 0.25); color: #ffd700; border: 1px solid rgba(255, 215, 0, 0.4); }
-        .fixture-badge.fdr-6 { background: rgba(255, 179, 71, 0.25); color: #ffb347; border: 1px solid rgba(255, 179, 71, 0.4); }
-        .fixture-badge.fdr-7 { background: rgba(255, 140, 66, 0.25); color: #ff8c42; border: 1px solid rgba(255, 140, 66, 0.4); }
-        .fixture-badge.fdr-8 { background: rgba(255, 107, 53, 0.25); color: #ff6b35; border: 1px solid rgba(255, 107, 53, 0.4); }
-        .fixture-badge.fdr-9 { background: rgba(230, 57, 70, 0.25); color: #e63946; border: 1px solid rgba(230, 57, 70, 0.4); }
-        .fixture-badge.fdr-10 { background: rgba(157, 2, 8, 0.25); color: #ff6b6b; border: 1px solid rgba(157, 2, 8, 0.4); }
+        .fixture-badge.fdr-1 { background: rgba(20, 83, 45, 0.6); color: #4ade80; border: 1px solid rgba(20, 83, 45, 0.9); }
+        .fixture-badge.fdr-2 { background: rgba(22, 101, 52, 0.5); color: #4ade80; border: 1px solid rgba(22, 101, 52, 0.8); }
+        .fixture-badge.fdr-3 { background: rgba(21, 128, 61, 0.4); color: #86efac; border: 1px solid rgba(21, 128, 61, 0.7); }
+        .fixture-badge.fdr-4 { background: rgba(132, 204, 22, 0.3); color: #bef264; border: 1px solid rgba(132, 204, 22, 0.6); }
+        .fixture-badge.fdr-5 { background: rgba(250, 204, 21, 0.25); color: #fde047; border: 1px solid rgba(250, 204, 21, 0.5); }
+        .fixture-badge.fdr-6 { background: rgba(251, 146, 60, 0.3); color: #fdba74; border: 1px solid rgba(251, 146, 60, 0.5); }
+        .fixture-badge.fdr-7 { background: rgba(249, 115, 22, 0.35); color: #fdba74; border: 1px solid rgba(249, 115, 22, 0.6); }
+        .fixture-badge.fdr-8 { background: rgba(220, 38, 38, 0.4); color: #fca5a5; border: 1px solid rgba(220, 38, 38, 0.6); }
+        .fixture-badge.fdr-9 { background: rgba(185, 28, 28, 0.45); color: #fca5a5; border: 1px solid rgba(185, 28, 28, 0.65); }
+        .fixture-badge.fdr-10 { background: rgba(127, 29, 29, 0.5); color: #fca5a5; border: 1px solid rgba(127, 29, 29, 0.7); }
 
         /* FDR Grid - Full Season View */
         .fdr-grid-container {
@@ -884,16 +884,16 @@
         .fdr-cell .home-away { font-size: 0.5rem; opacity: 0.7; text-transform: uppercase; }
         
         /* 10-grade FDR colors (1=easiest green, 10=hardest red) */
-        .fdr-cell.fdr-1 { background: #00ff87; color: #000; }
-        .fdr-cell.fdr-2 { background: #2dce89; color: #000; }
-        .fdr-cell.fdr-3 { background: #7ce08a; color: #000; }
-        .fdr-cell.fdr-4 { background: #b8e068; color: #000; }
-        .fdr-cell.fdr-5 { background: #ffd700; color: #000; }
-        .fdr-cell.fdr-6 { background: #ffb347; color: #000; }
-        .fdr-cell.fdr-7 { background: #ff8c42; color: #000; }
-        .fdr-cell.fdr-8 { background: #ff6b35; color: #fff; }
-        .fdr-cell.fdr-9 { background: #e63946; color: #fff; }
-        .fdr-cell.fdr-10 { background: #9d0208; color: #fff; }
+        .fdr-cell.fdr-1 { background: #14532d; color: #fff; }
+        .fdr-cell.fdr-2 { background: #166534; color: #fff; }
+        .fdr-cell.fdr-3 { background: #15803d; color: #fff; }
+        .fdr-cell.fdr-4 { background: #84cc16; color: #000; }
+        .fdr-cell.fdr-5 { background: #facc15; color: #000; }
+        .fdr-cell.fdr-6 { background: #fb923c; color: #000; }
+        .fdr-cell.fdr-7 { background: #f97316; color: #fff; }
+        .fdr-cell.fdr-8 { background: #dc2626; color: #fff; }
+        .fdr-cell.fdr-9 { background: #b91c1c; color: #fff; }
+        .fdr-cell.fdr-10 { background: #7f1d1d; color: #fff; }
         
         .fdr-cell.blank { background: var(--bg-tertiary); color: var(--text-muted); }
         .fdr-cell.dgw { box-shadow: inset 0 0 0 2px var(--accent-primary); }
@@ -954,9 +954,9 @@
             text-transform: uppercase;
         }
 
-        .rating-easy { background: rgba(0, 255, 135, 0.2); color: var(--fdr-1); }
-        .rating-medium { background: rgba(255, 215, 0, 0.2); color: var(--fdr-3); }
-        .rating-hard { background: rgba(255, 56, 96, 0.2); color: var(--fdr-5); }
+        .rating-easy { background: rgba(21, 128, 61, 0.3); color: #4ade80; }
+        .rating-medium { background: rgba(250, 204, 21, 0.2); color: #fde047; }
+        .rating-hard { background: rgba(220, 38, 38, 0.2); color: #f87171; }
 
         .stat-card-meta { display: flex; gap: 1rem; margin-bottom: 1rem; font-size: 0.85rem; color: var(--text-secondary); }
         .stat-card-fixtures { display: flex; flex-wrap: wrap; gap: 0.35rem; }
@@ -1095,9 +1095,9 @@
             padding: 0.2rem 0.5rem;
             border-radius: 4px;
         }
-        .defcon-high { background: rgba(0, 212, 170, 0.15); color: var(--fdr-1); }
-        .defcon-medium { background: rgba(234, 179, 8, 0.15); color: var(--fdr-3); }
-        .defcon-low { background: rgba(239, 68, 68, 0.15); color: var(--fdr-5); }
+        .defcon-high { background: rgba(0, 212, 170, 0.15); color: #4ade80; }
+        .defcon-medium { background: rgba(234, 179, 8, 0.15); color: #fde047; }
+        .defcon-low { background: rgba(239, 68, 68, 0.15); color: #f87171; }
 
         /* Chips panel */
         .chips-panel {
@@ -1466,7 +1466,7 @@
         .loading-steps { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; font-size: 0.9rem; }
         .loading-step { color: var(--text-muted); opacity: 0.5; transition: all 0.3s ease; }
         .loading-step.active { color: var(--accent-primary); opacity: 1; }
-        .loading-step.done { color: var(--fdr-1); opacity: 0.8; }
+        .loading-step.done { color: #4ade80; opacity: 0.8; }
         .loading-step.done::before { content: '✓ '; }
         
         .planner-error { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 3rem 2rem; background: var(--surface); border-radius: 16px; margin-bottom: 1.5rem; border: 1px solid rgba(239, 68, 68, 0.3); }
@@ -2717,16 +2717,16 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
             <div class="fdr-grid-container">
                 <div class="fdr-legend">
                     <span class="fdr-legend-label">FDR:</span>
-                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#00ff87"></div>1</div>
-                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#2dce89"></div>2</div>
-                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#7ce08a"></div>3</div>
-                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#b8e068"></div>4</div>
-                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#ffd700"></div>5</div>
-                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#ffb347"></div>6</div>
-                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#ff8c42"></div>7</div>
-                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#ff6b35"></div>8</div>
-                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#e63946"></div>9</div>
-                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#9d0208"></div>10</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#14532d"></div>1</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#166534"></div>2</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#15803d"></div>3</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#84cc16"></div>4</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#facc15"></div>5</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#fb923c"></div>6</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#f97316"></div>7</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#dc2626"></div>8</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#b91c1c"></div>9</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#7f1d1d"></div>10</div>
                     <span style="margin-left: 1rem; color: var(--text-muted);">| Home = no prefix, Away = @</span>
                 </div>
                 <div id="fdrGrid" class="fdr-grid">
