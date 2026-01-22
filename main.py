@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 @dataclass
+@dataclass
 class FDRConfig:
     """
     Fixture Difficulty Rating configuration.
