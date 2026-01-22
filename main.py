@@ -2162,6 +2162,51 @@ async def force_fdr_refresh():
     return {"status": "ok", "teams_refreshed": len(fdr_data)}
 
 
+# ============ PLAYER SEARCH ENDPOINT ============
+
+@app.get("/api/players/search")
+async def search_players(
+    q: str = Query("", description="Search query (name or team)"),
+    limit: int = Query(20, ge=1, le=100)
+):
+    """
+    Simple player search for autocomplete.
+    Returns all players if no query, or filtered by name/team.
+    """
+    data = await fetch_fpl_data()
+    teams = {t["id"]: t for t in data["teams"]}
+    
+    players = []
+    query = q.lower().strip()
+    
+    for p in data["elements"]:
+        name = p.get("web_name", "")
+        team_data = teams.get(p["team"], {})
+        team_name = team_data.get("short_name", "")
+        
+        # If query provided, filter
+        if query:
+            if query not in name.lower() and query not in team_name.lower():
+                continue
+        
+        players.append({
+            "id": p["id"],
+            "name": name,
+            "full_name": f"{p.get('first_name', '')} {p.get('second_name', '')}",
+            "team": team_name,
+            "team_id": p["team"],
+            "position": {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}.get(p["element_type"], "???"),
+            "price": p["now_cost"] / 10,
+            "minutes": p.get("minutes", 0),
+            "ownership": float(p.get("selected_by_percent", 0) or 0),
+        })
+    
+    # Sort by ownership (most owned first for better suggestions)
+    players.sort(key=lambda x: x["ownership"], reverse=True)
+    
+    return {"players": players[:limit]}
+
+
 # ============ RANKINGS ENDPOINT ============
 
 @app.get("/api/rankings/{position}")

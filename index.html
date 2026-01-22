@@ -1358,7 +1358,7 @@
         .booked-item .remove-btn:hover { color: #ef4444; }
         
         /* Player Autocomplete */
-        .player-autocomplete { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1000; display: none; }
+        .player-autocomplete { position: absolute; top: 100%; left: 0; min-width: 250px; max-height: 200px; overflow-y: auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 9999; display: none; }
         .player-autocomplete.active { display: block; }
         .autocomplete-item { padding: 0.6rem 0.75rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; border-bottom: 1px solid var(--border-color); }
         .autocomplete-item:last-child { border-bottom: none; }
@@ -3002,7 +3002,7 @@
             const maxPrice = document.getElementById('rankMaxPrice').value;
             const maxOwnership = document.getElementById('maxOwnership').value;
 
-            document.getElementById('rankingsBody').innerHTML = `<tr><td colspan="11" class="loading"><div class="loading-spinner"></div><span style="margin-left: 0.5rem">Loading ${currentPosition} rankings...</span></td></tr>`;
+            document.getElementById('rankingsBody').innerHTML = `<tr><td colspan="13" class="loading"><div class="loading-spinner"></div><span style="margin-left: 0.5rem">Loading ${currentPosition} rankings...</span></td></tr>`;
             
             // Update table class for position-specific columns
             const table = document.getElementById('rankingsTable');
@@ -3016,16 +3016,12 @@
                 document.getElementById('rankingsCount').textContent = `${data.players.length} players`;
 
                 const html = data.players.map((p, i) => {
-                    // Position-specific stat
-                    let posStatHtml = '';
-                    if (currentPosition === 'GKP') {
-                        posStatHtml = `<td class="pos-col gkp-col stat-value">${p.saves_per_90 !== null ? p.saves_per_90.toFixed(1) : '-'}</td>`;
-                    } else if (currentPosition === 'DEF' || currentPosition === 'MID') {
-                        const defconClass = p.defcon_per_90 >= 10 ? 'defcon-high' : (p.defcon_per_90 >= 7 ? 'defcon-medium' : 'defcon-low');
-                        posStatHtml = `<td class="pos-col def-col mid-col"><span class="defcon-badge ${defconClass}">${p.defcon_per_90 !== null ? p.defcon_per_90.toFixed(1) : '-'}</span></td>`;
-                    } else {
-                        posStatHtml = `<td class="pos-col fwd-col">-</td>`;
-                    }
+                    // DEFCON column (shown for DEF/MID)
+                    const defconClass = p.defcon_per_90 >= 10 ? 'defcon-high' : (p.defcon_per_90 >= 7 ? 'defcon-medium' : 'defcon-low');
+                    const defconHtml = `<td class="pos-col def-col mid-col"><span class="defcon-badge ${defconClass}">${p.defcon_per_90 !== null ? p.defcon_per_90.toFixed(1) : '-'}</span></td>`;
+                    
+                    // Saves column (shown for GKP)
+                    const savesHtml = `<td class="pos-col gkp-col stat-value">${p.saves_per_90 !== null ? p.saves_per_90.toFixed(1) : '-'}</td>`;
                     
                     return `
                     <tr>
@@ -3045,8 +3041,8 @@
                         </td>
                         <td class="stat-value">${p.xgi_per_90.toFixed(2)}</td>
                         <td class="stat-value">${p.bonus_per_90.toFixed(2)}</td>
-                        ${posStatHtml}
-                        <td class="pos-col gkp-col stat-value">${currentPosition === 'GKP' && p.saves_per_90 !== null ? p.saves_per_90.toFixed(1) : ''}</td>
+                        ${defconHtml}
+                        ${savesHtml}
                         <td class="stat-value">${(p.form || 0).toFixed(1)}</td>
                         <td class="stat-value">${p.total_points}</td>
                         <td class="stat-value">£${p.price.toFixed(1)}</td>
@@ -3313,28 +3309,21 @@
         }
         
         // ==================== PLAYER AUTOCOMPLETE ====================
-        let allPlayersCache = [];
-        
-        async function loadPlayersForAutocomplete() {
-            if (allPlayersCache.length > 0) return;
-            try {
-                const res = await fetch(`${API_BASE}/api/rankings?min_minutes=0`);
-                if (res.ok) {
-                    const data = await res.json();
-                    allPlayersCache = data.players || [];
-                }
-            } catch (e) {
-                console.error('Failed to load players for autocomplete:', e);
-            }
-        }
         
         function setupAutocomplete(inputId, dropdownId) {
             const input = document.getElementById(inputId);
             const dropdown = document.getElementById(dropdownId);
-            if (!input || !dropdown) return;
+            if (!input || !dropdown) {
+                console.error(`Autocomplete setup failed: input=${inputId}, dropdown=${dropdownId}`);
+                return;
+            }
             
-            input.addEventListener('input', async function() {
-                const query = this.value.trim().toLowerCase();
+            console.log(`Setting up autocomplete for ${inputId}`);
+            
+            let debounceTimer = null;
+            
+            input.addEventListener('input', function() {
+                const query = this.value.trim();
                 
                 // Only show suggestions after 3 characters
                 if (query.length < 3) {
@@ -3342,39 +3331,46 @@
                     return;
                 }
                 
-                // Ensure players are loaded
-                await loadPlayersForAutocomplete();
-                
-                // Filter matching players
-                const matches = allPlayersCache.filter(p => 
-                    p.name.toLowerCase().includes(query) ||
-                    (p.team && p.team.toLowerCase().includes(query))
-                ).slice(0, 10);
-                
-                if (matches.length === 0) {
-                    dropdown.classList.remove('active');
-                    return;
-                }
-                
-                dropdown.innerHTML = matches.map(p => `
-                    <div class="autocomplete-item" data-name="${p.name}">
-                        <div>
-                            <span class="player-name">${p.name}</span>
-                            <span class="player-team">${p.team || ''}</span>
-                        </div>
-                        <span class="player-price">£${p.price?.toFixed(1) || '?'}</span>
-                    </div>
-                `).join('');
-                
-                dropdown.classList.add('active');
-                
-                // Add click handlers to suggestions
-                dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
-                    item.addEventListener('click', function() {
-                        input.value = this.dataset.name;
-                        dropdown.classList.remove('active');
-                    });
-                });
+                // Debounce API calls
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(async () => {
+                    try {
+                        const res = await fetch(`${API_BASE}/api/players/search?q=${encodeURIComponent(query)}&limit=10`);
+                        if (!res.ok) {
+                            console.error('Player search failed:', res.status);
+                            return;
+                        }
+                        const data = await res.json();
+                        const matches = data.players || [];
+                        
+                        if (matches.length === 0) {
+                            dropdown.classList.remove('active');
+                            return;
+                        }
+                        
+                        dropdown.innerHTML = matches.map(p => `
+                            <div class="autocomplete-item" data-name="${p.name}">
+                                <div>
+                                    <span class="player-name">${p.name}</span>
+                                    <span class="player-team">${p.team || ''} · ${p.position || ''}</span>
+                                </div>
+                                <span class="player-price">£${p.price?.toFixed(1) || '?'}</span>
+                            </div>
+                        `).join('');
+                        
+                        dropdown.classList.add('active');
+                        
+                        // Add click handlers to suggestions
+                        dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+                            item.addEventListener('click', function() {
+                                input.value = this.dataset.name;
+                                dropdown.classList.remove('active');
+                            });
+                        });
+                    } catch (e) {
+                        console.error('Player search error:', e);
+                    }
+                }, 200); // 200ms debounce
             });
             
             // Close dropdown when clicking outside
