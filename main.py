@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any, Tuple
 from enum import Enum
+from dataclasses import dataclass, field
 import math
 from collections import defaultdict
 from datetime import datetime
@@ -39,6 +40,202 @@ except ImportError:
     scipy_stats = None
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# MODEL CONFIGURATION - All calibration constants with documentation
+# =============================================================================
+
+@dataclass
+class FDRConfig:
+    """
+    Fixture Difficulty Rating configuration.
+    FDR 1-10 scale where 10 = hardest fixture.
+    
+    Key insight: Premium players (£10m+) are less affected by fixtures
+    than budget players because skill overcomes difficulty.
+    """
+    
+    # FDR multipliers - RECALIBRATED: less extreme than before
+    fdr_multipliers: Dict[int, float] = field(default_factory=lambda: {
+        1: 1.18,   # Very easy - capped because variance exists
+        2: 1.12,
+        3: 1.06,
+        4: 1.02,
+        5: 1.00,   # Neutral baseline
+        6: 0.97,
+        7: 0.93,
+        8: 0.88,
+        9: 0.82,
+        10: 0.75,  # Very hard
+    })
+    
+    # Price-based FDR dampening
+    # Formula: effective_mult = 1 + (base_mult - 1) * dampening
+    premium_dampening: float = 0.55      # £10m+: 55% of FDR effect
+    mid_price_dampening: float = 0.80    # £6-9.9m: 80% of FDR effect
+    budget_dampening: float = 1.0        # Below £6m: full effect
+    
+    premium_price_threshold: float = 10.0
+    mid_price_threshold: float = 6.0
+    
+    # Home/away FDR adjustment
+    home_fdr_multiplier: float = 0.88
+    away_fdr_multiplier: float = 1.12
+
+
+@dataclass  
+class HomeAwayConfig:
+    """Home/Away performance adjustments from PL data analysis."""
+    
+    home_attack_boost: float = 1.19      # Teams score ~19% more at home
+    away_attack_penalty: float = 0.87    # Teams score ~13% less away
+    home_defence_boost: float = 1.15     # Teams concede ~15% less at home
+    away_defence_penalty: float = 0.90   # Teams concede ~10% more away
+    
+    # Player-level home/away variance
+    min_games_for_split: int = 8         # Min games to trust split
+    split_weight: float = 0.60           # 60% split-specific, 40% overall
+
+
+@dataclass
+class XptsConfig:
+    """Expected points calculation configuration."""
+    
+    goal_points: Dict[int, int] = field(default_factory=lambda: {
+        1: 6, 2: 6, 3: 5, 4: 4  # GKP, DEF, MID, FWD
+    })
+    
+    cs_points: Dict[int, int] = field(default_factory=lambda: {
+        1: 4, 2: 4, 3: 1, 4: 0
+    })
+    
+    assist_points: int = 3
+    
+    # DEFCON thresholds
+    defcon_threshold_def: int = 10
+    defcon_threshold_mid: int = 12
+    defcon_points: float = 2.0
+    
+    # Yellow card baselines by position (per 90)
+    yellow_baseline: Dict[int, float] = field(default_factory=lambda: {
+        1: 0.02, 2: 0.12, 3: 0.10, 4: 0.06
+    })
+    
+    # Own goal probability by position (per 90)
+    og_probability: Dict[int, float] = field(default_factory=lambda: {
+        1: 0.005, 2: 0.020, 3: 0.008, 4: 0.003
+    })
+    
+    shots_on_target_per_xg: float = 2.8
+    league_avg_save_rate: float = 0.70
+    
+    # Fixture weighting (sum = 1.0)
+    fixture_weights: List[float] = field(default_factory=lambda: [
+        0.30, 0.22, 0.18, 0.12, 0.08, 0.05, 0.03, 0.02
+    ])
+    
+    # Horizon regression
+    horizon_regression: Dict[int, float] = field(default_factory=lambda: {
+        1: 1.00, 2: 0.99, 3: 0.98, 4: 0.97,
+        5: 0.96, 6: 0.95, 7: 0.94, 8: 0.93
+    })
+
+
+@dataclass
+class VarianceConfig:
+    """Ceiling/floor variance configuration."""
+    
+    ceiling_z: float = 0.84              # 80th percentile
+    floor_z: float = -0.84               # 20th percentile
+    
+    # Position-based baseline stdev (per 90)
+    position_stdev_baseline: Dict[int, float] = field(default_factory=lambda: {
+        1: 2.1,    # GKP - narrow
+        2: 2.4,    # DEF
+        3: 3.2,    # MID
+        4: 3.5,    # FWD - widest
+    })
+    
+    min_games_for_stdev: int = 10
+    
+    # Fixture ceiling boosts
+    fixture_ceiling_boost: Dict[int, float] = field(default_factory=lambda: {
+        1: 1.25, 2: 1.18, 3: 1.10, 4: 1.05, 5: 1.00,
+        6: 0.97, 7: 0.93, 8: 0.88, 9: 0.82, 10: 0.75
+    })
+    
+    home_ceiling_boost: float = 1.08
+    away_ceiling_penalty: float = 0.94
+
+
+@dataclass
+class BonusConfig:
+    """Bonus point prediction configuration."""
+    
+    bps_per_goal: Dict[int, int] = field(default_factory=lambda: {
+        1: 6, 2: 12, 3: 24, 4: 24
+    })
+    bps_per_assist: int = 9
+    bps_per_cs: Dict[int, int] = field(default_factory=lambda: {
+        1: 12, 2: 12, 3: 6, 4: 0
+    })
+    base_bps_by_position: Dict[int, int] = field(default_factory=lambda: {
+        1: 10, 2: 11, 3: 9, 4: 6
+    })
+    
+    # BPS to bonus conversion
+    bps_to_bonus: List[Tuple[int, float]] = field(default_factory=lambda: [
+        (40, 2.7), (35, 2.3), (30, 1.9), (26, 1.5),
+        (22, 1.1), (18, 0.7), (14, 0.4), (0, 0.15)
+    ])
+    
+    teammate_dilution: float = 0.70
+
+
+@dataclass
+class CleanSheetConfig:
+    """Clean sheet probability configuration."""
+    
+    cs_prob_min: float = 0.03
+    cs_prob_max: float = 0.55
+    league_avg_goals_per_game: float = 1.35
+    league_avg_cs_rate: float = 0.27
+
+
+@dataclass
+class CaptainConfig:
+    """Captain selection scoring configuration."""
+    
+    position_ceiling: Dict[int, float] = field(default_factory=lambda: {
+        1: 0.70, 2: 0.85, 3: 1.12, 4: 1.18
+    })
+    
+    elite_ppg_threshold: float = 8.0
+    elite_ppg_bonus: float = 1.15
+    good_ppg_threshold: float = 7.0
+    good_ppg_bonus: float = 1.10
+    solid_ppg_threshold: float = 6.0
+    solid_ppg_bonus: float = 1.05
+    poor_ppg_threshold: float = 4.0
+    poor_ppg_penalty: float = 0.85
+    
+    ownership_tiers: List[Tuple[float, float]] = field(default_factory=lambda: [
+        (5, 0.08), (10, 0.05), (20, 0.02),
+        (35, -0.01), (50, -0.03), (100, -0.05)
+    ])
+
+
+# Initialize global config
+MODEL_CONFIG = {
+    "fdr": FDRConfig(),
+    "home_away": HomeAwayConfig(),
+    "xpts": XptsConfig(),
+    "variance": VarianceConfig(),
+    "bonus": BonusConfig(),
+    "clean_sheet": CleanSheetConfig(),
+    "captain": CaptainConfig(),
+}
 
 
 def get_current_season() -> str:
@@ -312,32 +509,20 @@ MIN_MINUTES_DEFAULT = 400
 POSITION_MAP = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
 POSITION_ID_MAP = {"GKP": 1, "DEF": 2, "MID": 3, "FWD": 4}
 
-# New FDR multipliers (1-10 scale, 10 = hardest)
-# Higher FDR = harder fixture = lower expected points
-FDR_MULTIPLIERS_10 = {
-    1: 1.30,   # Very easy
-    2: 1.20,
-    3: 1.10,
-    4: 1.05,
-    5: 1.00,   # Neutral
-    6: 0.95,
-    7: 0.90,
-    8: 0.85,
-    9: 0.75,
-    10: 0.65,  # Very hard
-}
+# FDR multipliers now come from config (with price-based dampening)
+# These are the BASE multipliers - actual multipliers depend on player price
+FDR_MULTIPLIERS_10 = MODEL_CONFIG["fdr"].fdr_multipliers
 
 # Fallback: Map old FPL 1-5 scale to our 1-10 scale
 FPL_FDR_TO_10 = {1: 2, 2: 4, 3: 5, 4: 7, 5: 9}
 
-# DEFCON thresholds (2025/26 rules)
-DEFCON_THRESHOLD_DEF = 10
-DEFCON_THRESHOLD_MID = 12
-DEFCON_POINTS = 1.5  # DEFCON bonus for DEF/MID
+# DEFCON thresholds from config
+DEFCON_THRESHOLD_DEF = MODEL_CONFIG["xpts"].defcon_threshold_def
+DEFCON_THRESHOLD_MID = MODEL_CONFIG["xpts"].defcon_threshold_mid
+DEFCON_POINTS = MODEL_CONFIG["xpts"].defcon_points
 
-# Fixture importance weights - near-term fixtures matter more
-# Sum = 1.0 for easy normalization
-FIXTURE_WEIGHTS = [0.30, 0.22, 0.18, 0.12, 0.08, 0.05, 0.03, 0.02]
+# Fixture importance weights from config
+FIXTURE_WEIGHTS = MODEL_CONFIG["xpts"].fixture_weights
 
 # European teams for rotation modeling
 EUROPEAN_TEAMS_UCL = {"Arsenal", "Aston Villa", "Liverpool", "Man City"}
@@ -348,15 +533,15 @@ EUROPEAN_TEAMS_UECL = {"Chelsea"}
 ROTATION_MANAGERS = {"Man City": 0.85, "Chelsea": 0.88, "Brighton": 0.90, "Newcastle": 0.92}
 STABLE_MANAGERS = {"Arsenal": 1.0, "Liverpool": 0.98, "Fulham": 1.0, "Bournemouth": 1.0, "Brentford": 0.98}
 
-# League averages for normalization (2024/25 PL stats)
-LEAGUE_AVG_GOALS_PER_GAME = 1.35  # ~2.7 total goals per match
-LEAGUE_AVG_CS_RATE = 0.27  # About 27% of teams keep clean sheets
+# League averages from config
+LEAGUE_AVG_GOALS_PER_GAME = MODEL_CONFIG["clean_sheet"].league_avg_goals_per_game
+LEAGUE_AVG_CS_RATE = MODEL_CONFIG["clean_sheet"].league_avg_cs_rate
 
-# Home advantage factors (asymmetric - PL data shows home boost > away penalty)
-HOME_ATTACK_BOOST = 1.19  # Teams score ~19% more at home
-HOME_DEFENCE_BOOST = 1.15  # Teams concede ~15% less at home
-AWAY_ATTACK_PENALTY = 0.87  # Teams score ~13% less away (not symmetric with home boost)
-AWAY_DEFENCE_PENALTY = 0.90  # Teams concede ~10% more away
+# Home advantage factors from config
+HOME_ATTACK_BOOST = MODEL_CONFIG["home_away"].home_attack_boost
+HOME_DEFENCE_BOOST = MODEL_CONFIG["home_away"].home_defence_boost
+AWAY_ATTACK_PENALTY = MODEL_CONFIG["home_away"].away_attack_penalty
+AWAY_DEFENCE_PENALTY = MODEL_CONFIG["home_away"].away_defence_penalty
 
 # Yellow/Red card expected points deduction per 90
 YELLOW_CARD_RATE_PENALTY = -0.15  # Avg ~0.15 yellows/90 for most players
@@ -400,18 +585,35 @@ PENALTY_TAKERS = {
     420: (0.28, 0.85),  # Eze
 }
 
-# Horizon uncertainty - longer horizons have more variance
-# Apply small regression that increases with fixtures ahead
-HORIZON_REGRESSION = {
-    1: 1.00,   # Next GW - trust model
-    2: 0.99,
-    3: 0.98,
-    4: 0.97,
-    5: 0.96,
-    6: 0.95,
-    7: 0.94,
-    8: 0.93,   # 8 GWs out - 7% regression
-}
+# Horizon regression from config
+HORIZON_REGRESSION = MODEL_CONFIG["xpts"].horizon_regression
+
+
+def get_price_adjusted_fdr_multiplier(fdr: int, player_price: float) -> float:
+    """
+    Get FDR multiplier with price-based dampening.
+    
+    Premium players (£10m+) are less affected by fixtures because skill overcomes difficulty.
+    Budget players get full FDR effect.
+    
+    Args:
+        fdr: Fixture difficulty 1-10
+        player_price: Player price in millions
+        
+    Returns:
+        Adjusted FDR multiplier
+    """
+    fdr_config = MODEL_CONFIG["fdr"]
+    base_mult = fdr_config.fdr_multipliers.get(fdr, 1.0)
+    
+    if player_price >= fdr_config.premium_price_threshold:
+        dampening = fdr_config.premium_dampening
+    elif player_price >= fdr_config.mid_price_threshold:
+        dampening = fdr_config.mid_price_dampening
+    else:
+        dampening = fdr_config.budget_dampening
+    
+    return 1.0 + (base_mult - 1.0) * dampening
 
 
 def calculate_goals_conceded_penalty(xGA: float) -> float:
@@ -731,6 +933,471 @@ class PlannerResponse(BaseModel):
     
     class Config:
         extra = "allow"
+
+
+# =============================================================================
+# MODEL DATA CLASSES
+# =============================================================================
+
+@dataclass
+class HomeAwaySplit:
+    """Player's home vs away performance statistics."""
+    home_xG90: float = 0.0
+    away_xG90: float = 0.0
+    home_xA90: float = 0.0
+    away_xA90: float = 0.0
+    home_pts_per_90: float = 0.0
+    away_pts_per_90: float = 0.0
+    home_games: int = 0
+    away_games: int = 0
+    has_sufficient_data: bool = False
+    
+    @property
+    def home_xGI90(self) -> float:
+        return self.home_xG90 + self.home_xA90
+    
+    @property
+    def away_xGI90(self) -> float:
+        return self.away_xG90 + self.away_xA90
+
+
+@dataclass
+class CSProbability:
+    """Clean sheet probability for a fixture."""
+    cs_prob: float
+    expected_goals_against: float
+    data_source: str
+    opponent_attack_strength: float = 1.0
+
+
+@dataclass
+class AttackingEstimate:
+    """Attacking returns estimate for a fixture."""
+    xG90: float
+    xA90: float
+    attack_multiplier: float
+    fixture_xG90: float
+    fixture_xA90: float
+    data_source: str
+
+
+@dataclass
+class BonusEstimate:
+    """Bonus points estimate."""
+    expected_bonus: float
+    estimated_bps: float
+    bonus_per_90_historical: float
+    teammate_dilution_applied: bool = False
+
+
+@dataclass
+class VarianceEstimate:
+    """Ceiling and floor estimates."""
+    ceiling: float
+    floor: float
+    std_dev: float
+    data_source: str
+
+
+@dataclass
+class FixtureXpts:
+    """xPts breakdown for a single fixture."""
+    fixture_gw: int
+    opponent_id: int
+    opponent_name: str
+    is_home: bool
+    difficulty: int
+    
+    appearance_pts: float = 0.0
+    goal_pts: float = 0.0
+    assist_pts: float = 0.0
+    cs_pts: float = 0.0
+    bonus_pts: float = 0.0
+    save_pts: float = 0.0
+    defcon_pts: float = 0.0
+    
+    yellow_deduction: float = 0.0
+    og_deduction: float = 0.0
+    gc_deduction: float = 0.0
+    
+    cs_prob: float = 0.0
+    expected_goals_against: float = 0.0
+    attack_multiplier: float = 1.0
+    
+    @property
+    def total_xpts(self) -> float:
+        return (
+            self.appearance_pts + self.goal_pts + self.assist_pts +
+            self.cs_pts + self.bonus_pts + self.save_pts + self.defcon_pts -
+            self.yellow_deduction - self.og_deduction - self.gc_deduction
+        )
+
+
+# =============================================================================
+# MODEL IMPLEMENTATIONS
+# =============================================================================
+
+class HomeAwaySplitCalculator:
+    """Calculate player's home vs away performance splits from GW history."""
+    
+    def __init__(self, min_games: int = 8):
+        self.min_games = min_games
+    
+    def calculate_splits(
+        self,
+        player_history: Optional[Dict],
+        player_data: Dict
+    ) -> HomeAwaySplit:
+        """Calculate home/away performance splits from player history."""
+        split = HomeAwaySplit()
+        
+        if not player_history or not player_history.get("history"):
+            return split
+        
+        history = player_history["history"]
+        
+        home_stats = {"minutes": 0, "xG": 0, "xA": 0, "points": 0, "games": 0}
+        away_stats = {"minutes": 0, "xG": 0, "xA": 0, "points": 0, "games": 0}
+        
+        for gw in history:
+            mins = gw.get("minutes", 0)
+            if mins == 0:
+                continue
+            
+            was_home = gw.get("was_home", True)
+            stats = home_stats if was_home else away_stats
+            
+            stats["minutes"] += mins
+            stats["xG"] += float(gw.get("expected_goals", 0) or 0)
+            stats["xA"] += float(gw.get("expected_assists", 0) or 0)
+            stats["points"] += gw.get("total_points", 0)
+            stats["games"] += 1
+        
+        split.home_games = home_stats["games"]
+        split.away_games = away_stats["games"]
+        
+        if home_stats["minutes"] >= 90:
+            home_90s = home_stats["minutes"] / 90
+            split.home_xG90 = home_stats["xG"] / home_90s
+            split.home_xA90 = home_stats["xA"] / home_90s
+            split.home_pts_per_90 = home_stats["points"] / home_90s
+        
+        if away_stats["minutes"] >= 90:
+            away_90s = away_stats["minutes"] / 90
+            split.away_xG90 = away_stats["xG"] / away_90s
+            split.away_xA90 = away_stats["xA"] / away_90s
+            split.away_pts_per_90 = away_stats["points"] / away_90s
+        
+        split.has_sufficient_data = (
+            split.home_games >= self.min_games and 
+            split.away_games >= self.min_games
+        )
+        
+        return split
+
+
+class CleanSheetModel:
+    """
+    Calculate fixture-specific clean sheet probability.
+    
+    KEY FIX: CS probability now depends on OPPONENT's attacking strength,
+    not just your team's defensive baseline.
+    """
+    
+    def __init__(self, config: CleanSheetConfig = None):
+        self.config = config or MODEL_CONFIG["clean_sheet"]
+    
+    def calculate_fixture_cs_probability(
+        self,
+        team_id: int,
+        opponent_id: int,
+        is_home: bool,
+        fdr_data: Dict[int, Dict],
+        fixture_xg_data: Optional[Dict] = None,
+        fixture_xg_weight: float = 0.0
+    ) -> CSProbability:
+        """Calculate CS probability for a specific fixture."""
+        ha_config = MODEL_CONFIG["home_away"]
+        data_source = "model"
+        
+        # Get team's baseline xGA
+        if fdr_data and team_id in fdr_data:
+            team_xga_baseline = fdr_data[team_id].get('blended_xga', 1.3)
+        else:
+            team_xga_baseline = 1.3
+        
+        # Get opponent's attacking strength
+        if fdr_data and opponent_id in fdr_data:
+            opponent_attack = fdr_data[opponent_id].get('blended_xg', self.config.league_avg_goals_per_game)
+        else:
+            opponent_attack = self.config.league_avg_goals_per_game
+        
+        opponent_attack_multiplier = opponent_attack / self.config.league_avg_goals_per_game
+        
+        if fixture_xg_data and fixture_xg_weight > 0:
+            # Use fixture-specific projection
+            if is_home:
+                fixture_xga = fixture_xg_data.get("away_xg", 1.3)
+            else:
+                fixture_xga = fixture_xg_data.get("home_xg", 1.5)
+            
+            # Model-based xGA for blending
+            if is_home:
+                ha_factor = 1.0 / ha_config.home_defence_boost
+                opp_mult = opponent_attack_multiplier * ha_config.away_attack_penalty
+            else:
+                ha_factor = 1.0 / ha_config.away_defence_penalty
+                opp_mult = opponent_attack_multiplier * ha_config.home_attack_boost
+            
+            model_xga = team_xga_baseline * opp_mult * ha_factor
+            expected_goals_against = (
+                fixture_xg_weight * fixture_xga + 
+                (1 - fixture_xg_weight) * model_xga
+            )
+            data_source = "fixture_xg+model"
+        else:
+            # Pure model-based
+            if is_home:
+                ha_factor = 1.0 / ha_config.home_defence_boost
+                opp_mult = opponent_attack_multiplier * ha_config.away_attack_penalty
+            else:
+                ha_factor = 1.0 / ha_config.away_defence_penalty
+                opp_mult = opponent_attack_multiplier * ha_config.home_attack_boost
+            
+            expected_goals_against = team_xga_baseline * opp_mult * ha_factor
+            data_source = "team_model"
+        
+        expected_goals_against = max(0.4, min(3.0, expected_goals_against))
+        
+        # Poisson CS probability
+        cs_prob = math.exp(-expected_goals_against)
+        cs_prob = max(self.config.cs_prob_min, min(self.config.cs_prob_max, cs_prob))
+        
+        return CSProbability(
+            cs_prob=round(cs_prob, 4),
+            expected_goals_against=round(expected_goals_against, 3),
+            data_source=data_source,
+            opponent_attack_strength=round(opp_mult, 3)
+        )
+
+
+class AttackingModel:
+    """
+    Calculate fixture-adjusted attacking returns with home/away splits
+    and price-based FDR dampening.
+    """
+    
+    def __init__(self, config: FDRConfig = None):
+        self.config = config or MODEL_CONFIG["fdr"]
+    
+    def get_fdr_multiplier(self, fdr: int, player_price: float) -> float:
+        """Get FDR multiplier with price-based dampening."""
+        base_mult = self.config.fdr_multipliers.get(fdr, 1.0)
+        
+        if player_price >= self.config.premium_price_threshold:
+            dampening = self.config.premium_dampening
+        elif player_price >= self.config.mid_price_threshold:
+            dampening = self.config.mid_price_dampening
+        else:
+            dampening = self.config.budget_dampening
+        
+        return 1.0 + (base_mult - 1.0) * dampening
+    
+    def calculate_fixture_attacking(
+        self,
+        base_xG90: float,
+        base_xA90: float,
+        opponent_id: int,
+        is_home: bool,
+        fdr_data: Dict[int, Dict],
+        home_away_split: Optional[HomeAwaySplit] = None,
+        player_price: float = 5.0
+    ) -> AttackingEstimate:
+        """Calculate fixture-adjusted xG/xA with home/away splits."""
+        ha_config = MODEL_CONFIG["home_away"]
+        data_source = "base_rate"
+        
+        xG90 = base_xG90
+        xA90 = base_xA90
+        
+        # Apply home/away split if available
+        if home_away_split and home_away_split.has_sufficient_data:
+            if is_home:
+                split_xG90 = home_away_split.home_xG90
+                split_xA90 = home_away_split.home_xA90
+            else:
+                split_xG90 = home_away_split.away_xG90
+                split_xA90 = home_away_split.away_xA90
+            
+            # Blend split with overall
+            xG90 = ha_config.split_weight * split_xG90 + (1 - ha_config.split_weight) * base_xG90
+            xA90 = ha_config.split_weight * split_xA90 + (1 - ha_config.split_weight) * base_xA90
+            data_source = "home_away_split"
+        
+        # Calculate attack multiplier from FDR
+        attack_multiplier = 1.0
+        
+        if fdr_data and opponent_id in fdr_data:
+            opp_def_fdr = fdr_data[opponent_id].get("defence_fdr", 5)
+            attack_multiplier = self.get_fdr_multiplier(round(opp_def_fdr), player_price)
+            data_source += "+fdr"
+        
+        # Apply home/away adjustment
+        if is_home:
+            attack_multiplier *= ha_config.home_attack_boost
+        else:
+            attack_multiplier *= ha_config.away_attack_penalty
+        
+        # Cap the total boost
+        attack_multiplier = max(0.78, min(1.22, attack_multiplier))
+        
+        fixture_xG90 = xG90 * attack_multiplier
+        fixture_xA90 = xA90 * attack_multiplier
+        
+        return AttackingEstimate(
+            xG90=round(xG90, 4),
+            xA90=round(xA90, 4),
+            attack_multiplier=round(attack_multiplier, 4),
+            fixture_xG90=round(fixture_xG90, 4),
+            fixture_xA90=round(fixture_xA90, 4),
+            data_source=data_source
+        )
+
+
+class VarianceModel:
+    """
+    Calculate ceiling and floor using historical variance.
+    
+    KEY FIX: Uses player's actual points std dev when available,
+    not flat position multipliers.
+    """
+    
+    def __init__(self, config: VarianceConfig = None):
+        self.config = config or MODEL_CONFIG["variance"]
+    
+    def calculate_variance(
+        self,
+        player_history: Optional[Dict],
+        player_data: Dict,
+        position_id: int,
+        xpts: float,
+        fixture_fdr: int = 5,
+        is_home: bool = True
+    ) -> VarianceEstimate:
+        """Calculate ceiling/floor using historical variance."""
+        data_source = "position_baseline"
+        std_dev = self.config.position_stdev_baseline.get(position_id, 3.0)
+        
+        # Try player-specific std dev from history
+        if player_history and player_history.get("history"):
+            history = player_history["history"]
+            
+            points_list = [
+                h.get("total_points", 0) 
+                for h in history 
+                if h.get("minutes", 0) >= 45
+            ]
+            
+            if len(points_list) >= self.config.min_games_for_stdev:
+                mean_pts = sum(points_list) / len(points_list)
+                variance = sum((p - mean_pts) ** 2 for p in points_list) / (len(points_list) - 1)
+                player_stdev = math.sqrt(variance)
+                
+                # Blend with position baseline
+                history_weight = min(1.0, len(points_list) / 25)
+                std_dev = history_weight * player_stdev + (1 - history_weight) * std_dev
+                data_source = "historical"
+        
+        # Base ceiling and floor
+        base_ceiling = xpts + self.config.ceiling_z * std_dev
+        base_floor = xpts + self.config.floor_z * std_dev
+        
+        # Fixture quality adjustment to ceiling
+        fixture_boost = self.config.fixture_ceiling_boost.get(fixture_fdr, 1.0)
+        ha_boost = self.config.home_ceiling_boost if is_home else self.config.away_ceiling_penalty
+        
+        ceiling = base_ceiling * fixture_boost * ha_boost
+        floor = max(0, base_floor)
+        
+        return VarianceEstimate(
+            ceiling=round(ceiling, 2),
+            floor=round(floor, 2),
+            std_dev=round(std_dev, 2),
+            data_source=data_source
+        )
+
+
+class BonusModel:
+    """
+    Calculate expected bonus points with teammate competition.
+    """
+    
+    def __init__(self, config: BonusConfig = None):
+        self.config = config or MODEL_CONFIG["bonus"]
+    
+    def calculate_bonus(
+        self,
+        player_data: Dict,
+        position_id: int,
+        fixture_xG90: float,
+        fixture_xA90: float,
+        cs_prob: float,
+        teammate_competition: bool = False
+    ) -> BonusEstimate:
+        """Calculate expected bonus for a fixture."""
+        total_minutes = int(player_data.get("minutes", 0) or 0)
+        bonus = int(player_data.get("bonus", 0) or 0)
+        
+        if total_minutes >= 180:
+            mins90 = total_minutes / 90.0
+            bonus_per_90 = bonus / mins90
+        else:
+            bonus_per_90 = 0.45
+        
+        # Estimate BPS
+        goal_bps = fixture_xG90 * self.config.bps_per_goal.get(position_id, 24)
+        assist_bps = fixture_xA90 * self.config.bps_per_assist
+        cs_bps = cs_prob * self.config.bps_per_cs.get(position_id, 0)
+        base = self.config.base_bps_by_position.get(position_id, 8)
+        
+        estimated_bps = base + goal_bps + assist_bps + cs_bps
+        
+        # Convert BPS to expected bonus
+        expected_bonus = 0.15
+        for threshold, bonus_val in self.config.bps_to_bonus:
+            if estimated_bps >= threshold:
+                expected_bonus = bonus_val
+                break
+        
+        # Blend historical and modeled
+        if total_minutes >= 1350:
+            final_bonus = 0.65 * bonus_per_90 + 0.35 * expected_bonus
+        elif total_minutes >= 720:
+            final_bonus = 0.50 * bonus_per_90 + 0.50 * expected_bonus
+        else:
+            final_bonus = 0.30 * bonus_per_90 + 0.70 * expected_bonus
+        
+        dilution_applied = False
+        if teammate_competition:
+            final_bonus *= self.config.teammate_dilution
+            dilution_applied = True
+        
+        final_bonus = max(0.1, min(2.5, final_bonus))
+        
+        return BonusEstimate(
+            expected_bonus=round(final_bonus, 3),
+            estimated_bps=round(estimated_bps, 1),
+            bonus_per_90_historical=round(bonus_per_90, 3),
+            teammate_dilution_applied=dilution_applied
+        )
+
+
+# Initialize global model instances
+home_away_calculator = HomeAwaySplitCalculator(min_games=MODEL_CONFIG["home_away"].min_games_for_split)
+cs_model = CleanSheetModel()
+attacking_model = AttackingModel()
+variance_model = VarianceModel()
+bonus_model = BonusModel()
 
 
 # ============ CACHE ============
@@ -1730,6 +2397,10 @@ def calculate_expected_points(
     
     team_id = player["team"]
     team_name = teams_dict.get(team_id, {}).get("name", "")
+    player_price = float(player.get("now_cost", 50) or 50) / 10  # For price-based FDR dampening
+    
+    # Calculate home/away split for this player
+    home_away_split = home_away_calculator.calculate_splits(player_history, player)
     
     # Get expected minutes
     exp_mins, mins_reason = calculate_expected_minutes(
@@ -1991,7 +2662,8 @@ def calculate_expected_points(
             # Blend with FDR-based multiplier
             if cache.fdr_data and opponent_id in cache.fdr_data:
                 opp_def_fdr = cache.fdr_data[opponent_id].get("defence_fdr", 5)
-                fdr_attack_mult = FDR_MULTIPLIERS_10.get(round(opp_def_fdr), 1.0)
+                # Use price-adjusted FDR multiplier
+                fdr_attack_mult = get_price_adjusted_fdr_multiplier(round(opp_def_fdr), player_price)
                 if is_home:
                     fdr_attack_mult *= HOME_ATTACK_BOOST
                 else:
@@ -2010,9 +2682,8 @@ def calculate_expected_points(
                 opp_def_fdr = 3 + (opp_cs_rate / 0.35) * 5
                 opp_def_fdr = min(10, max(1, opp_def_fdr))
             
-            # FDR multiplier for attacking returns
-            # Easier defence = more goals expected
-            attack_multiplier = FDR_MULTIPLIERS_10.get(round(opp_def_fdr), 1.0)
+            # FDR multiplier for attacking returns - use price-adjusted version
+            attack_multiplier = get_price_adjusted_fdr_multiplier(round(opp_def_fdr), player_price)
             
             # Home/away adjustment for attacking (asymmetric)
             if is_home:
@@ -2023,9 +2694,27 @@ def calculate_expected_points(
         # CAP TOTAL FIXTURE BOOST AT 22% - reasonable swing for home vs weak defence
         attack_multiplier = min(1.22, max(0.78, attack_multiplier))
         
+        # ==================== HOME/AWAY SPLIT FOR xGI ====================
+        # If player has sufficient home/away history, blend with split-specific rates
+        fixture_xG90_base = xG90
+        fixture_xA90_base = xA90
+        
+        if home_away_split.has_sufficient_data:
+            ha_config = MODEL_CONFIG["home_away"]
+            if is_home:
+                split_xG90 = home_away_split.home_xG90
+                split_xA90 = home_away_split.home_xA90
+            else:
+                split_xG90 = home_away_split.away_xG90
+                split_xA90 = home_away_split.away_xA90
+            
+            # Blend split with overall (60% split, 40% overall)
+            fixture_xG90_base = ha_config.split_weight * split_xG90 + (1 - ha_config.split_weight) * xG90
+            fixture_xA90_base = ha_config.split_weight * split_xA90 + (1 - ha_config.split_weight) * xA90
+        
         # Apply penalty boost to xG if player is a penalty taker
-        fixture_xG90 = (xG90 + penalty_boost) * attack_multiplier
-        fixture_xA90 = xA90 * attack_multiplier
+        fixture_xG90 = (fixture_xG90_base + penalty_boost) * attack_multiplier
+        fixture_xA90 = fixture_xA90_base * attack_multiplier
         
         # ==================== FIXTURE-SPECIFIC BONUS ====================
         # Bonus is competitive within each match - doesn't scale as aggressively as xG
@@ -2270,11 +2959,33 @@ def calculate_expected_points(
     # Final xPts = per-fixture rate × number of fixtures
     final_xpts = xpts_per_fixture * len(horizon)
     
-    # Calculate ceiling and floor for variance modeling
-    # Ceiling: 80th percentile outcome (good form, favorable fixtures)
-    # Floor: 20th percentile outcome (poor form, tough fixtures)
-    xpts_ceiling = final_xpts * (1.25 if position in [3, 4] else 1.15)
-    xpts_floor = final_xpts * (0.65 if position in [3, 4] else 0.75)
+    # Calculate ceiling and floor using variance model (historical stdev)
+    # This replaces the flat multipliers with proper variance-based calculations
+    player_price = float(player.get("now_cost", 50) or 50) / 10
+    
+    # Get next fixture info for ceiling adjustment
+    next_fixture_fdr = 5
+    next_fixture_home = True
+    if horizon:
+        next_fixture_fdr = horizon[0].get("difficulty", 5)
+        next_fixture_home = horizon[0].get("is_home", True)
+    
+    variance_result = variance_model.calculate_variance(
+        player_history=player_history,
+        player_data=player,
+        position_id=position,
+        xpts=xpts_per_fixture,  # Per-fixture for variance calc
+        fixture_fdr=next_fixture_fdr,
+        is_home=next_fixture_home
+    )
+    
+    # Scale ceiling/floor to horizon
+    xpts_ceiling = variance_result.ceiling * len(horizon)
+    xpts_floor = variance_result.floor * len(horizon)
+    
+    # Track variance info for debugging
+    variance_source = variance_result.data_source
+    std_dev = variance_result.std_dev
     
     return {
         "xpts": round(final_xpts, 2),
@@ -2296,6 +3007,10 @@ def calculate_expected_points(
         "cs_prob": round(avg_cs_prob, 2),
         "xG_per_90": round(xG90, 2),
         "xA_per_90": round(xA90, 2),
+        # New fields from refactored models
+        "std_dev": round(std_dev, 2),
+        "variance_source": variance_source,
+        "home_away_split_used": home_away_split.has_sufficient_data,
     }
 
 
@@ -5368,6 +6083,150 @@ async def backtest_summary(
         "overall_rmse": round(math.sqrt(sum(e**2 for e in all_errors) / len(all_errors)), 2),
         "avg_correlation": round(statistics.mean([g["correlation"] for g in gw_stats if g["correlation"]]), 3) if gw_stats else None,
         "gw_breakdown": gw_stats,
+    }
+
+
+# ============ VARIANCE AND HOME/AWAY SPLIT ENDPOINTS ============
+
+@app.get("/api/player/{player_id}/variance")
+async def get_player_variance(player_id: int):
+    """
+    Get variance statistics for a player.
+    
+    Useful for understanding ceiling/floor calculations and
+    validating the variance model.
+    """
+    data = await fetch_fpl_data()
+    player = next((p for p in data["elements"] if p["id"] == player_id), None)
+    
+    if not player:
+        raise HTTPException(404, "Player not found")
+    
+    history = await fetch_player_history(player_id)
+    position_id = player["element_type"]
+    
+    # Calculate variance
+    variance_result = variance_model.calculate_variance(
+        player_history=history,
+        player_data=player,
+        position_id=position_id,
+        xpts=5.0,  # Reference xpts for calculation
+        fixture_fdr=5,
+        is_home=True
+    )
+    
+    # Get historical points distribution
+    points_dist = []
+    if history and history.get("history"):
+        points_dist = [
+            h.get("total_points", 0) 
+            for h in history["history"] 
+            if h.get("minutes", 0) >= 45
+        ]
+    
+    return {
+        "player_id": player_id,
+        "name": player["web_name"],
+        "position": POSITION_MAP.get(position_id),
+        "variance": {
+            "std_dev": variance_result.std_dev,
+            "ceiling_per_fixture": variance_result.ceiling,
+            "floor_per_fixture": variance_result.floor,
+            "data_source": variance_result.data_source,
+        },
+        "historical_points": {
+            "games_played": len(points_dist),
+            "min": min(points_dist) if points_dist else None,
+            "max": max(points_dist) if points_dist else None,
+            "mean": round(sum(points_dist) / len(points_dist), 2) if points_dist else None,
+            "recent_20": points_dist[-20:],
+        }
+    }
+
+
+@app.get("/api/player/{player_id}/home-away-split")
+async def get_player_home_away_split(player_id: int):
+    """
+    Get home vs away performance splits for a player.
+    
+    Shows xG90, xA90, and points per 90 for home vs away games.
+    """
+    data = await fetch_fpl_data()
+    player = next((p for p in data["elements"] if p["id"] == player_id), None)
+    
+    if not player:
+        raise HTTPException(404, "Player not found")
+    
+    history = await fetch_player_history(player_id)
+    
+    # Calculate splits
+    split = home_away_calculator.calculate_splits(history, player)
+    
+    # Overall stats for comparison
+    total_minutes = int(player.get("minutes", 0) or 0)
+    mins90 = max(total_minutes / 90.0, 0.1)
+    xG = float(player.get("expected_goals", 0) or 0)
+    xA = float(player.get("expected_assists", 0) or 0)
+    
+    return {
+        "player_id": player_id,
+        "name": player["web_name"],
+        "team": player["team"],
+        "position": POSITION_MAP.get(player["element_type"]),
+        "overall": {
+            "xG_per_90": round(xG / mins90, 3),
+            "xA_per_90": round(xA / mins90, 3),
+            "xGI_per_90": round((xG + xA) / mins90, 3),
+            "total_games": split.home_games + split.away_games,
+        },
+        "home": {
+            "xG_per_90": round(split.home_xG90, 3),
+            "xA_per_90": round(split.home_xA90, 3),
+            "xGI_per_90": round(split.home_xGI90, 3),
+            "pts_per_90": round(split.home_pts_per_90, 2),
+            "games": split.home_games,
+        },
+        "away": {
+            "xG_per_90": round(split.away_xG90, 3),
+            "xA_per_90": round(split.away_xA90, 3),
+            "xGI_per_90": round(split.away_xGI90, 3),
+            "pts_per_90": round(split.away_pts_per_90, 2),
+            "games": split.away_games,
+        },
+        "has_sufficient_data": split.has_sufficient_data,
+        "min_games_required": MODEL_CONFIG["home_away"].min_games_for_split,
+    }
+
+
+@app.get("/api/config")
+async def get_model_config():
+    """
+    Get current model configuration.
+    
+    Useful for understanding calibration values and debugging.
+    """
+    return {
+        "fdr": {
+            "multipliers": MODEL_CONFIG["fdr"].fdr_multipliers,
+            "premium_dampening": MODEL_CONFIG["fdr"].premium_dampening,
+            "mid_price_dampening": MODEL_CONFIG["fdr"].mid_price_dampening,
+            "premium_threshold": MODEL_CONFIG["fdr"].premium_price_threshold,
+        },
+        "home_away": {
+            "home_attack_boost": MODEL_CONFIG["home_away"].home_attack_boost,
+            "away_attack_penalty": MODEL_CONFIG["home_away"].away_attack_penalty,
+            "split_weight": MODEL_CONFIG["home_away"].split_weight,
+            "min_games_for_split": MODEL_CONFIG["home_away"].min_games_for_split,
+        },
+        "variance": {
+            "position_stdev": MODEL_CONFIG["variance"].position_stdev_baseline,
+            "min_games_for_stdev": MODEL_CONFIG["variance"].min_games_for_stdev,
+        },
+        "xpts": {
+            "fixture_weights": MODEL_CONFIG["xpts"].fixture_weights,
+            "defcon_threshold_def": MODEL_CONFIG["xpts"].defcon_threshold_def,
+            "defcon_threshold_mid": MODEL_CONFIG["xpts"].defcon_threshold_mid,
+        }
     }
 
 
