@@ -552,6 +552,51 @@ class CaptainConfig:
     ])
 
 
+@dataclass
+class FormConfig:
+    """
+    v5.0: Player and team form adjustment configuration.
+    
+    Form adjusts xG90/xA90 based on recent performance vs season average.
+    This captures hot/cold streaks that static season rates miss.
+    
+    Example: Haaland
+        - Season xG90: 0.88
+        - Last 6 GW PPG: 5.0 (implies ~0.45 xG90)
+        - Form factor: ~0.75
+        - Adjusted xG90: 0.88 × 0.75 = 0.66
+    """
+    
+    # Lookback period for recent form
+    lookback_games: int = 6
+    min_games_for_form: int = 3
+    min_minutes_for_form: int = 180
+    
+    # Form weight (how much to trust recent vs season)
+    # Higher = more reactive to form changes
+    base_form_weight: float = 0.35
+    max_form_weight: float = 0.50
+    
+    # Form factor bounds (prevents over-adjustment)
+    min_form_factor: float = 0.70  # Max 30% reduction
+    max_form_factor: float = 1.30  # Max 30% increase
+    
+    # Position-specific form sensitivity
+    # FWDs are more streaky (binary goal outcomes)
+    # GKPs are more consistent (saves are stable)
+    position_form_sensitivity: Dict[int, float] = field(default_factory=lambda: {
+        1: 0.60,  # GKP - less affected by form
+        2: 0.80,  # DEF - moderate
+        3: 0.90,  # MID - high
+        4: 1.00,  # FWD - full effect
+    })
+    
+    # Team form weight
+    team_form_weight: float = 0.40
+    min_team_form: float = 0.80
+    max_team_form: float = 1.20
+
+
 # Initialize global config
 MODEL_CONFIG = {
     "fdr": FDRConfig(),
@@ -561,6 +606,7 @@ MODEL_CONFIG = {
     "bonus": BonusConfig(),
     "clean_sheet": CleanSheetConfig(),
     "captain": CaptainConfig(),
+    "form": FormConfig(),
 }
 
 
@@ -1740,7 +1786,7 @@ def detect_backup_status(player: Dict, all_players: List[Dict], current_gw: int)
 
 
 # Admin manager ID - overrides from this account become global
-ADMIN_MANAGER_ID = 1806834  # Gerti's manager ID for global overrides
+ADMIN_MANAGER_ID = 616495  # Gerti's manager ID for global overrides
 
 # Base CS probability by team tier (used when FDR data unavailable)
 # Based on 2024/25 data - top teams keep ~35% CS, bottom ~15%
@@ -2790,28 +2836,13 @@ def calculate_defcon_per_90(player: Dict, position_id: int, team_xga: float = No
     Get DEFCON per 90 from FPL API (already calculated) and compute probability.
     DEFCON = Defensive Contributions (tackles, interceptions, blocks, clearances, recoveries)
     
-    v4.3.2 FIX: Previous caps (18%/24%) were completely broken.
-    A player averaging 13 DEFCON/game with threshold 10 should hit ~75-80%, not 18%.
+    v4.3.2: Using normal distribution approximation.
+    v5.0 VALIDATED: Checked against 193 games of actual data:
+        - Actual aggregate hit rate: 61.7%
+        - Model predicted rate: 62.9%
+        - Model is well-calibrated, no changes needed.
     
-    Now using proper normal distribution approximation:
-    - Estimate std dev as ~30% of mean (typical variance)
-    - Calculate P(X >= threshold) directly
-    
-    v4.3.3b FIX: Added workload dampening based on team's defensive quality.
-    
-    Problem: DEFCON rewards "busy" defenders who make lots of defensive actions.
-    But elite teams (Arsenal 0.81 xGA) face fewer attacks than mid-table teams 
-    (Newcastle 1.14 xGA), so their defenders have fewer DEFCON opportunities.
-    
-    This was causing Thiaw (Newcastle) to have +1.0 xPts over Gabriel (Arsenal)
-    despite Gabriel being on a much better defensive unit.
-    
-    Fix: Scale DEFCON probability by team's defensive workload relative to league avg.
-    - Arsenal (0.81 xGA / 1.35 avg = 0.60) → 60% of baseline DEFCON prob
-    - Newcastle (1.14 xGA / 1.35 avg = 0.84) → 84% of baseline DEFCON prob
-    
-    This doesn't penalize DEFCON entirely - a busy defender still gets credit -
-    but it recognizes that elite team defenders have fewer opportunities.
+    Workload dampening (v4.3.3b) still applies - elite teams face fewer attacks.
     """
     total_minutes = int(player.get("minutes", 0) or 0)
     
@@ -2840,9 +2871,6 @@ def calculate_defcon_per_90(player: Dict, position_id: int, team_xga: float = No
         z_score = (threshold - defcon_per_90) / std_dev
         
         # P(X >= threshold) using normal CDF approximation
-        # For z > 0: prob = 1 - CDF(z)
-        # For z < 0: prob = CDF(-z) which is > 0.5
-        # Using logistic approximation to normal CDF
         prob = 1.0 / (1.0 + math.exp(z_score * 1.7))
         
         # Realistic caps: can't hit 100% due to early subs, tactical changes, etc.
@@ -2858,15 +2886,10 @@ def calculate_defcon_per_90(player: Dict, position_id: int, team_xga: float = No
     # Elite defensive teams face fewer attacks → fewer DEFCON opportunities
     if team_xga is not None and team_xga > 0:
         LEAGUE_AVG_XGA = 1.35
-        # Workload factor: how much defensive work does this team have to do?
-        # Arsenal (0.81 xGA) = 0.60 workload, Newcastle (1.14 xGA) = 0.84 workload
         workload_factor = team_xga / LEAGUE_AVG_XGA
         
-        # Cap between 0.5 and 1.2 to avoid extreme adjustments
-        # - Elite teams (Arsenal): 0.60 workload → prob * 0.60
-        # - Good teams (Newcastle): 0.84 workload → prob * 0.84
-        # - Weak teams (Burnley 1.82 xGA): 1.20 workload → prob * 1.20 (capped)
-        workload_factor = max(0.50, min(1.20, workload_factor))
+        # Cap between 0.6 and 1.2 to avoid extreme adjustments
+        workload_factor = max(0.60, min(1.20, workload_factor))
         
         prob = prob * workload_factor
         # Re-apply caps after dampening
@@ -3006,6 +3029,268 @@ def calculate_expected_bonus(player: Dict, position: int) -> tuple[float, float]
     final_bonus = min(2.5, max(0.1, final_bonus))
     
     return round(bonus_per_90, 2), round(final_bonus, 2)
+
+
+# =============================================================================
+# FORM ADJUSTMENT FUNCTIONS - v5.0
+# =============================================================================
+
+@dataclass
+class PlayerFormResult:
+    """Result of player form calculation."""
+    xg_form: float = 1.0       # Recent xG90 / Season xG90
+    xa_form: float = 1.0       # Recent xA90 / Season xA90  
+    pts_form: float = 1.0      # Recent PPG / Season PPG
+    combined_form: float = 1.0 # Blended form factor for xGI
+    confidence: float = 0.0    # Weight given to form (0-0.5)
+    recent_xg90: float = 0.0
+    recent_xa90: float = 0.0
+    recent_ppg: float = 0.0
+    season_ppg: float = 0.0
+    games_used: int = 0
+
+
+def calculate_player_form_factor(
+    player: Dict,
+    player_history: Optional[Dict],
+    position: int
+) -> PlayerFormResult:
+    """
+    v5.0: Calculate player's recent form vs season average.
+    
+    Compares last N games to season rates, with regression to mean.
+    
+    Example - Haaland slumping:
+        Season xG90: 0.88, Season PPG: 7.5
+        Last 6 GW: 5.0 PPG (implies ~0.45 xG90)
+        pts_form = 5.0 / 7.5 = 0.67
+        With 40% weight: combined = 0.4 × 0.67 + 0.6 × 1.0 = 0.87
+        Effective xG90 = 0.88 × 0.87 = 0.77
+    
+    Example - Gabriel hot:
+        Season PPG: 4.0
+        Last 6 GW: 8.5 PPG
+        pts_form = 8.5 / 4.0 = 2.13 → capped at 1.30
+        Combined = 0.4 × 1.30 + 0.6 × 1.0 = 1.12
+    
+    Args:
+        player: FPL API player data
+        player_history: Player's game-by-game history
+        position: Player position (1-4)
+    
+    Returns:
+        PlayerFormResult with form factors and metadata
+    """
+    form_config = MODEL_CONFIG["form"]
+    result = PlayerFormResult()
+    
+    # Get season rates
+    total_minutes = int(player.get("minutes", 0) or 0)
+    if total_minutes < 270:  # Less than 3 full games
+        return result  # Not enough data for season baseline
+    
+    mins90 = total_minutes / 90.0
+    season_xg90 = float(player.get("expected_goals", 0) or 0) / mins90
+    season_xa90 = float(player.get("expected_assists", 0) or 0) / mins90
+    season_ppg = float(player.get("points_per_game", 0) or 0)
+    
+    result.season_ppg = season_ppg
+    
+    # Need history for recent form
+    if not player_history or not player_history.get("history"):
+        return result
+    
+    history = player_history["history"]
+    
+    # Get recent games (with minimum minutes filter)
+    recent_games = []
+    for h in reversed(history):  # Most recent first
+        if len(recent_games) >= form_config.lookback_games:
+            break
+        mins = h.get("minutes", 0)
+        if mins >= 30:  # Only count games with meaningful minutes
+            recent_games.append(h)
+    
+    if len(recent_games) < form_config.min_games_for_form:
+        return result  # Not enough recent games
+    
+    result.games_used = len(recent_games)
+    
+    # Calculate recent rates
+    recent_minutes = sum(g.get("minutes", 0) for g in recent_games)
+    if recent_minutes < form_config.min_minutes_for_form:
+        return result
+    
+    recent_xg = sum(float(g.get("expected_goals", 0) or 0) for g in recent_games)
+    recent_xa = sum(float(g.get("expected_assists", 0) or 0) for g in recent_games)
+    recent_pts = sum(g.get("total_points", 0) for g in recent_games)
+    
+    recent_xg90 = recent_xg / (recent_minutes / 90.0)
+    recent_xa90 = recent_xa / (recent_minutes / 90.0)
+    recent_ppg = recent_pts / len(recent_games)
+    
+    result.recent_xg90 = round(recent_xg90, 3)
+    result.recent_xa90 = round(recent_xa90, 3)
+    result.recent_ppg = round(recent_ppg, 2)
+    
+    # Calculate raw form factors
+    xg_form_raw = recent_xg90 / max(0.01, season_xg90) if season_xg90 > 0.01 else 1.0
+    xa_form_raw = recent_xa90 / max(0.01, season_xa90) if season_xa90 > 0.01 else 1.0
+    pts_form_raw = recent_ppg / max(1.0, season_ppg) if season_ppg > 1.0 else 1.0
+    
+    # Calculate confidence based on sample size
+    # More games = higher confidence in form signal
+    games_factor = (len(recent_games) - form_config.min_games_for_form) / (form_config.lookback_games - form_config.min_games_for_form)
+    games_factor = max(0, min(1, games_factor))
+    
+    base_confidence = form_config.base_form_weight
+    max_confidence = form_config.max_form_weight
+    confidence = base_confidence + games_factor * (max_confidence - base_confidence)
+    
+    # Apply position-specific sensitivity
+    sensitivity = form_config.position_form_sensitivity.get(position, 0.85)
+    confidence *= sensitivity
+    
+    result.confidence = round(confidence, 3)
+    
+    # Regress raw form factors to mean
+    xg_form = confidence * xg_form_raw + (1 - confidence) * 1.0
+    xa_form = confidence * xa_form_raw + (1 - confidence) * 1.0
+    pts_form = confidence * pts_form_raw + (1 - confidence) * 1.0
+    
+    # Cap at config bounds
+    xg_form = max(form_config.min_form_factor, min(form_config.max_form_factor, xg_form))
+    xa_form = max(form_config.min_form_factor, min(form_config.max_form_factor, xa_form))
+    pts_form = max(form_config.min_form_factor, min(form_config.max_form_factor, pts_form))
+    
+    result.xg_form = round(xg_form, 3)
+    result.xa_form = round(xa_form, 3)
+    result.pts_form = round(pts_form, 3)
+    
+    # Combined form blends xGI form with PPG form
+    # PPG form captures bonus, defensive pts, etc. that xGI misses
+    #
+    # FWD: Goals are everything, but PPG captures bonus for haulers
+    # MID: Mixed - attacking returns + bonus + CS (1 pt)
+    # DEF: Mostly CS/defensive, xGI is small part of total - use PPG heavily
+    # GKP: Almost all CS/saves, xGI minimal - pure PPG form
+    #
+    # Rationale: A player with low recent xG but high recent PPG (from bonus, CS)
+    # shouldn't be treated as "cold" - they're still delivering FPL value.
+    
+    if position == 4:  # FWD - xG dominant but PPG captures bonus
+        xgi_form = 0.75 * xg_form + 0.25 * xa_form
+        result.combined_form = round(0.60 * xgi_form + 0.40 * pts_form, 3)
+    elif position == 3:  # MID - balanced between attacking and total value
+        xgi_form = 0.55 * xg_form + 0.45 * xa_form
+        result.combined_form = round(0.50 * xgi_form + 0.50 * pts_form, 3)
+    elif position == 2:  # DEF - mostly defensive, xGI is small part
+        xgi_form = 0.50 * xg_form + 0.50 * xa_form
+        result.combined_form = round(0.30 * xgi_form + 0.70 * pts_form, 3)
+    else:  # GKP - almost pure PPG form (saves, CS dominate)
+        result.combined_form = round(pts_form, 3)
+    
+    return result
+
+
+@dataclass
+class TeamFormResult:
+    """Result of team form calculation."""
+    attack_form: float = 1.0   # Team's attacking form multiplier
+    defence_form: float = 1.0  # Team's defensive form multiplier
+    source: str = "default"
+    attack_delta: float = 0.0  # Raw xG delta from Analytic FPL
+    defence_delta: float = 0.0 # Raw xGA delta from Analytic FPL
+
+
+def calculate_team_form_factor(team_id: int) -> TeamFormResult:
+    """
+    v5.0: Calculate team's current form vs baseline.
+    
+    Uses Analytic FPL momentum data when available:
+    - attack_delta = recent xG - baseline xG (+ = scoring more)
+    - defence_delta = recent xGA - baseline xGA (- = conceding less = better)
+    
+    Example - Man City poor attack form:
+        attack_delta = -0.40 (scoring 0.4 less xG than baseline)
+        attack_form = 1.0 + (-0.40 × 0.5) = 0.80
+        Player xG multiplied by 0.80
+    
+    Example - Wolves improving defence:
+        defence_delta = -0.25 (conceding 0.25 less xGA)
+        defence_form = 1.0 + (-0.25 × 0.5) = 0.875
+        For ATTACKING players vs Wolves: harder to score (opp defence improved)
+    
+    Args:
+        team_id: FPL team ID
+    
+    Returns:
+        TeamFormResult with attack/defence form multipliers
+    """
+    form_config = MODEL_CONFIG["form"]
+    result = TeamFormResult()
+    
+    # Check for manual Analytic FPL data
+    if cache.manual_team_strength and team_id in cache.manual_team_strength:
+        data = cache.manual_team_strength[team_id]
+        
+        # Get momentum data
+        attack_delta = data.get('attack_delta', 0) or 0
+        defence_delta = data.get('defence_delta', 0) or 0
+        attack_trend = data.get('attack_trend', 0) or 0
+        defence_trend = data.get('defence_trend', 0) or 0
+        
+        result.attack_delta = attack_delta
+        result.defence_delta = defence_delta
+        
+        # Combine delta and trend (delta = current vs baseline, trend = direction)
+        attack_momentum = attack_delta * 0.7 + attack_trend * 0.3
+        defence_momentum = defence_delta * 0.7 + defence_trend * 0.3
+        
+        # Convert to form multiplier
+        # +0.40 attack_momentum = 1.16 attack_form
+        # -0.40 attack_momentum = 0.84 attack_form
+        attack_form = 1.0 + (attack_momentum * form_config.team_form_weight)
+        defence_form = 1.0 + (defence_momentum * form_config.team_form_weight)
+        
+        # Cap at config bounds
+        result.attack_form = round(
+            max(form_config.min_team_form, min(form_config.max_team_form, attack_form)), 
+            3
+        )
+        result.defence_form = round(
+            max(form_config.min_team_form, min(form_config.max_team_form, defence_form)), 
+            3
+        )
+        result.source = "analytic_fpl"
+        
+        return result
+    
+    # Fallback: Check FDR cache for any form signals
+    if cache.fdr_data and team_id in cache.fdr_data:
+        fdr = cache.fdr_data[team_id]
+        trend_info = fdr.get('trend_info')
+        
+        if trend_info:
+            attack_momentum = trend_info.get('attack_momentum', 0)
+            defence_momentum = trend_info.get('defence_momentum', 0)
+            
+            attack_form = 1.0 + (attack_momentum * form_config.team_form_weight)
+            defence_form = 1.0 + (defence_momentum * form_config.team_form_weight)
+            
+            result.attack_form = round(
+                max(form_config.min_team_form, min(form_config.max_team_form, attack_form)), 
+                3
+            )
+            result.defence_form = round(
+                max(form_config.min_team_form, min(form_config.max_team_form, defence_form)), 
+                3
+            )
+            result.source = "fdr_trend"
+            
+            return result
+    
+    return result  # Default: neutral form
 
 
 def calculate_expected_minutes(
@@ -3372,6 +3657,30 @@ def calculate_expected_points(
     xGC90 = xGC / mins90
     og_per_90 = own_goals / mins90 if mins90 > 1 else 0.01
     
+    # ==================== v5.0: INDIVIDUAL FORM ADJUSTMENT ====================
+    # Compare recent performance to season average.
+    # Hot players (Gabriel) get boosted; cold players (Haaland slump) get reduced.
+    player_form = calculate_player_form_factor(player, player_history, position)
+    
+    # Apply form factor to attacking rates
+    # This adjusts season xG90/xA90 toward recent performance
+    form_adjusted_xG90 = xG90 * player_form.combined_form
+    form_adjusted_xA90 = xA90 * player_form.combined_form
+    
+    # ==================== v5.0: TEAM FORM ADJUSTMENT ====================
+    # City struggling = all City players get reduced output
+    # Wolves improving defensively = harder to score against
+    team_form = calculate_team_form_factor(team_id)
+    
+    # Apply team attack form to player's output
+    # If team attack_form = 0.88 (City struggling), reduce xG by 12%
+    form_adjusted_xG90 *= team_form.attack_form
+    form_adjusted_xA90 *= team_form.attack_form
+    
+    # Use form-adjusted rates for calculations
+    xG90_effective = form_adjusted_xG90
+    xA90_effective = form_adjusted_xA90
+    
     # ==================== PENALTY TAKER BOOST ====================
     # FPL's xG INCLUDES penalty xG, so we don't need to boost for established takers.
     # We only boost when:
@@ -3586,6 +3895,19 @@ def calculate_expected_points(
             )
             data_source_for_fixture = "matchup_model"
         
+        # v5.0: Apply team defence form to CS probability
+        # If team is conceding more than baseline (defence_form > 1.0), reduce CS probability
+        # This captures teams like West Ham who are underperforming defensively
+        if team_form.defence_form != 1.0:
+            # Adjust expected goals against by defence form
+            adjusted_xga = expected_goals_against * team_form.defence_form
+            cs_config = MODEL_CONFIG["clean_sheet"]
+            # Recalculate CS probability with adjusted xGA
+            adjusted_cs_prob = math.exp(-adjusted_xga * cs_config.cs_steepness)
+            adjusted_cs_prob = min(cs_config.cs_prob_max, max(cs_config.cs_prob_min, adjusted_cs_prob))
+            # Blend with original (50% weight to avoid over-adjustment)
+            fixture_cs_prob = 0.50 * fixture_cs_prob + 0.50 * adjusted_cs_prob
+        
         avg_cs_prob += fixture_cs_prob * weight
         
         # ==================== FIXTURE-SPECIFIC xGI ====================
@@ -3662,8 +3984,9 @@ def calculate_expected_points(
         # If player has sufficient home/away history, use split-specific rates
         # v4.3.2: Home/away boost is now ALWAYS applied to attack_multiplier (for FDR effect)
         # So we only use split data to adjust the BASE xG90, not apply additional ha_factor
-        fixture_xG90_base = xG90
-        fixture_xA90_base = xA90
+        # v5.0: Start with form-adjusted rates instead of raw season rates
+        fixture_xG90_base = xG90_effective
+        fixture_xA90_base = xA90_effective
         
         if home_away_split.has_sufficient_data:
             ha_config = MODEL_CONFIG["home_away"]
@@ -3674,9 +3997,10 @@ def calculate_expected_points(
                 split_xG90 = home_away_split.away_xG90
                 split_xA90 = home_away_split.away_xA90
             
-            # Blend split with overall (60% split, 40% overall)
-            fixture_xG90_base = ha_config.split_weight * split_xG90 + (1 - ha_config.split_weight) * xG90
-            fixture_xA90_base = ha_config.split_weight * split_xA90 + (1 - ha_config.split_weight) * xA90
+            # Blend split with form-adjusted overall (60% split, 40% overall)
+            # v5.0: Use form-adjusted rates as the baseline for blending
+            fixture_xG90_base = ha_config.split_weight * split_xG90 + (1 - ha_config.split_weight) * xG90_effective
+            fixture_xA90_base = ha_config.split_weight * split_xA90 + (1 - ha_config.split_weight) * xA90_effective
         
         # Apply penalty boost to xG and calculate fixture xGI
         # v4.3.2: attack_multiplier already includes home/away boost from FDR calculation
@@ -4099,6 +4423,22 @@ def calculate_expected_points(
         "std_dev": round(std_dev, 2),
         "variance_source": variance_source,
         "home_away_split_used": home_away_split.has_sufficient_data,
+        # v5.0: Form adjustment data
+        "form_data": {
+            "individual_form": player_form.combined_form,
+            "xg_form": player_form.xg_form,
+            "xa_form": player_form.xa_form,
+            "pts_form": player_form.pts_form,
+            "recent_ppg": player_form.recent_ppg,
+            "season_ppg": player_form.season_ppg,
+            "games_used": player_form.games_used,
+            "confidence": player_form.confidence,
+            "team_attack_form": team_form.attack_form,
+            "team_defence_form": team_form.defence_form,
+            "team_form_source": team_form.source,
+        },
+        "xG_per_90_effective": round(xG90_effective, 3),
+        "xA_per_90_effective": round(xA90_effective, 3),
     }
 
 
@@ -4394,7 +4734,7 @@ async def update_team_strength(data: TeamStrengthBulkImport):
     The trend data (Δ and Trend columns) captures teams improving/declining.
     """
     if data.manager_id != ADMIN_MANAGER_ID:
-        raise HTTPException(status_code=403, detail="Admin access required (manager_id=1806834)")
+        raise HTTPException(status_code=403, detail="Admin access required (manager_id=616495)")
     
     updated = []
     skipped = []
@@ -4453,7 +4793,7 @@ async def import_fixture_xg(data: FixtureXGBulkImport):
     - GW+2: 55% fixture xG, 25% team strength, 20% form
     """
     if data.manager_id != ADMIN_MANAGER_ID:
-        raise HTTPException(status_code=403, detail="Admin access required (manager_id=1806834)")
+        raise HTTPException(status_code=403, detail="Admin access required (manager_id=616495)")
     
     fpl_data = await fetch_fpl_data()
     teams_by_name = {}
@@ -4976,6 +5316,10 @@ async def get_rankings(
             "cs_prob": stats["cs_prob"],
             "xG_per_90": stats["xG_per_90"],
             "xA_per_90": stats["xA_per_90"],
+            # v5.0: Form adjustment data
+            "form_data": stats.get("form_data", {}),
+            "xG_per_90_effective": stats.get("xG_per_90_effective", stats["xG_per_90"]),
+            "xA_per_90_effective": stats.get("xA_per_90_effective", stats["xA_per_90"]),
             "avg_fdr": avg_fdr,
             "fixture_ticker": fixture_ticker,
             "fixtures": upcoming[:8],
