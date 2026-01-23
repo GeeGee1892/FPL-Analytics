@@ -1,5 +1,5 @@
 """
-FPL Assistant Backend - FastAPI v4.3.2
+FPL Assistant Backend - FastAPI v4.3.3
 Enhanced with:
 - Composite FDR model (1-10 scale) using Understat xG data
 - Position-specific FDR: attack_fdr for FWD/MID, defence_fdr for DEF/GKP
@@ -364,10 +364,11 @@ class FDRConfig:
     # Position-specific dampening multipliers (applied on top of price dampening)
     # Attackers should feel fixtures MORE than defenders
     # FWDs destroy weak defences; DEFs are more consistent
+    # v4.3.3: MIDs slightly boosted (many elite MIDs play as wingers/AMs like Salah, Wirtz)
     position_dampening: Dict[int, float] = field(default_factory=lambda: {
         1: 0.85,   # GKP - moderate fixture dependency (CS-driven)
         2: 0.90,   # DEF - moderate (CS + attacking returns)
-        3: 1.00,   # MID - full effect (balanced profile)
+        3: 1.05,   # MID - slightly boosted (many play advanced positions)
         4: 1.10,   # FWD - AMPLIFIED effect (premiums massacre weak defences)
     })
     
@@ -517,8 +518,10 @@ class BonusConfig:
 class CleanSheetConfig:
     """Clean sheet probability configuration."""
     
+    # v4.3.3: Lowered CS cap from 52% to 45% - DEFs were overvalued
+    # Even Arsenal's elite defence rarely exceeds 45% CS rate
     cs_prob_min: float = 0.05            # v4.3: Raised from 0.03 - very hard fixtures still have small chance
-    cs_prob_max: float = 0.52            # v4.3: Raised from 0.40 - elite defences vs weak attacks hit 50%+
+    cs_prob_max: float = 0.45            # v4.3.3: Lowered from 0.52 - realistic cap
     league_avg_goals_per_game: float = 1.35
     league_avg_cs_rate: float = 0.27
     # v4.3: Steepness factor for Poisson CS calculation
@@ -560,12 +563,14 @@ class PlannerConfig:
         4: {"budget_max": 7.0, "mid_max": 9.4},
     })
     
-    hard_fixture_fdr: int = 7
-    very_hard_fixture_fdr: int = 8
+    # v4.3.3: Raised thresholds to reduce flag spam
+    # FDR 8 = top 6 away fixture, should only flag FDR 9-10 as "hard"
+    hard_fixture_fdr: int = 8           # Was 7 - only flag genuinely hard fixtures
+    very_hard_fixture_fdr: int = 9      # Was 8 - premium hard = top 4 away only
     fixture_run_length: int = 3
     bgw_starter_threshold: int = 2
     poor_form_percentile: float = 0.25
-    xpts_gap_threshold: float = 0.15
+    xpts_gap_threshold: float = 0.20    # Was 0.15 - only flag 20%+ gap (was too sensitive)
     
     sell_weight_fixtures: float = 0.30
     sell_weight_form: float = 0.30
@@ -580,6 +585,9 @@ class PlannerConfig:
     health_weight_position_clash: float = 2.0
     health_weight_premium_hard: float = 1.5
     health_weight_poor_form: float = 1.0
+    
+    # v4.3.3: Limit problems per player to reduce noise
+    max_problems_per_player: int = 2
 
 
 # Initialize global config
@@ -1130,6 +1138,94 @@ PENALTY_TAKERS = {
     326: (0.25, 0.85),  # Jimenez
     # Crystal Palace
     420: (0.28, 0.85),  # Eze
+}
+
+
+# v4.3.3: Absolute xGA to FDR conversion thresholds
+# This replaces the broken min/max normalization that was creating FDR 8 for everyone
+# Based on PL historical data: elite defence ~0.9 xGA, worst ~2.0 xGA
+def xga_to_attack_fdr(xga: float) -> int:
+    """
+    Convert xGA (goals conceded per game) to attack FDR (1-10 scale).
+    
+    Higher xGA = weaker defence = LOWER attack FDR (easier to score against)
+    Lower xGA = stronger defence = HIGHER attack FDR (harder to score against)
+    
+    Thresholds calibrated to PL data:
+    - Elite defence (Arsenal): ~0.85-1.0 xGA -> FDR 9-10
+    - Good defence (Liverpool, City): ~1.0-1.2 xGA -> FDR 7-8
+    - Average defence: ~1.3-1.5 xGA -> FDR 5-6
+    - Weak defence: ~1.6-1.8 xGA -> FDR 3-4
+    - Very weak (promoted): ~1.9-2.2 xGA -> FDR 1-2
+    """
+    if xga <= 0.85:
+        return 10  # Elite defence (rare)
+    elif xga <= 1.0:
+        return 9   # Top tier defence
+    elif xga <= 1.15:
+        return 8   # Very good defence
+    elif xga <= 1.30:
+        return 7   # Good defence
+    elif xga <= 1.45:
+        return 6   # Above average
+    elif xga <= 1.55:
+        return 5   # Average (neutral)
+    elif xga <= 1.70:
+        return 4   # Below average
+    elif xga <= 1.85:
+        return 3   # Weak defence
+    elif xga <= 2.0:
+        return 2   # Very weak
+    else:
+        return 1   # Bottom tier (promoted teams struggling)
+
+
+def xg_to_defence_fdr(xg: float) -> int:
+    """
+    Convert xG (goals scored per game) to defence FDR (1-10 scale).
+    
+    Higher xG = stronger attack = HIGHER defence FDR (harder to keep CS)
+    Lower xG = weaker attack = LOWER defence FDR (easier to keep CS)
+    
+    Thresholds calibrated to PL data:
+    - Elite attack (City, Liverpool): ~1.9-2.2 xG -> FDR 9-10
+    - Good attack (Arsenal, Chelsea): ~1.6-1.8 xG -> FDR 7-8
+    - Average attack: ~1.3-1.5 xG -> FDR 5-6
+    - Weak attack: ~1.0-1.2 xG -> FDR 3-4
+    - Very weak (promoted): ~0.7-0.9 xG -> FDR 1-2
+    """
+    if xg >= 2.1:
+        return 10  # Elite attack (City level)
+    elif xg >= 1.9:
+        return 9   # Top tier attack
+    elif xg >= 1.75:
+        return 8   # Very good attack
+    elif xg >= 1.60:
+        return 7   # Good attack
+    elif xg >= 1.45:
+        return 6   # Above average
+    elif xg >= 1.30:
+        return 5   # Average (neutral)
+    elif xg >= 1.15:
+        return 4   # Below average
+    elif xg >= 1.00:
+        return 3   # Weak attack
+    elif xg >= 0.85:
+        return 2   # Very weak
+    else:
+        return 1   # Bottom tier
+
+
+# v4.3.3: Default team strength data for promoted teams and fallback
+# Used when Understat has no data (new season, promoted teams)
+PROMOTED_TEAM_DEFAULTS = {
+    # 25/26 Promoted teams - values from Analytic FPL data
+    # These are fallbacks if Understat data is unavailable
+    # attack_fdr = how hard to score against them (based on their xGA)
+    # defence_fdr = how hard to keep CS against them (based on their xG)
+    10: {"name": "Burnley", "xg": 0.84, "xga": 1.82, "attack_fdr": 2, "defence_fdr": 2},  # Weakest
+    11: {"name": "Leeds", "xg": 1.15, "xga": 1.39, "attack_fdr": 6, "defence_fdr": 4},    # Best of promoted
+    17: {"name": "Sunderland", "xg": 0.82, "xga": 1.45, "attack_fdr": 5, "defence_fdr": 1},  # Weak attack
 }
 
 # Horizon regression from config
@@ -2423,46 +2519,58 @@ async def _do_fdr_refresh():
         all_home_xga.append(home_xga_per_game)
         all_away_xga.append(away_xga_per_game)
     
-    # Compute FDR scores using normalized xG/xGA values
-    # This gives more differentiation than percentiles
-    if len(all_form_xg) >= 5:
-        # Get min/max for normalization
-        min_xg, max_xg = min(all_form_xg), max(all_form_xg)
-        min_xga, max_xga = min(all_form_xga), max(all_form_xga)
-        xg_range = max(max_xg - min_xg, 0.5)  # Avoid division by zero
-        xga_range = max(max_xga - min_xga, 0.3)
+    # v4.3.3: Compute FDR scores using ABSOLUTE thresholds instead of min/max normalization
+    # The old min/max approach was broken because:
+    # 1. With limited data (promoted teams), the range collapsed
+    # 2. All teams ended up with similar FDR values (mostly 8)
+    # 3. Promoted teams like Leeds got FDR 8 when they should be FDR 2-3
+    
+    for team_id, data in fdr_data.items():
+        # Attack FDR: How hard to attack this team (based on their xGA)
+        # Use absolute xGA thresholds - not relative to other teams
+        attack_fdr = xga_to_attack_fdr(data['blended_xga'])
         
-        # v4.3.2: Venue-specific ranges
-        min_home_xga, max_home_xga = min(all_home_xga), max(all_home_xga)
-        min_away_xga, max_away_xga = min(all_away_xga), max(all_away_xga)
-        home_xga_range = max(max_home_xga - min_home_xga, 0.3)
-        away_xga_range = max(max_away_xga - min_away_xga, 0.3)
+        # Venue-specific attack FDR using same absolute thresholds
+        attack_fdr_home = xga_to_attack_fdr(data['home_xga_per_game'])
+        attack_fdr_away = xga_to_attack_fdr(data['away_xga_per_game'])
         
-        for team_id, data in fdr_data.items():
-            # Attack FDR: How hard to attack this team (based on their blended xGA)
-            # Low xGA = hard to score against = HIGH attack_fdr
-            # Normalize xGA to 0-1 scale, then invert and scale to 1-10
-            xga_norm = (data['blended_xga'] - min_xga) / xga_range  # 0 = best defense, 1 = worst
-            attack_fdr = int(round(1 + (1 - xga_norm) * 9))  # 1-10, inverted
-            
-            # v4.3.2: Venue-specific attack FDR
-            # attack_fdr_home = how hard to score against this team WHEN THEY'RE AT HOME
-            # attack_fdr_away = how hard to score against this team WHEN THEY'RE AWAY
-            home_xga_norm = (data['home_xga_per_game'] - min_home_xga) / home_xga_range
-            away_xga_norm = (data['away_xga_per_game'] - min_away_xga) / away_xga_range
-            attack_fdr_home = int(round(1 + (1 - home_xga_norm) * 9))
-            attack_fdr_away = int(round(1 + (1 - away_xga_norm) * 9))
-            
-            # Defence FDR: How hard to defend against this team (based on their blended xG)
-            # High xG = dangerous attack = HIGH defence_fdr
-            xg_norm = (data['blended_xg'] - min_xg) / xg_range  # 0 = weakest attack, 1 = strongest
-            defence_fdr = int(round(1 + xg_norm * 9))  # 1-10
-            
-            data['attack_fdr'] = max(1, min(10, attack_fdr))
-            data['attack_fdr_home'] = max(1, min(10, attack_fdr_home))  # v4.3.2
-            data['attack_fdr_away'] = max(1, min(10, attack_fdr_away))  # v4.3.2
-            data['defence_fdr'] = max(1, min(10, defence_fdr))
-            data['composite_fdr'] = round((data['attack_fdr'] + data['defence_fdr']) / 2, 1)
+        # Defence FDR: How hard to defend against this team (based on their xG)
+        defence_fdr = xg_to_defence_fdr(data['blended_xg'])
+        
+        data['attack_fdr'] = max(1, min(10, attack_fdr))
+        data['attack_fdr_home'] = max(1, min(10, attack_fdr_home))
+        data['attack_fdr_away'] = max(1, min(10, attack_fdr_away))
+        data['defence_fdr'] = max(1, min(10, defence_fdr))
+        data['composite_fdr'] = round((data['attack_fdr'] + data['defence_fdr']) / 2, 1)
+    
+    # v4.3.3: Add defaults for promoted teams if they're missing
+    # This ensures promoted teams get sensible FDR even if Understat has no data
+    for team_id, defaults in PROMOTED_TEAM_DEFAULTS.items():
+        if team_id not in fdr_data:
+            logger.info(f"Adding default FDR for promoted team: {defaults['name']}")
+            fdr_data[team_id] = {
+                'season_xg': 0,
+                'season_xga': 0,
+                'season_matches': 0,
+                'form_xg': defaults['xg'],
+                'form_xga': defaults['xga'],
+                'form_ppg': 0,
+                'season_xg_per_game': defaults['xg'],
+                'season_xga_per_game': defaults['xga'],
+                'blended_xg': defaults['xg'],
+                'blended_xga': defaults['xga'],
+                'home_xga_per_game': defaults['xga'] * 0.85,  # Better at home
+                'away_xga_per_game': defaults['xga'] * 1.15,  # Worse away
+                'cs_probability': round(math.exp(-defaults['xga']), 3),
+                'xg_per_game': defaults['xg'],
+                'attack_fdr': defaults['attack_fdr'],
+                'attack_fdr_home': min(10, defaults['attack_fdr'] + 1),  # Harder at home
+                'attack_fdr_away': max(1, defaults['attack_fdr'] - 1),  # Easier away
+                'defence_fdr': defaults['defence_fdr'],
+                'composite_fdr': round((defaults['attack_fdr'] + defaults['defence_fdr']) / 2, 1),
+                'data_source': 'promoted_team_defaults',
+                'trend_info': None,
+            }
     
     cache.fdr_data = fdr_data
     cache.fdr_last_update = datetime.now()
@@ -2478,9 +2586,20 @@ def get_fixture_fdr(opponent_id: int, is_home: bool, position_id: int, fpl_diffi
     - FWD/MID: Use opponent's attack_fdr (how hard to score against them)
     - DEF/GKP: Use opponent's defence_fdr (how hard to keep clean sheet)
     
+    v4.3.3: Removed the redundant +1/-1 venue adjustment since we now use
+    venue-specific FDR values (attack_fdr_home vs attack_fdr_away).
+    
     Falls back to FPL's built-in difficulty (converted to 1-10 scale) if 
     Understat data isn't available.
     """
+    # v4.3.3: Check for promoted team defaults first
+    if opponent_id in PROMOTED_TEAM_DEFAULTS and (not cache.fdr_data or opponent_id not in cache.fdr_data):
+        defaults = PROMOTED_TEAM_DEFAULTS[opponent_id]
+        if position_id in [3, 4]:  # MID, FWD - care about scoring
+            return defaults['attack_fdr']
+        else:  # GKP, DEF - care about clean sheets
+            return defaults['defence_fdr']
+    
     if not cache.fdr_data or opponent_id not in cache.fdr_data:
         # Fallback: convert FPL's 1-5 difficulty to our 1-10 scale
         if fpl_difficulty is not None:
@@ -2494,9 +2613,9 @@ def get_fixture_fdr(opponent_id: int, is_home: bool, position_id: int, fpl_diffi
     opponent_data = cache.fdr_data[opponent_id]
     
     # Position-specific FDR with venue consideration
-    # v4.3.2: Use venue-specific attack_fdr
-    # - If we're HOME, opponent is AWAY → use their attack_fdr_away
-    # - If we're AWAY, opponent is HOME → use their attack_fdr_home
+    # v4.3.3: Venue is already baked into attack_fdr_home/attack_fdr_away
+    # - If we're HOME, opponent is AWAY → use their attack_fdr_away (weaker on road)
+    # - If we're AWAY, opponent is HOME → use their attack_fdr_home (stronger at home)
     if position_id in [3, 4]:  # MID, FWD - care about scoring
         if is_home:
             base_fdr = opponent_data.get('attack_fdr_away', opponent_data.get('attack_fdr', 5))
@@ -2505,15 +2624,11 @@ def get_fixture_fdr(opponent_id: int, is_home: bool, position_id: int, fpl_diffi
     else:  # GKP, DEF - care about clean sheets
         base_fdr = opponent_data.get('defence_fdr', 5)
     
-    # v4.3.2: Venue-specific FDR already accounts for home/away, so remove additional adjustment
-    # Only apply small home advantage factor for the player (not opponent strength)
-    # Home teams exploit weaknesses slightly better
-    if is_home:
-        adjusted_fdr = max(1, base_fdr - 1)  # Slight boost for being home
-    else:
-        adjusted_fdr = min(10, base_fdr + 1)  # Slight penalty for being away
+    # v4.3.3: REMOVED the redundant +1/-1 venue adjustment
+    # The venue effect is already captured in attack_fdr_home vs attack_fdr_away
+    # Adding another adjustment was causing double-counting and pushing everything to 8
     
-    return max(1, min(10, adjusted_fdr))
+    return max(1, min(10, base_fdr))
 
 
 # ============ PLAYER STAT CALCULATIONS ============
@@ -3416,19 +3531,23 @@ def calculate_expected_points(
             else:
                 mult_cap_high, mult_cap_low = 1.65, 0.45
         elif position == 3:  # MID
+            # v4.3.3: Widened MID caps - they were getting undervalued vs DEFs
+            # Elite MIDs (Salah, Wirtz, Palmer) play in advanced positions and should
+            # benefit as much from easy fixtures as FWDs
             if player_price >= 10.0:
-                # Premium MID: Salah-tier
-                mult_cap_high, mult_cap_low = 1.45, 0.58
+                # Premium MID: Salah-tier - now matches premium FWD caps
+                mult_cap_high, mult_cap_low = 1.50, 0.52
             elif player_price >= 7.0:
-                mult_cap_high, mult_cap_low = 1.52, 0.52
+                mult_cap_high, mult_cap_low = 1.58, 0.48
             else:
-                mult_cap_high, mult_cap_low = 1.62, 0.48
+                mult_cap_high, mult_cap_low = 1.65, 0.45
         elif position == 2:  # DEF
-            # DEFs more consistent, but CS probability handles fixture variance
-            mult_cap_high, mult_cap_low = 1.30, 0.72
+            # v4.3.3: Slightly narrowed DEF caps - they were overvalued
+            # CS probability already handles fixture variance, attacking returns should be stable
+            mult_cap_high, mult_cap_low = 1.25, 0.75
         else:  # GKP
             # GKPs mostly CS-driven, attacking returns minimal
-            mult_cap_high, mult_cap_low = 1.22, 0.78
+            mult_cap_high, mult_cap_low = 1.20, 0.80
         
         attack_multiplier = min(mult_cap_high, max(mult_cap_low, attack_multiplier))
         
@@ -6920,11 +7039,29 @@ def detect_squad_problems(heatmap: Dict, benchmarks: Dict, current_gw: int, hori
     problems.sort(key=lambda x: x["priority"])
     seen = set()
     unique = []
+    
+    # v4.3.3: Track problems per player to reduce noise
+    problems_per_player = defaultdict(int)
+    max_per_player = config.max_problems_per_player
+    
     for p in problems:
         key = (p["type"], p["gw"], tuple(p["affected"]))
         if key not in seen:
-            seen.add(key)
-            unique.append(p)
+            # Check if any affected player has too many problems already
+            affected_names = p["affected"]
+            skip = False
+            for name in affected_names:
+                if problems_per_player[name] >= max_per_player:
+                    skip = True
+                    break
+            
+            if not skip:
+                seen.add(key)
+                unique.append(p)
+                # Increment counters for affected players
+                for name in affected_names:
+                    problems_per_player[name] += 1
+    
     return unique
 
 
