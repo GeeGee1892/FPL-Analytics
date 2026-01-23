@@ -3663,7 +3663,7 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
 
         <!-- PLANNER SECTION -->
         <section id="planner" class="section">
-            <!-- Planner Input -->
+            <!-- Planner Input Row -->
             <div class="planner-input-section" id="plannerInputSection">
                 <div class="team-input-title">🧠 Transfer Planner</div>
                 <div class="team-input-subtitle">Multi-GW transfer optimization with 3 strategy modes</div>
@@ -3675,6 +3675,30 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                         <option value="8" selected>8 GWs</option>
                     </select>
                     <button class="btn btn-primary" onclick="loadPlanner()">⚡ Plan</button>
+                </div>
+                
+                <!-- Pre-load Booked Transfers -->
+                <div class="planner-prebook" style="margin-top: 2rem; max-width: 500px; margin-left: auto; margin-right: auto;">
+                    <div class="planner-card-title" style="text-align: left;">📌 Pre-book Transfers (Optional)</div>
+                    <div class="prebook-help" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                        Plan transfers for specific GWs before loading. These will be locked into the strategy.
+                    </div>
+                    <div id="preBookedList"></div>
+                    <div class="booked-form" style="grid-template-columns: 1fr 1fr 70px 36px;">
+                        <input type="text" id="preBookedOut" placeholder="Out player name">
+                        <input type="text" id="preBookedIn" placeholder="In player name">
+                        <select id="preBookedGw">
+                            <option value="23">GW23</option>
+                            <option value="24">GW24</option>
+                            <option value="25">GW25</option>
+                            <option value="26">GW26</option>
+                            <option value="27">GW27</option>
+                            <option value="28">GW28</option>
+                            <option value="29">GW29</option>
+                            <option value="30">GW30</option>
+                        </select>
+                        <button onclick="addPreBookedTransfer()">+</button>
+                    </div>
                 </div>
             </div>
 
@@ -3689,6 +3713,7 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                 <!-- Top Bar -->
                 <div class="planner-topbar">
                     <div class="planner-info-row">
+                        <button class="btn-sm" onclick="showPlannerInput()" style="margin-right: 1rem;">← Edit</button>
                         <div class="planner-info-item">
                             <span class="planner-info-label">Manager</span>
                             <span class="planner-info-value" id="plannerManagerName">-</span>
@@ -5199,8 +5224,57 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
         let plannerData = null;
         let selectedStrategy = 'balanced';
         let bookedTransfers = [];
+        let preBookedTransfers = [];  // Before team load (by name)
         let plannerLoaded = false;
         let allPlayersBootstrap = [];
+
+        // Pre-booked transfer (before loading, by name)
+        function addPreBookedTransfer() {
+            const outName = document.getElementById('preBookedOut').value.trim();
+            const inName = document.getElementById('preBookedIn').value.trim();
+            const gw = parseInt(document.getElementById('preBookedGw').value);
+
+            if (!outName || !inName) {
+                alert('Please enter both player names');
+                return;
+            }
+
+            preBookedTransfers.push({
+                out_name: outName,
+                in_name: inName,
+                gw: gw
+            });
+
+            document.getElementById('preBookedOut').value = '';
+            document.getElementById('preBookedIn').value = '';
+
+            renderPreBookedList();
+        }
+
+        function removePreBookedTransfer(idx) {
+            preBookedTransfers.splice(idx, 1);
+            renderPreBookedList();
+        }
+
+        function renderPreBookedList() {
+            const container = document.getElementById('preBookedList');
+            if (preBookedTransfers.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = preBookedTransfers.map((bt, idx) => `
+                <div class="booked-item">
+                    <div class="booked-players">
+                        <span style="color: var(--text-muted);">GW${bt.gw}:</span>
+                        <span class="booked-out">${bt.out_name}</span>
+                        →
+                        <span class="booked-in">${bt.in_name}</span>
+                    </div>
+                    <button class="remove-booked" onclick="removePreBookedTransfer(${idx})">×</button>
+                </div>
+            `).join('');
+        }
 
         async function loadPlanner() {
             const teamIdInput = document.getElementById('plannerTeamIdInput');
@@ -5224,6 +5298,26 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                     const bootstrapRes = await fetch(`${API_BASE}/api/bootstrap`);
                     const bootstrapData = await bootstrapRes.json();
                     allPlayersBootstrap = bootstrapData.elements || [];
+                }
+
+                // Convert pre-booked transfers (by name) to booked transfers (by ID)
+                bookedTransfers = [];
+                for (const pbt of preBookedTransfers) {
+                    const outPlayer = allPlayersBootstrap.find(p => 
+                        p.web_name.toLowerCase().includes(pbt.out_name.toLowerCase())
+                    );
+                    const inPlayer = allPlayersBootstrap.find(p => 
+                        p.web_name.toLowerCase().includes(pbt.in_name.toLowerCase())
+                    );
+
+                    if (outPlayer && inPlayer) {
+                        bookedTransfers.push({
+                            out_id: outPlayer.id,
+                            in_id: inPlayer.id,
+                            gw: pbt.gw,
+                            reason: ''
+                        });
+                    }
                 }
 
                 // Load planner data
@@ -5268,7 +5362,7 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                 gwSelect.innerHTML += `<option value="${gw}">GW${gw}</option>`;
             }
 
-            // Chips
+            // Chips - render as styled badges
             const chipsDiv = document.getElementById('plannerChips');
             chipsDiv.innerHTML = Object.entries(plannerData.available_chips).map(([chip, available]) => 
                 `<span class="planner-chip ${available ? 'available' : 'used'}">${chip}</span>`
@@ -5342,7 +5436,7 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                 `;
             }).join('');
 
-            // Booked transfers
+            // Booked transfers (resolved from API response)
             renderBookedTransfers();
 
             // Strategies
@@ -5507,11 +5601,12 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
         function renderBookedTransfers() {
             const container = document.getElementById('bookedTransfers');
 
-            if (bookedTransfers.length === 0) {
-                container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.75rem;">No booked transfers. Plan ahead by adding transfers for future GWs.</div>';
+            if (bookedTransfers.length === 0 && preBookedTransfers.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.75rem;">No booked transfers. Use the form above to plan ahead.</div>';
                 return;
             }
 
+            // Show resolved booked transfers
             container.innerHTML = bookedTransfers.map((bt, idx) => {
                 const outPlayer = allPlayersBootstrap.find(p => p.id === bt.out_id);
                 const inPlayer = allPlayersBootstrap.find(p => p.id === bt.in_id);
@@ -5564,6 +5659,13 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                 reason: ''
             });
 
+            // Also add to preBooked for persistence
+            preBookedTransfers.push({
+                out_name: outPlayer.web_name,
+                in_name: inPlayer.web_name,
+                gw: gw
+            });
+
             // Clear inputs
             document.getElementById('bookedOut').value = '';
             document.getElementById('bookedIn').value = '';
@@ -5574,7 +5676,17 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
 
         function removeBookedTransfer(idx) {
             bookedTransfers.splice(idx, 1);
+            if (preBookedTransfers[idx]) {
+                preBookedTransfers.splice(idx, 1);
+            }
             loadPlanner();
+        }
+
+        // Back button to return to input
+        function showPlannerInput() {
+            document.getElementById('plannerContent').style.display = 'none';
+            document.getElementById('plannerInputSection').style.display = 'block';
+            renderPreBookedList();
         }
 
 

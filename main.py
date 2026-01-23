@@ -7258,26 +7258,27 @@ def get_chip_recommendations(
     return recommendations
 
 
-def generate_transfer_candidates(
+def generate_transfer_candidates_for_gw(
     squad: List[Dict],
     elements: List[Dict],
     fixtures: List[Dict],
     teams_dict: Dict,
     events: List[Dict],
-    current_gw: int,
+    target_gw: int,
+    remaining_horizon: int,
     bank: float,
-    horizon: int = 8,
-    strategy: str = "balanced",
+    strategy: str,
     fixture_swings: List[FixtureSwing] = None,
-    booked_transfers: List[Dict] = None
+    excluded_out_ids: set = None,
+    excluded_in_ids: set = None
 ) -> List[TransferRecommendation]:
     """
-    Generate transfer recommendations based on strategy.
+    Generate transfer recommendations for a specific GW.
     
-    Considers:
-    - xPts improvement over horizon
-    - Fixture swings (players from improving teams)
-    - Strategy preferences (nailed, differential, etc.)
+    Key difference from old version:
+    - Calculates xPts over REMAINING horizon from target_gw
+    - Respects excluded player IDs
+    - Strategy affects player selection (variance/ownership)
     """
     config = TransferPlannerConfig.STRATEGIES[strategy]
     recommendations = []
@@ -7287,6 +7288,9 @@ def generate_transfer_candidates(
     team_counts = defaultdict(int)
     elements_dict = {e["id"]: e for e in elements}
     
+    excluded_out_ids = excluded_out_ids or set()
+    excluded_in_ids = excluded_in_ids or set()
+    
     for p in squad:
         team_counts[p.get("team_id", 0)] += 1
     
@@ -7295,34 +7299,38 @@ def generate_transfer_candidates(
     if fixture_swings:
         for swing in fixture_swings:
             if swing.rating == "IMPROVING":
-                swing_bonus[swing.team_id] = 0.15  # 15% boost for improving fixtures
+                swing_bonus[swing.team_id] = 0.15
             elif swing.rating == "WORSENING":
-                swing_bonus[swing.team_id] = -0.10  # 10% penalty for worsening
-    
-    # Get booked out players
-    booked_out_ids = set()
-    booked_in_ids = set()
-    if booked_transfers:
-        for bt in booked_transfers:
-            booked_out_ids.add(bt.get("out_id"))
-            booked_in_ids.add(bt.get("in_id"))
+                swing_bonus[swing.team_id] = -0.10
     
     # For each squad player, find best replacement
     for out_player in squad:
         out_id = out_player["id"]
+        
+        # Skip if already transferred out
+        if out_id in excluded_out_ids:
+            continue
+            
         position_id = out_player.get("position_id", 3)
         position = POSITION_MAP.get(position_id, "MID")
-        
-        # Skip if already booked for transfer
-        if out_id in booked_out_ids:
-            continue
         
         available_budget = bank + out_player.get("selling_price", out_player.get("price", 5.0))
         out_xpts = out_player.get("xpts", 0)
         
+        # Recalculate OUT player xPts for remaining horizon
+        out_element = elements_dict.get(out_id)
+        if out_element:
+            out_upcoming = get_player_upcoming_fixtures(
+                out_element["team"], fixtures, target_gw, target_gw + remaining_horizon, teams_dict
+            )
+            out_stats = calculate_expected_points(
+                out_element, position_id, target_gw, out_upcoming, teams_dict, fixtures, events
+            )
+            out_xpts = out_stats["xpts"]
+        
         # Find candidates
         for player in elements:
-            if player["id"] in squad_ids or player["id"] in booked_in_ids:
+            if player["id"] in squad_ids or player["id"] in excluded_in_ids:
                 continue
             if player["element_type"] != position_id:
                 continue
@@ -7347,12 +7355,12 @@ def generate_transfer_candidates(
             if status in ["i", "s", "u"]:
                 continue
             
-            # Calculate xPts
+            # Calculate xPts for REMAINING horizon
             upcoming = get_player_upcoming_fixtures(
-                player["team"], fixtures, current_gw, current_gw + horizon, teams_dict
+                player["team"], fixtures, target_gw, target_gw + remaining_horizon, teams_dict
             )
             stats = calculate_expected_points(
-                player, position_id, current_gw, upcoming, teams_dict, fixtures, events
+                player, position_id, target_gw, upcoming, teams_dict, fixtures, events
             )
             
             in_xpts = stats["xpts"]
@@ -7362,33 +7370,41 @@ def generate_transfer_candidates(
             swing = swing_bonus.get(player_team, 0)
             effective_gain = xpts_gain * (1 + swing)
             
-            # Apply strategy preferences
+            # Strategy-specific adjustments
             ownership = float(player.get("selected_by_percent", 0) or 0)
-            
-            if config["ownership_preference"] == "differential":
-                if ownership < 10:
-                    effective_gain *= 1.15  # Boost differentials
-            elif config["ownership_preference"] == "template":
-                if ownership > 20:
-                    effective_gain *= 1.05  # Slight boost for safe picks
-            
-            # Ceiling/floor weighting
             ceiling = stats.get("xpts_ceiling", in_xpts * 1.2)
             floor = stats.get("xpts_floor", in_xpts * 0.7)
+            variance = ceiling - floor
             
-            weighted_xpts = (
-                in_xpts * (1 - config["ceiling_weight"] - config["floor_weight"]) +
-                ceiling * config["ceiling_weight"] +
-                floor * config["floor_weight"]
-            )
-            weighted_gain = weighted_xpts - out_xpts
+            # SAFE: Prefer high floor, high ownership
+            if strategy == "safe":
+                if ownership > 15:  # Template player
+                    effective_gain *= 1.08
+                if variance < 8:  # Low variance
+                    effective_gain *= 1.05
+                if variance > 15:  # High variance penalty
+                    effective_gain *= 0.90
+                    
+            # RISKY: Prefer high ceiling, low ownership differentials
+            elif strategy == "risky":
+                if ownership < 10:  # Differential
+                    effective_gain *= 1.15
+                if variance > 12:  # High variance bonus
+                    effective_gain *= 1.10
+                # Use ceiling-weighted value
+                effective_gain = effective_gain * 0.6 + (ceiling - out_xpts) * 0.4
             
-            # Nailed preference
+            # BALANCED: Mix
+            else:
+                weighted_xpts = in_xpts * 0.5 + ceiling * 0.3 + floor * 0.2
+                effective_gain = weighted_xpts - out_xpts
+            
+            # Nailed preference for safe
             exp_mins = stats.get("expected_minutes", 90)
             if config["prefer_nailed"] and exp_mins < 75:
-                weighted_gain *= 0.85  # Penalty for rotation risk
+                effective_gain *= 0.85
             
-            if effective_gain > config["min_xpts_gain_for_transfer"]:
+            if effective_gain > 0.3:  # Minimum threshold to consider
                 recommendations.append(TransferRecommendation(
                     out_player={
                         "id": out_id,
@@ -7415,11 +7431,11 @@ def generate_transfer_candidates(
                         "form": float(player.get("form", 0) or 0),
                         "ownership": ownership,
                         "expected_minutes": exp_mins,
-                        "fixtures": upcoming[:5],
+                        "variance": variance,
                     },
-                    gw=current_gw,
+                    gw=target_gw,
                     xpts_gain=round(effective_gain, 2),
-                    reason=f"+{effective_gain:.1f} xPts over {horizon}GW horizon",
+                    reason=f"+{effective_gain:.1f} xPts over {remaining_horizon}GW",
                     is_essential=False,
                     is_hit=False,
                     priority=2
@@ -7428,7 +7444,50 @@ def generate_transfer_candidates(
     # Sort by xPts gain
     recommendations.sort(key=lambda x: -x.xpts_gain)
     
-    return recommendations[:30]  # Top 30
+    return recommendations[:20]
+
+
+def calculate_roll_value(
+    current_ft: int,
+    gws_remaining: int,
+    has_dgw_ahead: bool,
+    has_bgw_ahead: bool,
+    critical_issues: int
+) -> float:
+    """
+    Calculate the expected value of rolling a free transfer.
+    
+    Factors:
+    - Already at 2+ FT = lower roll value (capped)
+    - DGW/BGW ahead = higher roll value (want flexibility)
+    - Critical issues = lower roll value (need to act)
+    - More GWs remaining = higher roll value
+    """
+    base_roll_value = 0.4  # Base optionality value
+    
+    # Already have 2+ FT - diminishing returns
+    if current_ft >= 2:
+        base_roll_value *= 0.6
+    if current_ft >= 3:
+        base_roll_value *= 0.5
+    if current_ft >= 4:
+        base_roll_value *= 0.3
+    
+    # DGW/BGW ahead - want flexibility
+    if has_dgw_ahead or has_bgw_ahead:
+        base_roll_value *= 1.4
+    
+    # Critical issues - need to act, not roll
+    if critical_issues >= 2:
+        base_roll_value *= 0.5
+    elif critical_issues >= 1:
+        base_roll_value *= 0.7
+    
+    # Horizon factor - more value if more GWs to plan
+    horizon_factor = min(gws_remaining / 8, 1.0)
+    base_roll_value *= (0.7 + 0.3 * horizon_factor)
+    
+    return base_roll_value
 
 
 def build_strategy_plan(
@@ -7449,7 +7508,13 @@ def build_strategy_plan(
     booked_transfers: List[Dict] = None
 ) -> StrategyPlan:
     """
-    Build a complete strategy plan for the given strategy type.
+    Build a complete strategy plan with proper multi-GW branching tree logic.
+    
+    Key principles:
+    1. Each GW, decide: transfer or roll based on value comparison
+    2. Track transferred players to prevent duplicates
+    3. Recalculate xPts for remaining horizon at each GW
+    4. Strategy affects both thresholds AND player selection
     """
     config = TransferPlannerConfig.STRATEGIES[strategy]
     elements_dict = {e["id"]: e for e in elements}
@@ -7462,23 +7527,37 @@ def build_strategy_plan(
     plan_transfers = 0
     gw_actions = {}
     
-    # Apply booked transfers first
+    # Track transferred players across horizon
+    transferred_out_ids = set()
+    transferred_in_ids = set()
+    
+    # Booked transfers by GW
     booked_by_gw = defaultdict(list)
     if booked_transfers:
         for bt in booked_transfers:
             booked_by_gw[bt.get("gw", current_gw)].append(bt)
+            transferred_out_ids.add(bt["out_id"])
+            transferred_in_ids.add(bt["in_id"])
     
-    horizon_end = min(current_gw + horizon, 38)
+    horizon_end = min(current_gw + horizon - 1, 38)
     total_xpts = 0
     
-    # Get critical issues that need immediate attention
+    # Detect DGW/BGW in horizon for roll value calculation
+    gw_info = detect_dgw_bgw(fixtures, events, current_gw, horizon_end)
+    has_dgw_in_horizon = any(info.get("dgw_teams") for info in gw_info.values())
+    has_bgw_in_horizon = any(info.get("bgw_teams") for info in gw_info.values())
+    
+    # Get issues that need attention
     critical_issues = [i for i in squad_health if i.severity == "critical"]
     injury_player_ids = {i.player_id for i in critical_issues if i.issue_type == "injury"}
+    bgw_player_ids = {i.player_id for i in squad_health if i.issue_type == "bgw_exposure"}
     
     for gw in range(current_gw, horizon_end + 1):
+        remaining_horizon = horizon_end - gw + 1
+        
         gw_action = {
             "gw": gw,
-            "action": "hold",
+            "action": "roll",
             "transfers": [],
             "chip": None,
             "reasoning": "",
@@ -7488,10 +7567,19 @@ def build_strategy_plan(
             "bank_after": round(plan_bank, 1),
         }
         
-        # Check for chip recommendations this GW
-        gw_chip_recs = [c for c in chip_recommendations if c.recommended_gw == gw]
+        # Count current critical issues in squad
+        current_critical = len([p for p in plan_squad if p["id"] in injury_player_ids])
         
-        # Apply booked transfers for this GW
+        # Calculate roll value for this GW
+        roll_value = calculate_roll_value(
+            current_ft=plan_ft,
+            gws_remaining=remaining_horizon,
+            has_dgw_ahead=has_dgw_in_horizon,
+            has_bgw_ahead=has_bgw_in_horizon,
+            critical_issues=current_critical
+        )
+        
+        # Apply booked transfers first
         gw_booked = booked_by_gw.get(gw, [])
         for bt in gw_booked:
             out_player = next((p for p in plan_squad if p["id"] == bt["out_id"]), None)
@@ -7504,15 +7592,14 @@ def build_strategy_plan(
                 position_id = in_element["element_type"]
                 in_price = in_element["now_cost"] / 10
                 
-                # Calculate xPts
                 upcoming = get_player_upcoming_fixtures(
-                    in_element["team"], fixtures, gw, gw + horizon, teams_dict
+                    in_element["team"], fixtures, gw, gw + remaining_horizon, teams_dict
                 )
                 stats = calculate_expected_points(
                     in_element, position_id, gw, upcoming, teams_dict, fixtures, events
                 )
                 
-                plan_squad.append({
+                new_player = {
                     "id": in_element["id"],
                     "name": in_element["web_name"],
                     "team": teams_dict.get(in_element["team"], {}).get("short_name", "???"),
@@ -7524,9 +7611,9 @@ def build_strategy_plan(
                     "xpts": stats["xpts"],
                     "form": float(in_element.get("form", 0) or 0),
                     "expected_minutes": stats["expected_minutes"],
-                })
+                }
+                plan_squad.append(new_player)
                 
-                # Update bank
                 plan_bank += out_player.get("selling_price", out_player.get("price", 0)) - in_price
                 
                 is_hit = plan_ft <= 0
@@ -7539,13 +7626,7 @@ def build_strategy_plan(
                 
                 gw_action["transfers"].append({
                     "out": out_player,
-                    "in": {
-                        "id": in_element["id"],
-                        "name": in_element["web_name"],
-                        "team": teams_dict.get(in_element["team"], {}).get("short_name", "???"),
-                        "price": in_price,
-                        "xpts": stats["xpts"],
-                    },
+                    "in": new_player,
                     "is_booked": True,
                     "is_hit": is_hit,
                     "xpts_gain": stats["xpts"] - out_player.get("xpts", 0),
@@ -7553,65 +7634,95 @@ def build_strategy_plan(
                 gw_action["action"] = "transfer"
                 gw_action["reasoning"] = "Executing booked transfer"
         
-        # Generate transfer candidates if we haven't made a booked transfer
-        if not gw_booked and gw == current_gw:
-            # Generate fresh candidates for current GW
-            candidates = generate_transfer_candidates(
+        # Generate transfer candidates for THIS GW (not just current_gw!)
+        if not gw_booked:
+            candidates = generate_transfer_candidates_for_gw(
                 squad=plan_squad,
                 elements=elements,
                 fixtures=fixtures,
                 teams_dict=teams_dict,
                 events=events,
-                current_gw=gw,
+                target_gw=gw,
+                remaining_horizon=remaining_horizon,
                 bank=plan_bank,
-                horizon=horizon,
                 strategy=strategy,
                 fixture_swings=fixture_swings,
-                booked_transfers=booked_transfers
+                excluded_out_ids=transferred_out_ids,
+                excluded_in_ids=transferred_in_ids
             )
             
-            # Check for essential transfers (injuries in current squad)
-            essential_transfers = []
+            # Mark essential transfers (injuries, BGW this GW)
             for candidate in candidates:
-                if candidate.out_player["id"] in injury_player_ids:
+                out_id = candidate.out_player["id"]
+                if out_id in injury_player_ids:
                     candidate.is_essential = True
                     candidate.priority = 1
-                    candidate.reason = "Injury replacement - " + candidate.reason
-                    essential_transfers.append(candidate)
+                    candidate.reason = "🚑 Injury: " + candidate.reason
+                elif out_id in bgw_player_ids:
+                    # Check if BGW is this specific GW
+                    player_bgw_issue = next((i for i in squad_health 
+                                            if i.player_id == out_id and i.issue_type == "bgw_exposure"), None)
+                    if player_bgw_issue and gw in player_bgw_issue.affected_gws:
+                        candidate.is_essential = True
+                        candidate.priority = 1
+                        candidate.reason = "⚠️ BGW: " + candidate.reason
             
-            # Decision logic based on strategy
-            transfers_to_make = []
+            # Sort: essential first, then by xpts_gain
+            candidates.sort(key=lambda x: (-x.priority if x.is_essential else 0, -x.xpts_gain))
             
-            # Always prioritize essential transfers
-            for et in essential_transfers:
-                if plan_ft > 0 or et.xpts_gain > config["min_xpts_gain_for_hit"]:
-                    transfers_to_make.append(et)
-                    if len(transfers_to_make) >= min(plan_ft + config["max_hits_per_horizon"], 3):
-                        break
-            
-            # Then consider value transfers
-            remaining_ft = plan_ft - len([t for t in transfers_to_make if not t.is_hit])
+            # Decision: Transfer or Roll?
+            transfers_this_gw = []
+            available_ft = plan_ft
+            hits_used = 0
             
             for candidate in candidates:
-                if candidate in transfers_to_make:
-                    continue
-                if len(transfers_to_make) >= 3:  # Max 3 transfers per GW
+                # Already got enough transfers this GW
+                if len(transfers_this_gw) >= 2:  # Max 2 per GW normally
                     break
                 
-                # Check if worth it
-                if remaining_ft > 0:
-                    if candidate.xpts_gain > config["min_xpts_gain_for_transfer"]:
-                        # Compare to roll value
-                        if candidate.xpts_gain > TransferPlannerConfig.ROLL_VALUE:
-                            transfers_to_make.append(candidate)
-                            remaining_ft -= 1
-                elif plan_hits < config["max_hits_per_horizon"]:
-                    if candidate.xpts_gain > config["min_xpts_gain_for_hit"]:
+                # Already transferred this player out
+                if candidate.out_player["id"] in transferred_out_ids:
+                    continue
+                
+                xpts_gain = candidate.xpts_gain
+                
+                # Essential transfer logic
+                if candidate.is_essential:
+                    if available_ft > 0:
+                        transfers_this_gw.append(candidate)
+                        available_ft -= 1
+                        transferred_out_ids.add(candidate.out_player["id"])
+                        transferred_in_ids.add(candidate.in_player["id"])
+                    elif hits_used < config["max_hits_per_horizon"] - plan_hits:
+                        if xpts_gain > config["min_xpts_gain_for_hit"] * 0.5:  # Lower threshold for essential
+                            candidate.is_hit = True
+                            transfers_this_gw.append(candidate)
+                            hits_used += 1
+                            transferred_out_ids.add(candidate.out_player["id"])
+                            transferred_in_ids.add(candidate.in_player["id"])
+                    continue
+                
+                # Non-essential: Compare to roll value
+                threshold = config["min_xpts_gain_for_transfer"]
+                
+                if available_ft > 0:
+                    # Use FT if gain exceeds threshold AND roll value
+                    if xpts_gain > threshold and xpts_gain > roll_value:
+                        transfers_this_gw.append(candidate)
+                        available_ft -= 1
+                        transferred_out_ids.add(candidate.out_player["id"])
+                        transferred_in_ids.add(candidate.in_player["id"])
+                elif hits_used < config["max_hits_per_horizon"] - plan_hits:
+                    # Consider hit only if gain is very high
+                    if xpts_gain > config["min_xpts_gain_for_hit"]:
                         candidate.is_hit = True
-                        transfers_to_make.append(candidate)
+                        transfers_this_gw.append(candidate)
+                        hits_used += 1
+                        transferred_out_ids.add(candidate.out_player["id"])
+                        transferred_in_ids.add(candidate.in_player["id"])
             
             # Execute transfers
-            for transfer in transfers_to_make:
+            for transfer in transfers_this_gw:
                 out_p = transfer.out_player
                 in_p = transfer.in_player
                 
@@ -7649,16 +7760,15 @@ def build_strategy_plan(
                     "reason": transfer.reason,
                 })
             
-            if transfers_to_make:
+            if transfers_this_gw:
                 gw_action["action"] = "transfer"
-                reasons = [t.reason for t in transfers_to_make]
+                reasons = [t.reason for t in transfers_this_gw]
                 gw_action["reasoning"] = "; ".join(reasons[:2])
             else:
-                # Roll the transfer
                 gw_action["action"] = "roll"
-                gw_action["reasoning"] = "No transfer meets threshold - banking FT for flexibility"
+                gw_action["reasoning"] = f"Roll FT (roll value: {roll_value:.2f}, best gain: {candidates[0].xpts_gain:.2f})" if candidates else "Roll FT - no upgrades available"
         
-        # Calculate GW xPts
+        # Calculate GW xPts for current squad
         gw_xpts = evaluate_squad_xpts(
             squad=plan_squad,
             gw=gw,
@@ -7671,9 +7781,12 @@ def build_strategy_plan(
         total_xpts += gw_xpts
         gw_action["xpts"] = round(gw_xpts, 1)
         
-        # Update FT for next week (if rolled)
+        # Update FT for next week
         if gw_action["action"] == "roll":
             plan_ft = min(plan_ft + 1, TransferPlannerConfig.MAX_FT)
+        else:
+            # After using FT, we get 1 back next week
+            plan_ft = max(1, plan_ft)  # At least 1 FT next week
         
         gw_action["ft_after"] = plan_ft
         gw_action["bank_after"] = round(plan_bank, 1)
@@ -7682,13 +7795,13 @@ def build_strategy_plan(
     
     # Build headline
     if plan_transfers == 0:
-        headline = f"Roll all transfers - bank FT for later flexibility"
+        headline = f"Roll all transfers - bank FT for flexibility"
     elif plan_hits == 0:
         headline = f"{plan_transfers} transfer{'s' if plan_transfers > 1 else ''} using free transfers"
     else:
         headline = f"{plan_transfers} transfer{'s' if plan_transfers > 1 else ''} ({plan_hits} hit{'s' if plan_hits > 1 else ''})"
     
-    # Adjust total xPts for hits
+    # Net xPts after hit costs
     net_xpts = total_xpts - (plan_hits * 4)
     
     return StrategyPlan(
