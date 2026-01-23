@@ -2118,6 +2118,129 @@
         .plan-transfer-gain-value { font-weight: 700; color: var(--success); font-size: 1.1rem; }
         .plan-transfer-gain-label { font-size: 0.75rem; color: var(--text-muted); }
         .plan-transfer-gw { font-size: 0.8rem; color: var(--text-muted); background: var(--surface); padding: 0.25rem 0.5rem; border-radius: 4px; }
+        
+        /* ===== FIXTURE-FIRST PLANNER STYLES ===== */
+        .health-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+        .health-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem; text-align: center; }
+        .health-card.highlight { background: linear-gradient(135deg, rgba(0, 212, 170, 0.1) 0%, var(--bg-card) 100%); border-color: var(--accent-primary); }
+        .health-card.warning { background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, var(--bg-card) 100%); border-color: #f59e0b; }
+        .health-card.critical { background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, var(--bg-card) 100%); border-color: #ef4444; }
+        .health-card .label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .health-card .value { font-size: 1.4rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; margin-top: 0.25rem; }
+        .health-card .status { font-size: 0.8rem; margin-top: 0.25rem; }
+        .health-card .status.good { color: #10b981; }
+        .health-card .status.warning { color: #f59e0b; }
+        .health-card .status.critical { color: #ef4444; }
+        
+        .gw-health-bar { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; padding: 1rem; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow-x: auto; }
+        .gw-health-item { flex: 1; min-width: 70px; text-align: center; padding: 0.75rem 0.5rem; border-radius: 8px; cursor: pointer; transition: all 0.2s ease; }
+        .gw-health-item:hover { transform: translateY(-2px); }
+        .gw-health-item .gw-num { font-size: 0.8rem; font-weight: 600; margin-bottom: 0.25rem; }
+        .gw-health-item .health-score { font-size: 1.1rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+        .gw-health-item .issues { font-size: 0.65rem; color: var(--text-muted); margin-top: 0.25rem; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .gw-health-item.good { background: rgba(16, 185, 129, 0.15); }
+        .gw-health-item.good .health-score { color: #10b981; }
+        .gw-health-item.minor { background: rgba(250, 204, 21, 0.15); }
+        .gw-health-item.minor .health-score { color: #facc15; }
+        .gw-health-item.moderate { background: rgba(245, 158, 11, 0.15); }
+        .gw-health-item.moderate .health-score { color: #f59e0b; }
+        .gw-health-item.severe, .gw-health-item.critical { background: rgba(239, 68, 68, 0.15); }
+        .gw-health-item.severe .health-score, .gw-health-item.critical .health-score { color: #ef4444; }
+        
+        .heatmap-container { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem; overflow-x: auto; }
+        .heatmap-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .heatmap-table th { padding: 0.6rem 0.5rem; text-align: center; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; background: var(--bg-card); }
+        .heatmap-table th.player-col { text-align: left; min-width: 140px; }
+        .heatmap-table td { padding: 0.4rem 0.3rem; text-align: center; }
+        .heatmap-table tr { border-bottom: 1px solid var(--border-color); }
+        .heatmap-table tr:last-child { border-bottom: none; }
+        .heatmap-table .position-header { background: var(--bg-secondary); font-weight: 600; color: var(--accent-primary); text-align: left; padding: 0.5rem; }
+        .heatmap-player { display: flex; align-items: center; gap: 0.5rem; text-align: left; }
+        .heatmap-player .name { font-weight: 500; white-space: nowrap; }
+        .heatmap-player .team { font-size: 0.7rem; color: var(--text-muted); }
+        .heatmap-player .price { font-size: 0.7rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        
+        .fixture-cell { padding: 0.3rem 0.4rem; border-radius: 4px; font-size: 0.75rem; font-weight: 500; min-width: 65px; display: flex; flex-direction: column; align-items: center; gap: 0.1rem; }
+        .fixture-cell .opponent { font-weight: 600; }
+        .fixture-cell .xpts { font-size: 0.65rem; font-family: 'JetBrains Mono', monospace; opacity: 0.85; }
+        .fixture-cell.fdr-1, .fixture-cell.fdr-2 { background: #14532d; color: #86efac; }
+        .fixture-cell.fdr-3 { background: #166534; color: #86efac; }
+        .fixture-cell.fdr-4 { background: #3f6212; color: #d9f99d; }
+        .fixture-cell.fdr-5 { background: #713f12; color: #fef08a; }
+        .fixture-cell.fdr-6 { background: #854d0e; color: #fde68a; }
+        .fixture-cell.fdr-7 { background: #9a3412; color: #fed7aa; }
+        .fixture-cell.fdr-8 { background: #991b1b; color: #fecaca; }
+        .fixture-cell.fdr-9, .fixture-cell.fdr-10 { background: #7f1d1d; color: #fecaca; }
+        .fixture-cell.blank { background: var(--bg-tertiary); color: var(--text-muted); font-style: italic; }
+        .fixture-cell.dgw { box-shadow: inset 0 0 0 2px #10b981; }
+        
+        .problems-section { margin-bottom: 1.5rem; }
+        .problems-section h3 { font-size: 1.1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+        .problem-count { background: var(--accent-red); color: white; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+        
+        .problem-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 0.75rem; overflow: hidden; }
+        .problem-header { display: flex; align-items: center; gap: 0.75rem; padding: 1rem; cursor: pointer; transition: background 0.2s ease; }
+        .problem-header:hover { background: var(--bg-hover); }
+        .problem-card.expanded .problem-header { border-bottom: 1px solid var(--border-color); }
+        
+        .severity-badge { padding: 0.25rem 0.6rem; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+        .severity-badge.critical { background: #ef4444; color: white; }
+        .severity-badge.high { background: #f59e0b; color: #000; }
+        .severity-badge.medium { background: #facc15; color: #000; }
+        .severity-badge.low { background: #3b82f6; color: white; }
+        
+        .problem-gw { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--accent-primary); font-weight: 600; }
+        .problem-description { flex: 1; font-size: 0.9rem; }
+        .problem-expand { color: var(--text-muted); font-size: 0.8rem; transition: transform 0.2s ease; }
+        .problem-card.expanded .problem-expand { transform: rotate(180deg); }
+        
+        .problem-body { padding: 1rem; display: none; }
+        .problem-card.expanded .problem-body { display: block; }
+        
+        .affected-players { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+        .affected-player { background: var(--bg-tertiary); padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.8rem; }
+        
+        .solutions-title { font-size: 0.85rem; font-weight: 600; color: var(--accent-primary); margin-bottom: 0.75rem; }
+        
+        .solution-card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.5rem; }
+        .solution-card.optimal { border-left: 3px solid var(--accent-primary); }
+        .solution-card.differential { border-left: 3px solid var(--accent-purple); }
+        
+        .solution-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .solution-type { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 0.15rem 0.4rem; border-radius: 3px; }
+        .solution-type.optimal { background: rgba(0, 212, 170, 0.2); color: var(--accent-primary); }
+        .solution-type.differential { background: rgba(139, 92, 246, 0.2); color: var(--accent-purple); }
+        
+        .solution-transfer { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
+        .solution-player { display: flex; flex-direction: column; }
+        .solution-player .name { font-weight: 600; font-size: 0.9rem; }
+        .solution-player .meta { font-size: 0.75rem; color: var(--text-muted); }
+        .solution-arrow { font-size: 1.2rem; color: var(--accent-primary); }
+        
+        .solution-stats { display: flex; gap: 1rem; font-size: 0.8rem; flex-wrap: wrap; }
+        .solution-stat { display: flex; flex-direction: column; }
+        .solution-stat .label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; }
+        .solution-stat .value { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+        .solution-stat .value.positive { color: #10b981; }
+        .solution-stat .value.negative { color: #ef4444; }
+        
+        .solution-why { font-size: 0.8rem; color: var(--text-secondary); background: var(--bg-tertiary); padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem; }
+        
+        .sell-candidates-section { margin-bottom: 1.5rem; }
+        .sell-candidates-section h3 { font-size: 1.1rem; margin-bottom: 1rem; }
+        
+        .sell-candidate-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem; margin-bottom: 0.75rem; display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: center; }
+        .sell-candidate-info .name { font-weight: 600; font-size: 1rem; }
+        .sell-candidate-info .meta { font-size: 0.8rem; color: var(--text-muted); }
+        .sell-candidate-info .reasons { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+        .sell-reason { background: rgba(239, 68, 68, 0.15); color: #f87171; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+        
+        .sell-pressure-score { display: flex; flex-direction: column; align-items: center; padding: 0.75rem; background: var(--bg-secondary); border-radius: 8px; min-width: 80px; }
+        .sell-pressure-score .label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.25rem; }
+        .sell-pressure-score .value { font-size: 1.5rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+        .sell-pressure-score .value.high { color: #ef4444; }
+        .sell-pressure-score .value.medium { color: #f59e0b; }
+        .sell-pressure-score .value.low { color: #facc15; }
         .plan-transfer-hit { color: #ef4444; font-size: 0.8rem; font-weight: 600; }
 
         @media (max-width: 768px) {
@@ -2746,8 +2869,8 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
         <!-- PLANNER SECTION -->
         <section id="planner" class="section">
             <div class="planner-header">
-                <h2>🧠 Multi-GW Transfer Planner</h2>
-                <p class="planner-subtitle">Optimize your transfers, lineup, and captain picks across multiple gameweeks</p>
+                <h2>🧠 Fixture-First Transfer Planner</h2>
+                <p class="planner-subtitle">See where your squad is weak and how to fix it</p>
             </div>
 
             <div class="planner-setup" id="plannerSetup">
@@ -2757,91 +2880,22 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                         <input type="number" id="plannerTeamId" placeholder="e.g. 1234567">
                     </div>
                     <div class="control-group slider-group">
-                        <label>Horizon: <span id="horizonValue">3</span> GW's</label>
-                        <input type="range" id="plannerHorizon" min="1" max="6" value="3" class="horizon-slider" oninput="document.getElementById('horizonValue').textContent = this.value">
-                    </div>
-                    <div class="control-group">
-                        <label>Max Hits</label>
-                        <select id="plannerMaxHits">
-                            <option value="0">No hits</option>
-                            <option value="1" selected>1 hit (-4)</option>
-                            <option value="2">2 hits (-8)</option>
-                        </select>
+                        <label>Horizon: <span id="horizonValue">6</span> GW's</label>
+                        <input type="range" id="plannerHorizon" min="1" max="8" value="6" class="horizon-slider" oninput="document.getElementById('horizonValue').textContent = this.value">
                     </div>
                     <div class="control-group">
                         <label>&nbsp;</label>
-                        <button class="btn btn-primary" onclick="loadPlan()">🧮 Calculate Plan</button>
-                    </div>
-                </div>
-                
-                <!-- Advanced Options Toggle -->
-                <div class="advanced-toggle">
-                    <button class="btn btn-sm btn-secondary" onclick="toggleAdvancedOptions()">
-                        ⚙️ Advanced Options <span id="advancedToggleIcon">▼</span>
-                    </button>
-                </div>
-                
-                <div class="advanced-options" id="advancedOptions" style="display: none;">
-                    <div class="advanced-section">
-                        <h4>🎯 Schedule Chips</h4>
-                        <p class="advanced-help">Pre-schedule chips for specific GWs (leave blank for auto-suggestions)</p>
-                        <div class="chip-schedule-grid">
-                            <div class="chip-schedule-item">
-                                <span class="chip-badge wc">WC</span>
-                                <input type="number" id="wcGw" min="1" max="38" placeholder="GW">
-                            </div>
-                            <div class="chip-schedule-item">
-                                <span class="chip-badge fh">FH</span>
-                                <input type="number" id="fhGw" min="1" max="38" placeholder="GW">
-                            </div>
-                            <div class="chip-schedule-item">
-                                <span class="chip-badge tc">TC</span>
-                                <input type="number" id="tcGw" min="1" max="38" placeholder="GW">
-                            </div>
-                            <div class="chip-schedule-item">
-                                <span class="chip-badge bb">BB</span>
-                                <input type="number" id="bbGw" min="1" max="38" placeholder="GW">
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="advanced-section">
-                        <h4>📌 Book Transfers</h4>
-                        <p class="advanced-help">Force specific transfers in certain GWs (uses FT if available, takes hit if not)</p>
-                        <div class="booked-transfers" id="bookedTransfers">
-                            <div class="booked-transfer-row">
-                                <select id="bookTransferGw" class="book-gw-select">
-                                    <option value="">GW</option>
-                                    <script>for(let i=1;i<=38;i++)document.write(`<option value="${i}">${i}</option>`)</script>
-                                </select>
-                                <div class="autocomplete-wrapper">
-                                    <input type="text" id="bookTransferOut" placeholder="Player out" class="book-player-input" autocomplete="off">
-                                    <div class="player-autocomplete" id="autocompleteOut"></div>
-                                </div>
-                                <span class="book-arrow">→</span>
-                                <div class="autocomplete-wrapper">
-                                    <input type="text" id="bookTransferIn" placeholder="Player in" class="book-player-input" autocomplete="off">
-                                    <div class="player-autocomplete" id="autocompleteIn"></div>
-                                </div>
-                                <button class="book-add-btn" onclick="addBookedTransfer()">+ Add to Book</button>
-                            </div>
-                            <div id="bookedTransfersList"></div>
-                        </div>
+                        <button class="btn btn-primary" onclick="loadPlan()">🔍 Analyze Squad</button>
                     </div>
                 </div>
             </div>
 
             <div class="planner-loading" id="plannerLoading" style="display: none;">
                 <div class="loading-spinner"></div>
-                <span id="plannerLoadingText">Calculating optimal transfer plan...</span>
-                <p class="loading-sub" id="plannerLoadingSubtext">This may take 10-20 seconds</p>
+                <span id="plannerLoadingText">Analyzing your squad...</span>
+                <p class="loading-sub" id="plannerLoadingSubtext">Building fixture heatmap and detecting problems</p>
                 <div class="loading-progress">
                     <div class="loading-progress-bar" id="plannerProgressBar"></div>
-                </div>
-                <div class="loading-steps" id="plannerSteps">
-                    <div class="loading-step" id="step1">📊 Fetching team data...</div>
-                    <div class="loading-step" id="step2">🧮 Analyzing transfers...</div>
-                    <div class="loading-step" id="step3">🎯 Finding optimal path...</div>
                 </div>
             </div>
 
@@ -2851,48 +2905,33 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
             </div>
 
             <div id="plannerResult" style="display: none;">
-                <!-- Result header with recalculate option -->
+                <!-- Result header -->
                 <div class="planner-result-header">
                     <div class="planner-result-info">
-                        <span class="planner-horizon" id="plannerHorizonDisplay">GW23-GW25</span>
+                        <span class="planner-horizon" id="plannerHorizonDisplay">GW23-GW28</span>
                         <span class="planner-ft" id="plannerFtDisplay">FT: 1</span>
                         <span class="planner-bank" id="plannerBankDisplay">Bank: £0.0m</span>
                     </div>
-                    <button class="btn btn-sm btn-secondary" onclick="showPlannerSetup()">⚙️ Recalculate</button>
+                    <button class="btn btn-sm btn-secondary" onclick="showPlannerSetup()">⚙️ Reanalyze</button>
                 </div>
                 
-                <div class="plan-summary">
-                    <div class="plan-summary-card">
-                        <div class="plan-stat-label">Total xPts</div>
-                        <div class="plan-stat-value" id="planTotalXpts">0</div>
-                    </div>
-                    <div class="plan-summary-card highlight">
-                        <div class="plan-stat-label">xPts Gain</div>
-                        <div class="plan-stat-value" id="planXptsGain">+0</div>
-                    </div>
-                    <div class="plan-summary-card">
-                        <div class="plan-stat-label">Hits</div>
-                        <div class="plan-stat-value" id="planHits">0</div>
-                    </div>
-                    <div class="plan-summary-card">
-                        <div class="plan-stat-label">Net Gain</div>
-                        <div class="plan-stat-value" id="planNetGain">+0</div>
-                    </div>
+                <!-- Squad Health Summary -->
+                <div class="health-summary" id="healthSummary"></div>
+                
+                <!-- GW Health Bar -->
+                <div class="gw-health-bar" id="gwHealthBar"></div>
+                
+                <!-- Fixture Heatmap -->
+                <div class="heatmap-container">
+                    <h3 style="margin-bottom: 1rem; font-size: 1rem;">📊 Squad Fixture Heatmap</h3>
+                    <div id="heatmapTable"></div>
                 </div>
                 
-                <!-- FT Disclaimer -->
-                <div class="ft-disclaimer" id="ftDisclaimer" style="display: none;"></div>
-
-                <div class="chip-suggestions" id="chipSuggestions" style="display: none;">
-                    <h3>💡 Chip Suggestions</h3>
-                    <div id="chipSuggestionsList"></div>
-                </div>
-
-                <!-- GW Tabs for detailed view -->
-                <div class="gw-planner-tabs" id="gwPlannerTabs"></div>
+                <!-- Problems Section -->
+                <div class="problems-section" id="problemsSection"></div>
                 
-                <!-- Per-GW Detail Panel -->
-                <div class="gw-detail-panel" id="gwDetailPanel"></div>
+                <!-- Sell Candidates -->
+                <div class="sell-candidates-section" id="sellCandidatesSection"></div>
             </div>
         </section>
 
@@ -4007,9 +4046,10 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
             return num.toString();
         }
 
-        // ============ PLANNER FUNCTIONS ============
+
+        // ============ FIXTURE-FIRST PLANNER FUNCTIONS ============
         
-        let plannerChips = {};
+        let plannerData = null;
         
         async function loadPlan() {
             const teamId = document.getElementById('plannerTeamId').value || savedTeamId;
@@ -4019,117 +4059,51 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
             }
             
             const horizon = document.getElementById('plannerHorizon').value;
-            const maxHits = document.getElementById('plannerMaxHits').value;
+            let url = `${API_BASE}/api/planner/${teamId}?horizon=${horizon}`;
             
-            // Get chip GWs if specified
-            const wcGw = document.getElementById('wcGw')?.value || '';
-            const tcGw = document.getElementById('tcGw')?.value || '';
-            const bbGw = document.getElementById('bbGw')?.value || '';
-            const fhGw = document.getElementById('fhGw')?.value || '';
-            
-            let url = `${API_BASE}/api/planner/${teamId}?horizon=${horizon}&max_hits=${maxHits}`;
-            if (wcGw) url += `&wc_gw=${wcGw}`;
-            if (tcGw) url += `&tc_gw=${tcGw}`;
-            if (bbGw) url += `&bb_gw=${bbGw}`;
-            if (fhGw) url += `&fh_gw=${fhGw}`;
-            
-            // Add booked transfers if any
-            if (bookedTransfers.length > 0) {
-                console.log('Sending booked transfers:', bookedTransfers);
-                url += `&booked_transfers=${encodeURIComponent(JSON.stringify(bookedTransfers))}`;
-            }
-            
-            // Show loading, hide results and errors
+            // Show loading
             document.getElementById('plannerLoading').style.display = 'flex';
             document.getElementById('plannerResult').style.display = 'none';
             document.getElementById('plannerError').style.display = 'none';
             
-            // Reset progress
             const progressBar = document.getElementById('plannerProgressBar');
             const loadingText = document.getElementById('plannerLoadingText');
-            const loadingSubtext = document.getElementById('plannerLoadingSubtext');
-            const steps = ['step1', 'step2', 'step3'];
             progressBar.style.width = '0%';
-            steps.forEach(s => {
-                document.getElementById(s).className = 'loading-step';
-            });
-            
-            // Realistic progress based on actual API timing
-            // Step 1: Fetching data (0-2s) - 30%
-            // Step 2: Analyzing transfers (2-8s) - 60%  
-            // Step 3: Finding optimal path (8-15s) - 90%
             
             const startTime = Date.now();
-            let currentStep = 0;
-            
             const progressInterval = setInterval(() => {
                 const elapsed = (Date.now() - startTime) / 1000;
-                let progress = 0;
+                let progress = Math.min(90, elapsed * 15);
+                progressBar.style.width = `${progress}%`;
                 
                 if (elapsed < 2) {
-                    // Step 1: Fetching data
-                    progress = (elapsed / 2) * 30;
-                    if (currentStep < 1) {
-                        currentStep = 1;
-                        document.getElementById('step1').className = 'loading-step active';
-                        loadingText.textContent = 'Fetching team data...';
-                        loadingSubtext.textContent = 'Loading your squad and fixtures';
-                    }
-                } else if (elapsed < 8) {
-                    // Step 2: Analyzing transfers
-                    progress = 30 + ((elapsed - 2) / 6) * 30;
-                    if (currentStep < 2) {
-                        currentStep = 2;
-                        document.getElementById('step1').className = 'loading-step done';
-                        document.getElementById('step2').className = 'loading-step active';
-                        loadingText.textContent = 'Analyzing transfer options...';
-                        loadingSubtext.textContent = `Evaluating ${horizon} gameweeks`;
-                    }
-                } else if (elapsed < 20) {
-                    // Step 3: Finding optimal path
-                    progress = 60 + ((elapsed - 8) / 12) * 30;
-                    if (currentStep < 3) {
-                        currentStep = 3;
-                        document.getElementById('step2').className = 'loading-step done';
-                        document.getElementById('step3').className = 'loading-step active';
-                        loadingText.textContent = 'Finding optimal path...';
-                        loadingSubtext.textContent = 'Computing best transfer sequence';
-                    }
+                    loadingText.textContent = 'Fetching squad data...';
+                } else if (elapsed < 4) {
+                    loadingText.textContent = 'Building fixture heatmap...';
                 } else {
-                    progress = Math.min(95, 90 + (elapsed - 20) * 0.5);
-                    loadingSubtext.textContent = 'Almost done...';
+                    loadingText.textContent = 'Detecting problems & finding solutions...';
                 }
-                
-                progressBar.style.width = `${progress}%`;
             }, 200);
             
             try {
                 const response = await fetch(url);
                 clearInterval(progressInterval);
                 progressBar.style.width = '100%';
-                steps.forEach(s => {
-                    document.getElementById(s).className = 'loading-step done';
-                });
                 
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({}));
                     throw new Error(errorData.detail || `HTTP ${response.status}`);
                 }
+                
                 const data = await response.json();
+                plannerData = data;
                 
-                // Store chips data
-                plannerChips = data.available_chips;
+                renderFixtureFirstResults(data);
                 
-                // Render results
-                renderPlanResults(data);
-                
-                // Short delay to show complete progress, then hide setup and show results
                 setTimeout(() => {
                     document.getElementById('plannerLoading').style.display = 'none';
-                    document.getElementById('plannerSetup').style.display = 'none';  // Hide setup
+                    document.getElementById('plannerSetup').style.display = 'none';
                     document.getElementById('plannerResult').style.display = 'block';
-                    
-                    // Scroll to results
                     document.getElementById('plannerResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }, 300);
                 
@@ -4138,370 +4112,224 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                 console.error('Failed to load plan:', error);
                 document.getElementById('plannerLoading').style.display = 'none';
                 document.getElementById('plannerError').style.display = 'flex';
-                document.getElementById('plannerErrorMsg').textContent = `Failed to load plan: ${error.message}`;
+                document.getElementById('plannerErrorMsg').textContent = `Failed to load: ${error.message}`;
             }
         }
         
-        // Advanced options toggle
-        function toggleAdvancedOptions() {
-            const options = document.getElementById('advancedOptions');
-            const icon = document.getElementById('advancedToggleIcon');
-            if (options.style.display === 'none') {
-                options.style.display = 'block';
-                icon.textContent = '▲';
-            } else {
-                options.style.display = 'none';
-                icon.textContent = '▼';
-            }
-        }
-        
-        // Show planner setup (for recalculate)
         function showPlannerSetup() {
             document.getElementById('plannerSetup').style.display = 'block';
             document.getElementById('plannerResult').style.display = 'none';
             document.getElementById('plannerSetup').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
         
-        // ==================== PLAYER AUTOCOMPLETE ====================
-        
-        function setupAutocomplete(inputId, dropdownId) {
-            const input = document.getElementById(inputId);
-            const dropdown = document.getElementById(dropdownId);
-            if (!input || !dropdown) {
-                console.error(`Autocomplete setup failed: input=${inputId}, dropdown=${dropdownId}`);
-                return;
-            }
-            
-            console.log(`Setting up autocomplete for ${inputId}`);
-            
-            let debounceTimer = null;
-            
-            input.addEventListener('input', function() {
-                const query = this.value.trim();
-                
-                // Only show suggestions after 3 characters
-                if (query.length < 3) {
-                    dropdown.classList.remove('active');
-                    return;
-                }
-                
-                // Debounce API calls
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(async () => {
-                    try {
-                        const res = await fetch(`${API_BASE}/api/players/search?q=${encodeURIComponent(query)}&limit=10`);
-                        if (!res.ok) {
-                            console.error('Player search failed:', res.status);
-                            return;
-                        }
-                        const data = await res.json();
-                        const matches = data.players || [];
-                        
-                        if (matches.length === 0) {
-                            dropdown.classList.remove('active');
-                            return;
-                        }
-                        
-                        dropdown.innerHTML = matches.map(p => `
-                            <div class="autocomplete-item" data-name="${p.name}">
-                                <div>
-                                    <span class="player-name">${p.name}</span>
-                                    <span class="player-team">${p.team || ''} · ${p.position || ''}</span>
-                                </div>
-                                <span class="player-price">£${p.price?.toFixed(1) || '?'}</span>
-                            </div>
-                        `).join('');
-                        
-                        dropdown.classList.add('active');
-                        
-                        // Add click handlers to suggestions
-                        dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
-                            item.addEventListener('click', function() {
-                                input.value = this.dataset.name;
-                                dropdown.classList.remove('active');
-                            });
-                        });
-                    } catch (e) {
-                        console.error('Player search error:', e);
-                    }
-                }, 200); // 200ms debounce
-            });
-            
-            // Close dropdown when clicking outside
-            document.addEventListener('click', function(e) {
-                if (!input.contains(e.target) && !dropdown.contains(e.target)) {
-                    dropdown.classList.remove('active');
-                }
-            });
-            
-            // Close on escape
-            input.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape') {
-                    dropdown.classList.remove('active');
-                }
-                // Allow arrow key navigation and enter selection
-                if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
-                    const items = dropdown.querySelectorAll('.autocomplete-item');
-                    if (items.length === 0) return;
-                    
-                    const active = dropdown.querySelector('.autocomplete-item.active');
-                    let index = active ? Array.from(items).indexOf(active) : -1;
-                    
-                    if (e.key === 'ArrowDown') {
-                        e.preventDefault();
-                        index = Math.min(index + 1, items.length - 1);
-                    } else if (e.key === 'ArrowUp') {
-                        e.preventDefault();
-                        index = Math.max(index - 1, 0);
-                    } else if (e.key === 'Enter' && active) {
-                        e.preventDefault();
-                        input.value = active.dataset.name;
-                        dropdown.classList.remove('active');
-                        return;
-                    }
-                    
-                    items.forEach(i => i.classList.remove('active'));
-                    if (index >= 0) items[index].classList.add('active');
-                }
-            });
-        }
-        
-        // Initialize autocomplete on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            setupAutocomplete('bookTransferOut', 'autocompleteOut');
-            setupAutocomplete('bookTransferIn', 'autocompleteIn');
-        });
-        
-        // Booked transfers management
-        let bookedTransfers = [];
-        
-        function addBookedTransfer() {
-            const gw = document.getElementById('bookTransferGw').value;
-            const outPlayer = document.getElementById('bookTransferOut').value.trim();
-            const inPlayer = document.getElementById('bookTransferIn').value.trim();
-            
-            if (!gw || !outPlayer || !inPlayer) {
-                alert('Please fill in all fields: GW, Player Out, and Player In');
-                return;
-            }
-            
-            bookedTransfers.push({ gw: parseInt(gw), out: outPlayer, in: inPlayer });
-            renderBookedTransfers();
-            
-            // Clear inputs
-            document.getElementById('bookTransferGw').value = '';
-            document.getElementById('bookTransferOut').value = '';
-            document.getElementById('bookTransferIn').value = '';
-        }
-        
-        function removeBookedTransfer(index) {
-            bookedTransfers.splice(index, 1);
-            renderBookedTransfers();
-        }
-        
-        function renderBookedTransfers() {
-            const list = document.getElementById('bookedTransfersList');
-            if (!list) return;
-            
-            list.innerHTML = bookedTransfers.map((t, i) => `
-                <div class="booked-item">
-                    <span>GW${t.gw}:</span>
-                    <span class="out">${t.out}</span>
-                    <span>→</span>
-                    <span class="in">${t.in}</span>
-                    <span class="remove-btn" onclick="removeBookedTransfer(${i})">✕</span>
-                </div>
-            `).join('');
-        }
-        
-        let plannerData = null;
-        let selectedGwIndex = 0;
-        
-        function renderPlanResults(data) {
-            plannerData = data;
-            const plan = data.plan;
-            
-            // Update result header with FT, bank, horizon
-            document.getElementById('plannerHorizonDisplay').textContent = data.planning_horizon || `GW${data.current_gw + 1}`;
+        function renderFixtureFirstResults(data) {
+            // Update header
+            document.getElementById('plannerHorizonDisplay').textContent = data.planning_horizon || '';
             document.getElementById('plannerFtDisplay').textContent = `FT: ${data.free_transfers || 1}`;
             document.getElementById('plannerBankDisplay').textContent = `Bank: £${(data.bank || 0).toFixed(1)}m`;
             
-            // Summary stats
-            document.getElementById('planTotalXpts').textContent = plan.total_xpts.toFixed(1);
-            document.getElementById('planXptsGain').textContent = `+${plan.xpts_gain.toFixed(1)}`;
-            document.getElementById('planHits').textContent = plan.total_hits > 0 ? `-${plan.hit_cost}` : '0';
-            document.getElementById('planNetGain').textContent = `+${plan.net_xpts_gain.toFixed(1)}`;
+            // Health Summary
+            const health = data.squad_health || {};
+            const summary = data.summary || {};
+            document.getElementById('healthSummary').innerHTML = `
+                <div class="health-card ${health.overall_score >= 7 ? 'highlight' : health.overall_score >= 5 ? 'warning' : 'critical'}">
+                    <div class="label">Squad Health</div>
+                    <div class="value">${health.overall_score?.toFixed(1) || '-'}</div>
+                    <div class="status ${health.overall_score >= 7 ? 'good' : health.overall_score >= 5 ? 'warning' : 'critical'}">${health.overall_status || ''}</div>
+                </div>
+                <div class="health-card">
+                    <div class="label">Horizon xPts</div>
+                    <div class="value">${summary.total_horizon_xpts?.toFixed(0) || '-'}</div>
+                    <div class="status">${summary.avg_xpts_per_gw?.toFixed(1) || '-'}/GW</div>
+                </div>
+                <div class="health-card ${health.critical_problems > 0 ? 'critical' : health.problem_count > 0 ? 'warning' : ''}">
+                    <div class="label">Problems</div>
+                    <div class="value">${health.problem_count || 0}</div>
+                    <div class="status ${health.critical_problems > 0 ? 'critical' : ''}">${health.critical_problems || 0} critical</div>
+                </div>
+                <div class="health-card ${summary.players_with_blanks > 0 ? 'warning' : ''}">
+                    <div class="label">Players Blanking</div>
+                    <div class="value">${summary.players_with_blanks || 0}</div>
+                </div>
+            `;
             
-            // FT Disclaimer
-            if (data.ft_disclaimer) {
-                const disclaimerEl = document.getElementById('ftDisclaimer');
-                disclaimerEl.textContent = data.ft_disclaimer;
-                disclaimerEl.style.display = 'flex';
-            }
-            
-            // Chip suggestions
-            if (data.chip_suggestions?.length > 0) {
-                document.getElementById('chipSuggestions').style.display = 'block';
-                document.getElementById('chipSuggestionsList').innerHTML = data.chip_suggestions.map(s => `
-                    <div class="chip-suggestion">
-                        <span class="chip-badge ${s.chip.toLowerCase()}">${s.chip}</span>
-                        <span>GW${s.gw}</span>
-                        <span class="chip-suggestion-reason">${s.reason}</span>
-                    </div>
-                `).join('');
-            } else {
-                document.getElementById('chipSuggestions').style.display = 'none';
-            }
-            
-            // GW Tabs
-            const tabsHtml = plan.timeline.map((gw, i) => {
-                const transfers = gw.actions.filter(a => a.type === 'transfer');
-                const hits = transfers.filter(t => t.is_hit).length;
-                
-                let badges = '';
-                if (gw.is_dgw) badges += '<span class="mini-badge dgw">DGW</span>';
-                if (transfers.length > 0) badges += `<span class="mini-badge transfer">${transfers.length}T</span>`;
-                if (hits > 0) badges += `<span class="mini-badge hit">-${hits * 4}</span>`;
-                
+            // GW Health Bar
+            const gwHealth = health.by_gw || {};
+            document.getElementById('gwHealthBar').innerHTML = Object.entries(gwHealth).map(([gw, h]) => {
+                const statusClass = h.score >= 8 ? 'good' : h.score >= 6 ? 'minor' : h.score >= 4 ? 'moderate' : h.score >= 2 ? 'severe' : 'critical';
                 return `
-                    <div class="gw-tab ${i === 0 ? 'active' : ''}" onclick="selectPlannerGw(${i})">
-                        <span class="gw-num">GW${gw.gw}</span>
-                        <span class="gw-xpts">${gw.gw_xpts || '-'} xPts</span>
-                        ${badges ? `<div class="gw-badge-row">${badges}</div>` : ''}
+                    <div class="gw-health-item ${statusClass}">
+                        <div class="gw-num">GW${gw}</div>
+                        <div class="health-score">${h.score}</div>
+                        <div class="issues">${h.issues?.join(', ') || '✓'}</div>
                     </div>
                 `;
             }).join('');
-            document.getElementById('gwPlannerTabs').innerHTML = tabsHtml;
             
-            // Show first GW detail
-            selectedGwIndex = 0;
-            renderGwDetail(0);
+            // Heatmap
+            renderHeatmap(data.heatmap);
+            
+            // Problems
+            renderProblems(data.problems || []);
+            
+            // Sell Candidates
+            renderSellCandidates(data.sell_candidates || []);
         }
         
-        function selectPlannerGw(index) {
-            selectedGwIndex = index;
+        function renderHeatmap(heatmap) {
+            if (!heatmap) return;
             
-            // Update tab active states
-            document.querySelectorAll('.gw-tab').forEach((tab, i) => {
-                tab.classList.toggle('active', i === index);
-            });
+            const gws = heatmap.gw_range || [];
+            const positions = {1: 'GKP', 2: 'DEF', 3: 'MID', 4: 'FWD'};
             
-            renderGwDetail(index);
-        }
-        
-        function renderGwDetail(index) {
-            if (!plannerData) return;
-            const gw = plannerData.plan.timeline[index];
-            if (!gw) return;
+            let html = `<table class="heatmap-table"><thead><tr>
+                <th class="player-col">Player</th>
+                ${gws.map(gw => `<th>GW${gw}</th>`).join('')}
+                <th>Σ xPts</th>
+            </tr></thead><tbody>`;
             
-            const transfers = gw.actions.filter(a => a.type === 'transfer');
-            const starting = gw.starting_xi || [];
-            const bench = gw.bench || [];
-            const captain = gw.captain;
-            const viceCaptain = gw.vice_captain;
-            
-            // Group starting XI by position
-            const gkps = starting.filter(p => p.position === 'GKP');
-            const defs = starting.filter(p => p.position === 'DEF');
-            const mids = starting.filter(p => p.position === 'MID');
-            const fwds = starting.filter(p => p.position === 'FWD');
-            
-            const renderPlayer = (p, isCaptain = false) => `
-                <div class="gw-player-card ${isCaptain ? 'captain' : ''}">
-                    <div class="name">${p.name}</div>
-                    <div class="team">${p.team}</div>
-                    <div class="xpts">${p.xpts} xPts</div>
-                    ${isCaptain ? '<div class="captain-badge">C</div>' : ''}
-                </div>
-            `;
-            
-            // Transfers section
-            let transfersHtml = '';
-            if (transfers.length > 0) {
-                transfersHtml = `
-                    <div class="gw-transfers-section">
-                        <h4>🔄 Transfers Made</h4>
-                        ${transfers.map(t => `
-                            <div class="gw-transfer-item ${t.is_booked ? 'booked' : ''}">
-                                <span class="out">${typeof t.out === 'object' ? t.out.name : t.out}</span>
-                                <span class="arrow">→</span>
-                                <span class="in">${typeof t.in === 'object' ? t.in.name : t.in}</span>
-                                ${t.is_booked ? '<span class="booked-badge">📌 Booked</span>' : ''}
-                                ${t.is_hit ? '<span class="hit-badge">-4 hit</span>' : ''}
+            for (const [posId, posName] of Object.entries(positions)) {
+                const players = heatmap.by_position?.[posId] || [];
+                if (players.length === 0) continue;
+                
+                html += `<tr><td colspan="${gws.length + 2}" class="position-header">${posName}</td></tr>`;
+                
+                for (const player of players) {
+                    html += `<tr>
+                        <td>
+                            <div class="heatmap-player">
+                                <div>
+                                    <div class="name">${player.name}</div>
+                                    <div class="team">${player.team} · £${player.price?.toFixed(1)}m</div>
+                                </div>
                             </div>
-                        `).join('')}
+                        </td>`;
+                    
+                    for (const fix of player.fixtures || []) {
+                        const fdrClass = fix.is_blank ? 'blank' : `fdr-${Math.round(fix.fdr || 5)}`;
+                        const dgwClass = fix.is_dgw ? 'dgw' : '';
+                        html += `<td>
+                            <div class="fixture-cell ${fdrClass} ${dgwClass}">
+                                <span class="opponent">${fix.opponent_short || 'BLANK'}</span>
+                                <span class="xpts">${fix.xpts?.toFixed(1) || '-'}</span>
+                            </div>
+                        </td>`;
+                    }
+                    
+                    html += `<td style="font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--accent-primary);">${player.horizon_xpts?.toFixed(1) || '-'}</td></tr>`;
+                }
+            }
+            
+            html += '</tbody></table>';
+            document.getElementById('heatmapTable').innerHTML = html;
+        }
+        
+        function renderProblems(problems) {
+            if (problems.length === 0) {
+                document.getElementById('problemsSection').innerHTML = `
+                    <h3>✅ No Problems Detected</h3>
+                    <p style="color: var(--text-muted);">Your squad looks good for the planning horizon!</p>
+                `;
+                return;
+            }
+            
+            let html = `<h3>⚠️ Problems Detected <span class="problem-count">${problems.length}</span></h3>`;
+            
+            for (const problem of problems) {
+                const severityClass = problem.severity?.toLowerCase() || 'medium';
+                const solutions = problem.solutions || [];
+                
+                html += `
+                    <div class="problem-card" onclick="toggleProblem(this)">
+                        <div class="problem-header">
+                            <span class="severity-badge ${severityClass}">${problem.severity}</span>
+                            <span class="problem-gw">GW${problem.gw}</span>
+                            <span class="problem-description">${problem.description}</span>
+                            <span class="problem-expand">▼</span>
+                        </div>
+                        <div class="problem-body">
+                            <div class="affected-players">
+                                ${(problem.affected || []).map(p => `<span class="affected-player">${p}</span>`).join('')}
+                            </div>
+                            ${solutions.length > 0 ? `
+                                <div class="solutions-title">💡 Suggested Solutions</div>
+                                ${solutions.map(sol => `
+                                    <div class="solution-card ${sol.solution_type || 'optimal'}">
+                                        <div class="solution-header">
+                                            <span class="solution-type ${sol.solution_type || 'optimal'}">${sol.solution_type || 'Optimal'}</span>
+                                        </div>
+                                        <div class="solution-transfer">
+                                            <div class="solution-player">
+                                                <span class="name">${sol.out?.name || '?'}</span>
+                                                <span class="meta">${sol.out?.team || ''} · £${sol.out?.price?.toFixed(1) || '?'}m</span>
+                                            </div>
+                                            <span class="solution-arrow">→</span>
+                                            <div class="solution-player">
+                                                <span class="name">${sol.in?.name || '?'}</span>
+                                                <span class="meta">${sol.in?.team || ''} · £${sol.in?.price?.toFixed(1) || '?'}m · ${sol.in?.ownership?.toFixed(1) || '?'}%</span>
+                                            </div>
+                                        </div>
+                                        <div class="solution-stats">
+                                            <div class="solution-stat">
+                                                <span class="label">xPts Gain</span>
+                                                <span class="value ${sol.xpts_gain >= 0 ? 'positive' : 'negative'}">${sol.xpts_gain >= 0 ? '+' : ''}${sol.xpts_gain?.toFixed(1) || '0'}</span>
+                                            </div>
+                                            <div class="solution-stat">
+                                                <span class="label">Cost</span>
+                                                <span class="value ${sol.cost_change <= 0 ? 'positive' : 'negative'}">${sol.cost_change >= 0 ? '+' : ''}£${sol.cost_change?.toFixed(1) || '0'}m</span>
+                                            </div>
+                                            <div class="solution-stat">
+                                                <span class="label">Horizon xPts</span>
+                                                <span class="value">${sol.xpts_in_horizon?.toFixed(1) || '-'}</span>
+                                            </div>
+                                        </div>
+                                        ${sol.why ? `<div class="solution-why">${sol.why}</div>` : ''}
+                                    </div>
+                                `).join('')}
+                            ` : '<p style="color: var(--text-muted); font-size: 0.85rem;">No direct solutions available - consider a strategic hold or chip usage.</p>'}
+                        </div>
                     </div>
                 `;
             }
             
-            // Build HTML
-            const html = `
-                <div class="gw-detail-header">
-                    <div class="gw-detail-title">
-                        GW${gw.gw} Optimal Lineup
-                        ${gw.chip ? `<span class="chip-badge ${gw.chip.toLowerCase()}" style="margin-left: 0.5rem">${gw.chip}</span>` : ''}
-                        ${gw.is_dgw ? '<span class="mini-badge dgw" style="margin-left: 0.5rem">DGW</span>' : ''}
-                    </div>
-                    <div class="gw-detail-xpts">${gw.gw_xpts} xPts</div>
-                </div>
-                
-                ${transfersHtml}
-                
-                <div class="gw-squad-grid">
-                    <div class="gw-lineup-section">
-                        <h4>Starting XI</h4>
-                        <div class="gw-lineup-grid">
-                            <div class="gw-lineup-row">${gkps.map(p => renderPlayer(p, captain && p.id === captain.id)).join('')}</div>
-                            <div class="gw-lineup-row">${defs.map(p => renderPlayer(p, captain && p.id === captain.id)).join('')}</div>
-                            <div class="gw-lineup-row">${mids.map(p => renderPlayer(p, captain && p.id === captain.id)).join('')}</div>
-                            <div class="gw-lineup-row">${fwds.map(p => renderPlayer(p, captain && p.id === captain.id)).join('')}</div>
-                        </div>
-                    </div>
-                    
-                    <div class="gw-sidebar-section">
-                        <div>
-                            <h4>👑 Captain</h4>
-                            ${captain ? `
-                                <div class="gw-captain-pick">
-                                    <div class="badge">C</div>
-                                    <div class="info">
-                                        <div class="name">${captain.name}</div>
-                                        <div class="meta">${captain.team} · ${captain.position}</div>
-                                    </div>
-                                    <div class="xpts">${(captain.xpts * 2).toFixed(1)}</div>
-                                </div>
-                            ` : '<div class="empty-state">No captain</div>'}
-                            ${viceCaptain ? `
-                                <div class="gw-captain-pick" style="margin-top: 0.5rem; background: var(--bg-tertiary); border-color: var(--border-color);">
-                                    <div class="badge" style="background: var(--bg-hover); color: var(--text-secondary);">V</div>
-                                    <div class="info">
-                                        <div class="name">${viceCaptain.name}</div>
-                                        <div class="meta">${viceCaptain.team} · ${viceCaptain.position}</div>
-                                    </div>
-                                    <div class="xpts" style="color: var(--text-secondary)">${(viceCaptain.xpts * 2).toFixed(1)}</div>
-                                </div>
-                            ` : ''}
-                        </div>
-                        
-                        <div>
-                            <h4>📋 Bench Order</h4>
-                            <div class="gw-bench-list">
-                                ${bench.map((p, i) => `
-                                    <div class="gw-bench-item">
-                                        <div class="order">${i + 1}</div>
-                                        <div class="name">${p.name}</div>
-                                        <div class="xpts">${p.xpts}</div>
-                                    </div>
-                                `).join('') || '<div class="empty-state">No bench</div>'}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            
-            document.getElementById('gwDetailPanel').innerHTML = html;
+            document.getElementById('problemsSection').innerHTML = html;
         }
         
+        function toggleProblem(card) {
+            card.classList.toggle('expanded');
+        }
+        
+        function renderSellCandidates(candidates) {
+            if (candidates.length === 0) {
+                document.getElementById('sellCandidatesSection').innerHTML = '';
+                return;
+            }
+            
+            let html = `<h3>📉 Sell Candidates</h3>`;
+            
+            for (const player of candidates) {
+                const scoreClass = player.score >= 70 ? 'high' : player.score >= 50 ? 'medium' : 'low';
+                
+                html += `
+                    <div class="sell-candidate-card">
+                        <div class="sell-candidate-info">
+                            <div class="name">${player.name}</div>
+                            <div class="meta">${player.team} · ${player.position} · £${player.price?.toFixed(1)}m</div>
+                            <div class="reasons">
+                                ${(player.reasons || []).map(r => `<span class="sell-reason">${r}</span>`).join('')}
+                            </div>
+                        </div>
+                        <div class="sell-pressure-score">
+                            <div class="label">Sell Pressure</div>
+                            <div class="value ${scoreClass}">${player.score?.toFixed(0) || '-'}</div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            document.getElementById('sellCandidatesSection').innerHTML = html;
+        }
+
         // Auto-fill planner team ID from saved
         document.addEventListener('DOMContentLoaded', () => {
             if (savedTeamId) {
