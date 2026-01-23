@@ -556,15 +556,15 @@ class CaptainConfig:
 class FormConfig:
     """
     v5.0: Player and team form adjustment configuration.
+    v5.1: Added premium player settings based on backtest data.
+    
+    Backtest findings:
+    - Premium MIDs (£8+) had 5x variance: 0.43 → 2.09 → 0.84 MAE
+    - Budget players consistently lowest MAE (0.30-0.50)
+    - Premium hot/cold streaks exceed ±30% cap
     
     Form adjusts xG90/xA90 based on recent performance vs season average.
     This captures hot/cold streaks that static season rates miss.
-    
-    Example: Haaland
-        - Season xG90: 0.88
-        - Last 6 GW PPG: 5.0 (implies ~0.45 xG90)
-        - Form factor: ~0.75
-        - Adjusted xG90: 0.88 × 0.75 = 0.66
     """
     
     # Lookback period for recent form
@@ -580,6 +580,14 @@ class FormConfig:
     # Form factor bounds (prevents over-adjustment)
     min_form_factor: float = 0.70  # Max 30% reduction
     max_form_factor: float = 1.30  # Max 30% increase
+    
+    # v5.1: Premium player adjustments (£8+ for MID/FWD, £6+ for DEF)
+    # These players have higher variance - need wider form caps
+    premium_threshold_mid_fwd: float = 8.0
+    premium_threshold_def: float = 6.0
+    premium_min_form_factor: float = 0.55  # Max 45% reduction for premiums
+    premium_max_form_factor: float = 1.50  # Max 50% increase for premiums
+    premium_form_weight: float = 0.55      # Higher weight on recent form
     
     # Position-specific form sensitivity
     # FWDs are more streaky (binary goal outcomes)
@@ -5186,6 +5194,7 @@ async def get_rankings(
     min_price: float = Query(0, ge=0),
     max_price: float = Query(20, ge=0, le=20),
     max_ownership: float = Query(100, ge=0, le=100),
+    team: Optional[str] = Query(None, description="Filter by team short name (e.g., ARS, LIV, MCI)"),
     limit: int = Query(50, ge=1, le=200),
     sort_by: str = Query("xpts", pattern="^(xpts|price|form|ownership|defcon_per_90|saves_per_90|expected_minutes|total_points|xgi_per_90|bonus_per_90)$"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$")
@@ -5203,6 +5212,16 @@ async def get_rankings(
     next_gw = get_next_gameweek(events)
     position_id = POSITION_ID_MAP[position.value]
     
+    # Build team filter lookup if specified
+    team_filter_ids = set()
+    if team:
+        team_lower = team.lower().strip()
+        for t in teams.values():
+            team_name = t.get("name", "").lower()
+            team_short = t.get("short_name", "").lower()
+            if team_lower in team_name or team_lower == team_short:
+                team_filter_ids.add(t["id"])
+    
     # Use dynamic defaults based on current GW if not specified
     if gw_start is None:
         gw_start = next_gw if next_gw else min(current_gw + 1, 38)
@@ -5216,6 +5235,10 @@ async def get_rankings(
     filtered_players = []
     for player in elements:
         if player["element_type"] != position_id:
+            continue
+        
+        # Apply team filter if specified
+        if team_filter_ids and player["team"] not in team_filter_ids:
             continue
         
         total_minutes = player.get("minutes", 0)

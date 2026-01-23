@@ -455,6 +455,155 @@
             width: 70px;
         }
 
+        /* ===== PLAYER SEARCH AUTOCOMPLETE ===== */
+        .search-container {
+            position: relative;
+            width: 220px;
+        }
+
+        .search-input {
+            width: 100%;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.65rem 1rem;
+            padding-left: 2.2rem;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.1);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            pointer-events: none;
+        }
+
+        .search-clear {
+            position: absolute;
+            right: 0.5rem;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 0.25rem;
+            display: none;
+        }
+
+        .search-clear:hover {
+            color: var(--accent-red);
+        }
+
+        .search-container.has-value .search-clear {
+            display: block;
+        }
+
+        .search-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-top: 4px;
+            max-height: 280px;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            display: none;
+        }
+
+        .search-dropdown.active {
+            display: block;
+        }
+
+        .search-item {
+            padding: 0.6rem 0.9rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            transition: background 0.15s ease;
+        }
+
+        .search-item:last-child {
+            border-bottom: none;
+        }
+
+        .search-item:hover, .search-item.highlighted {
+            background: var(--bg-tertiary);
+        }
+
+        .search-item-name {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .search-item-team {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-left: 0.5rem;
+        }
+
+        .search-item-price {
+            font-size: 0.8rem;
+            color: var(--accent-primary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .search-no-results {
+            padding: 0.8rem;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        /* ===== FILTER DROPDOWNS ===== */
+        .filter-select {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.65rem 1rem;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            min-width: 130px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M3 4.5L6 7.5L9 4.5'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            padding-right: 2rem;
+        }
+
+        .filter-select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.1);
+        }
+
+        .filter-select option {
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+
         /* ===== COMPACT TEAM BANNER ===== */
         .team-banner {
             background: linear-gradient(135deg, var(--bg-card) 0%, rgba(0, 212, 170, 0.05) 100%);
@@ -2745,6 +2894,15 @@
         <section id="rankings" class="section">
             <div class="controls-panel">
                 <div class="control-group">
+                    <label>Search Player</label>
+                    <div class="search-container" id="playerSearchContainer">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" class="search-input" id="playerSearch" placeholder="Type 3+ chars..." autocomplete="off">
+                        <button class="search-clear" id="searchClear" onclick="clearPlayerSearch()">×</button>
+                        <div class="search-dropdown" id="searchDropdown"></div>
+                    </div>
+                </div>
+                <div class="control-group">
                     <label>GW Range</label>
                     <div class="control-row">
                         <input type="number" id="gwStart" value="22" min="1" max="38">
@@ -2753,20 +2911,43 @@
                     </div>
                 </div>
                 <div class="control-group">
-                    <label>Price Range (£m)</label>
-                    <div class="price-range">
-                        <input type="number" id="rankMinPrice" value="4.0" min="3.5" max="15" step="0.5">
-                        <span style="color: var(--text-muted)">to</span>
-                        <input type="number" id="rankMaxPrice" value="15.0" min="3.5" max="15" step="0.5">
-                    </div>
+                    <label>Max Price</label>
+                    <select class="filter-select" id="maxPriceFilter">
+                        <option value="7.0">All Prices</option>
+                        <option value="6.0">Under £6.0m</option>
+                        <option value="5.5">Under £5.5m</option>
+                        <option value="5.0">Under £5.0m</option>
+                        <option value="4.5">Under £4.5m</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Team</label>
+                    <select class="filter-select" id="teamFilter">
+                        <option value="">All Teams</option>
+                    </select>
                 </div>
                 <div class="control-group">
                     <label>Max Own%</label>
-                    <input type="number" id="maxOwnership" value="100" min="0" max="100" step="5" title="Set to 5-10% to find differentials">
+                    <select class="filter-select" id="maxOwnership">
+                        <option value="100">All</option>
+                        <option value="50">Under 50%</option>
+                        <option value="30">Under 30%</option>
+                        <option value="20">Under 20%</option>
+                        <option value="10">Under 10%</option>
+                        <option value="5">Under 5%</option>
+                        <option value="2">Under 2%</option>
+                    </select>
                 </div>
                 <div class="control-group">
                     <label>Min Minutes</label>
-                    <input type="number" id="minMinutes" value="400" min="0" step="50">
+                    <select class="filter-select" id="minMinutes">
+                        <option value="0">Any</option>
+                        <option value="200">200+</option>
+                        <option value="400" selected>400+</option>
+                        <option value="600">600+</option>
+                        <option value="800">800+</option>
+                        <option value="1000">1000+</option>
+                    </select>
                 </div>
                 <div class="control-group">
                     <label>&nbsp;</label>
@@ -2904,6 +3085,7 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                     document.querySelectorAll('.position-tab').forEach(t => t.classList.remove('active'));
                     tab.classList.add('active');
                     currentPosition = tab.dataset.position;
+                    updatePriceOptionsForPosition(currentPosition);
                     loadRankings();
                 });
             });
@@ -2967,13 +3149,293 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                 document.getElementById('gwStart').value = Math.min(rankingsGw, 38);
                 document.getElementById('gwEnd').value = Math.min(rankingsGw + 5, 38);
                 
+                // Populate team filter dropdown
+                populateTeamFilter(data.teams);
+                
+                // Store players for search
+                allPlayers = data.elements || [];
+                
                 bootstrapLoaded = true;
             } catch (error) {
                 console.error('Failed to load bootstrap:', error);
+                // Still populate team filter with fallback
+                populateTeamFilter(null);
                 // Still mark as loaded so rankings can proceed with defaults
                 bootstrapLoaded = true;
             }
         }
+
+        // Store all players for search functionality
+        let allPlayers = [];
+
+        // Fallback team list for when API is unavailable
+        const FALLBACK_TEAMS = [
+            { id: 1, name: 'Arsenal', short_name: 'ARS' },
+            { id: 2, name: 'Aston Villa', short_name: 'AVL' },
+            { id: 3, name: 'Bournemouth', short_name: 'BOU' },
+            { id: 4, name: 'Brentford', short_name: 'BRE' },
+            { id: 5, name: 'Brighton', short_name: 'BHA' },
+            { id: 6, name: 'Burnley', short_name: 'BUR' },
+            { id: 7, name: 'Chelsea', short_name: 'CHE' },
+            { id: 8, name: 'Crystal Palace', short_name: 'CRY' },
+            { id: 9, name: 'Everton', short_name: 'EVE' },
+            { id: 10, name: 'Fulham', short_name: 'FUL' },
+            { id: 11, name: 'Leeds', short_name: 'LEE' },
+            { id: 12, name: 'Liverpool', short_name: 'LIV' },
+            { id: 13, name: 'Man City', short_name: 'MCI' },
+            { id: 14, name: 'Man Utd', short_name: 'MUN' },
+            { id: 15, name: 'Newcastle', short_name: 'NEW' },
+            { id: 16, name: 'Nott\'m Forest', short_name: 'NFO' },
+            { id: 17, name: 'Sunderland', short_name: 'SUN' },
+            { id: 18, name: 'Spurs', short_name: 'TOT' },
+            { id: 19, name: 'West Ham', short_name: 'WHU' },
+            { id: 20, name: 'Wolves', short_name: 'WOL' },
+        ];
+
+        // Populate team filter dropdown
+        function populateTeamFilter(teams) {
+            const teamSelect = document.getElementById('teamFilter');
+            if (!teamSelect) return;
+            
+            // Use API teams or fallback
+            let teamList = [];
+            if (teams && typeof teams === 'object') {
+                teamList = Object.values(teams);
+            }
+            if (teamList.length === 0) {
+                teamList = FALLBACK_TEAMS;
+            }
+            
+            // Sort teams alphabetically by name
+            const sortedTeams = teamList.sort((a, b) => 
+                (a.name || a.short_name || '').localeCompare(b.name || b.short_name || '')
+            );
+            
+            // Clear existing options except first "All Teams"
+            teamSelect.innerHTML = '<option value="">All Teams</option>';
+            
+            sortedTeams.forEach(team => {
+                const option = document.createElement('option');
+                option.value = team.short_name || team.name;
+                option.textContent = team.name || team.short_name;
+                teamSelect.appendChild(option);
+            });
+        }
+
+        // Player search functionality
+        function initPlayerSearch() {
+            const searchInput = document.getElementById('playerSearch');
+            const searchContainer = document.getElementById('playerSearchContainer');
+            const searchDropdown = document.getElementById('searchDropdown');
+            const searchClear = document.getElementById('searchClear');
+            
+            let highlightedIndex = -1;
+            
+            searchInput.addEventListener('input', (e) => {
+                const query = e.target.value.trim();
+                
+                // Update clear button visibility
+                if (query.length > 0) {
+                    searchContainer.classList.add('has-value');
+                } else {
+                    searchContainer.classList.remove('has-value');
+                }
+                
+                // Require at least 3 characters
+                if (query.length < 3) {
+                    searchDropdown.classList.remove('active');
+                    return;
+                }
+                
+                // Filter players
+                const filtered = allPlayers
+                    .filter(p => p.web_name.toLowerCase().includes(query.toLowerCase()))
+                    .slice(0, 10);  // Limit to 10 results
+                
+                if (filtered.length === 0) {
+                    searchDropdown.innerHTML = '<div class="search-no-results">No players found</div>';
+                } else {
+                    searchDropdown.innerHTML = filtered.map((p, i) => `
+                        <div class="search-item ${i === highlightedIndex ? 'highlighted' : ''}" 
+                             data-player-id="${p.id}" 
+                             data-player-name="${p.web_name}"
+                             data-position="${p.element_type}">
+                            <div>
+                                <span class="search-item-name">${p.web_name}</span>
+                                <span class="search-item-team">${getTeamShortName(p.team)}</span>
+                            </div>
+                            <span class="search-item-price">£${(p.now_cost / 10).toFixed(1)}</span>
+                        </div>
+                    `).join('');
+                    
+                    // Add click handlers
+                    searchDropdown.querySelectorAll('.search-item').forEach(item => {
+                        item.addEventListener('click', () => selectPlayer(item));
+                    });
+                }
+                
+                searchDropdown.classList.add('active');
+                highlightedIndex = -1;
+            });
+            
+            // Keyboard navigation
+            searchInput.addEventListener('keydown', (e) => {
+                const items = searchDropdown.querySelectorAll('.search-item');
+                
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    highlightedIndex = Math.min(highlightedIndex + 1, items.length - 1);
+                    updateHighlight(items);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    highlightedIndex = Math.max(highlightedIndex - 1, 0);
+                    updateHighlight(items);
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (highlightedIndex >= 0 && items[highlightedIndex]) {
+                        selectPlayer(items[highlightedIndex]);
+                    } else {
+                        // Just filter the table with current search
+                        loadRankings();
+                        searchDropdown.classList.remove('active');
+                    }
+                } else if (e.key === 'Escape') {
+                    searchDropdown.classList.remove('active');
+                }
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!searchContainer.contains(e.target)) {
+                    searchDropdown.classList.remove('active');
+                }
+            });
+            
+            function updateHighlight(items) {
+                items.forEach((item, i) => {
+                    item.classList.toggle('highlighted', i === highlightedIndex);
+                });
+            }
+            
+            function selectPlayer(item) {
+                const name = item.dataset.playerName;
+                const position = item.dataset.position;
+                
+                // Set the search input value
+                searchInput.value = name;
+                searchContainer.classList.add('has-value');
+                
+                // Set position tab based on player
+                const posMap = {1: 'GKP', 2: 'DEF', 3: 'MID', 4: 'FWD'};
+                const posName = posMap[position] || currentPosition;
+                
+                // Update position tab
+                document.querySelectorAll('.position-tab').forEach(tab => {
+                    tab.classList.toggle('active', tab.dataset.position === posName);
+                });
+                currentPosition = posName;
+                
+                // Update price options for new position
+                updatePriceOptionsForPosition(posName);
+                
+                // Close dropdown and load rankings
+                searchDropdown.classList.remove('active');
+                loadRankings();
+            }
+        }
+
+        // Get team short name by ID
+        function getTeamShortName(teamId) {
+            const teamMap = {
+                1: 'ARS', 2: 'AVL', 3: 'BOU', 4: 'BRE', 5: 'BHA', 6: 'BUR', 7: 'CHE', 8: 'CRY',
+                9: 'EVE', 10: 'FUL', 11: 'LEE', 12: 'LIV', 13: 'MCI', 14: 'MUN', 15: 'NEW',
+                16: 'NFO', 17: 'SUN', 18: 'TOT', 19: 'WHU', 20: 'WOL'
+            };
+            return teamMap[teamId] || '???';
+        }
+
+        // Update price dropdown options based on position
+        function updatePriceOptionsForPosition(position) {
+            const priceSelect = document.getElementById('maxPriceFilter');
+            const currentValue = priceSelect.value;
+            
+            // Position-specific price brackets (descending order)
+            const priceOptions = {
+                'GKP': [
+                    { value: '7.0', text: 'All Prices' },
+                    { value: '6.0', text: 'Under £6.0m' },
+                    { value: '5.5', text: 'Under £5.5m' },
+                    { value: '5.0', text: 'Under £5.0m' },
+                    { value: '4.5', text: 'Under £4.5m' },
+                ],
+                'DEF': [
+                    { value: '8.0', text: 'All Prices' },
+                    { value: '7.0', text: 'Under £7.0m' },
+                    { value: '6.5', text: 'Under £6.5m' },
+                    { value: '6.0', text: 'Under £6.0m' },
+                    { value: '5.5', text: 'Under £5.5m' },
+                    { value: '5.0', text: 'Under £5.0m' },
+                    { value: '4.5', text: 'Under £4.5m' },
+                ],
+                'MID': [
+                    { value: '15.0', text: 'All Prices' },
+                    { value: '10.0', text: 'Under £10.0m' },
+                    { value: '8.0', text: 'Under £8.0m' },
+                    { value: '7.5', text: 'Under £7.5m' },
+                    { value: '7.0', text: 'Under £7.0m' },
+                    { value: '6.5', text: 'Under £6.5m' },
+                    { value: '6.0', text: 'Under £6.0m' },
+                    { value: '5.5', text: 'Under £5.5m' },
+                    { value: '5.0', text: 'Under £5.0m' },
+                ],
+                'FWD': [
+                    { value: '16.0', text: 'All Prices' },
+                    { value: '10.0', text: 'Under £10.0m' },
+                    { value: '9.0', text: 'Under £9.0m' },
+                    { value: '8.0', text: 'Under £8.0m' },
+                    { value: '7.5', text: 'Under £7.5m' },
+                    { value: '7.0', text: 'Under £7.0m' },
+                    { value: '6.5', text: 'Under £6.5m' },
+                    { value: '6.0', text: 'Under £6.0m' },
+                    { value: '5.5', text: 'Under £5.5m' },
+                ]
+            };
+            
+            const options = priceOptions[position] || priceOptions['MID'];
+            
+            // Clear and repopulate
+            priceSelect.innerHTML = '';
+            options.forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt.value;
+                option.textContent = opt.text;
+                priceSelect.appendChild(option);
+            });
+            
+            // Try to keep current value, otherwise default to "All Prices"
+            const hasCurrentValue = options.some(opt => opt.value === currentValue);
+            priceSelect.value = hasCurrentValue ? currentValue : options[0].value;
+        }
+
+        // Clear player search
+        function clearPlayerSearch() {
+            const searchInput = document.getElementById('playerSearch');
+            const searchContainer = document.getElementById('playerSearchContainer');
+            const searchDropdown = document.getElementById('searchDropdown');
+            
+            searchInput.value = '';
+            searchContainer.classList.remove('has-value');
+            searchDropdown.classList.remove('active');
+            loadRankings();
+        }
+
+        // Initialize search on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            initPlayerSearch();
+            updatePriceOptionsForPosition(currentPosition);
+            // Populate team filter with fallback (will be overwritten by API if available)
+            populateTeamFilter(null);
+        });
 
         async function loadMyTeam() {
             const teamId = document.getElementById('teamIdInput').value;
@@ -3608,9 +4070,10 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
             const gwStart = document.getElementById('gwStart').value;
             const gwEnd = document.getElementById('gwEnd').value;
             const minMinutes = document.getElementById('minMinutes').value;
-            const minPrice = document.getElementById('rankMinPrice').value;
-            const maxPrice = document.getElementById('rankMaxPrice').value;
+            const maxPrice = document.getElementById('maxPriceFilter').value;
             const maxOwnership = document.getElementById('maxOwnership').value;
+            const teamFilter = document.getElementById('teamFilter').value;
+            const searchQuery = document.getElementById('playerSearch').value.trim();
 
             document.getElementById('rankingsBody').innerHTML = `<tr><td colspan="13" class="loading"><div class="loading-spinner"></div><span style="margin-left: 0.5rem">Loading ${currentPosition} rankings...</span></td></tr>`;
             
@@ -3619,13 +4082,32 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
             table.className = `data-table pos-${currentPosition.toLowerCase()}`;
 
             try {
-                const response = await fetch(`${API_BASE}/api/rankings/${currentPosition}?gw_start=${gwStart}&gw_end=${gwEnd}&min_minutes=${minMinutes}&min_price=${minPrice}&max_price=${maxPrice}&max_ownership=${maxOwnership}&sort_by=${currentSort.field}&sort_order=${currentSort.order}`);
+                // Build API URL with filters
+                let url = `${API_BASE}/api/rankings/${currentPosition}?gw_start=${gwStart}&gw_end=${gwEnd}&min_minutes=${minMinutes}&min_price=3.5&max_price=${maxPrice}&max_ownership=${maxOwnership}&sort_by=${currentSort.field}&sort_order=${currentSort.order}`;
+                
+                // Add team filter if selected
+                if (teamFilter) {
+                    url += `&team=${encodeURIComponent(teamFilter)}`;
+                }
+                
+                const response = await fetch(url);
                 const data = await response.json();
-                rankingsData = data.players;
+                let players = data.players;
+                
+                // Apply client-side search filter if query exists
+                if (searchQuery && searchQuery.length >= 3) {
+                    const query = searchQuery.toLowerCase();
+                    players = players.filter(p => 
+                        p.name.toLowerCase().includes(query) || 
+                        p.team.toLowerCase().includes(query)
+                    );
+                }
+                
+                rankingsData = players;
                 document.getElementById('rankingsTitle').textContent = `${currentPosition} Rankings (${data.gw_range})`;
-                document.getElementById('rankingsCount').textContent = `${data.players.length} players`;
+                document.getElementById('rankingsCount').textContent = `${players.length} players`;
 
-                const html = data.players.map((p, i) => {
+                const html = players.map((p, i) => {
                     // DEFCON column (shown for DEF/MID)
                     const defconClass = p.defcon_per_90 >= 10 ? 'defcon-high' : (p.defcon_per_90 >= 7 ? 'defcon-medium' : 'defcon-low');
                     const defconHtml = `<td class="pos-col def-col mid-col"><span class="defcon-badge ${defconClass}">${p.defcon_per_90 !== null ? p.defcon_per_90.toFixed(1) : '-'}</span></td>`;
