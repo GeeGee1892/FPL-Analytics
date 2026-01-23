@@ -1299,33 +1299,35 @@ def xg_to_defence_fdr(xg: float) -> int:
 # attack_fdr = how hard to score against them (based on their xGA)
 # defence_fdr = how hard to keep CS against them (based on their xG)
 DEFAULT_TEAM_STRENGTH = {
-    1:  {"name": "Arsenal", "xg": 1.84, "xga": 0.81},
-    12: {"name": "Liverpool", "xg": 1.78, "xga": 1.06},
-    13: {"name": "Man City", "xg": 1.98, "xga": 1.13},
-    15: {"name": "Newcastle", "xg": 1.48, "xga": 1.14},
-    2:  {"name": "Aston Villa", "xg": 1.41, "xga": 1.22},
-    14: {"name": "Man Utd", "xg": 1.48, "xga": 1.24},
-    8:  {"name": "Everton", "xg": 1.03, "xga": 1.33},
-    6:  {"name": "Chelsea", "xg": 1.54, "xga": 1.33},
-    5:  {"name": "Brighton", "xg": 1.37, "xga": 1.35},
-    9:  {"name": "Fulham", "xg": 1.24, "xga": 1.38},
-    10: {"name": "Leeds United", "xg": 1.15, "xga": 1.39},
-    4:  {"name": "Brentford", "xg": 1.41, "xga": 1.40},
-    17: {"name": "Tottenham", "xg": 1.44, "xga": 1.43},
-    20: {"name": "Wolves", "xg": 1.08, "xga": 1.43},
-    7:  {"name": "Crystal Palace", "xg": 1.41, "xga": 1.44},
-    19: {"name": "Sunderland", "xg": 0.82, "xga": 1.45},
-    3:  {"name": "Bournemouth", "xg": 1.24, "xga": 1.46},
-    16: {"name": "Nott'm Forest", "xg": 1.16, "xga": 1.48},
-    18: {"name": "West Ham", "xg": 1.22, "xga": 1.63},
-    11: {"name": "Burnley", "xg": 0.84, "xga": 1.82},
+    # 25/26 FPL API Team IDs (verified from /api/bootstrap-static/)
+    # Sorted by defensive strength (xGA low to high)
+    1:  {"name": "Arsenal", "xg": 1.84, "xga": 0.81},       # ARS
+    12: {"name": "Liverpool", "xg": 1.78, "xga": 1.06},     # LIV
+    13: {"name": "Man City", "xg": 1.98, "xga": 1.13},      # MCI
+    15: {"name": "Newcastle", "xg": 1.48, "xga": 1.14},     # NEW
+    2:  {"name": "Aston Villa", "xg": 1.41, "xga": 1.22},   # AVL
+    14: {"name": "Man Utd", "xg": 1.48, "xga": 1.24},       # MUN
+    8:  {"name": "Crystal Palace", "xg": 1.41, "xga": 1.33},# CRY
+    6:  {"name": "Brighton", "xg": 1.37, "xga": 1.33},      # BHA
+    5:  {"name": "Brentford", "xg": 1.41, "xga": 1.35},     # BRE
+    9:  {"name": "Everton", "xg": 1.03, "xga": 1.38},       # EVE
+    10: {"name": "Fulham", "xg": 1.24, "xga": 1.39},        # FUL
+    4:  {"name": "Bournemouth", "xg": 1.24, "xga": 1.40},   # BOU
+    20: {"name": "Wolves", "xg": 1.08, "xga": 1.43},        # WOL
+    17: {"name": "Sunderland", "xg": 0.82, "xga": 1.43},    # SUN (promoted)
+    7:  {"name": "Chelsea", "xg": 1.54, "xga": 1.44},       # CHE
+    19: {"name": "West Ham", "xg": 1.22, "xga": 1.45},      # WHU
+    16: {"name": "Nott'm Forest", "xg": 1.16, "xga": 1.48}, # NFO
+    18: {"name": "Tottenham", "xg": 1.44, "xga": 1.63},     # TOT
+    11: {"name": "Leeds United", "xg": 1.15, "xga": 1.70},  # LEE (promoted)
+    3:  {"name": "Burnley", "xg": 0.84, "xga": 1.82},       # BUR (promoted)
 }
 
-# Legacy alias for backwards compatibility
+# Legacy alias for backwards compatibility - also with correct 25/26 IDs
 PROMOTED_TEAM_DEFAULTS = {
-    10: {"name": "Leeds United", "xg": 1.15, "xga": 1.39, "attack_fdr": 6, "defence_fdr": 4},
-    11: {"name": "Burnley", "xg": 0.84, "xga": 1.82, "attack_fdr": 2, "defence_fdr": 2},
-    19: {"name": "Sunderland", "xg": 0.82, "xga": 1.45, "attack_fdr": 5, "defence_fdr": 1},
+    11: {"name": "Leeds United", "xg": 1.15, "xga": 1.70, "attack_fdr": 5, "defence_fdr": 3},
+    3:  {"name": "Burnley", "xg": 0.84, "xga": 1.82, "attack_fdr": 2, "defence_fdr": 1},
+    17: {"name": "Sunderland", "xg": 0.82, "xga": 1.43, "attack_fdr": 4, "defence_fdr": 1},
 }
 
 # Horizon regression from config
@@ -1594,72 +1596,108 @@ def calculate_matchup_fdr(
     position: int
 ) -> int:
     """
-    v4.3.3c: Calculate matchup-aware FDR for display in fixture grid.
+    v4.3.6: MATCHUP-BASED FDR considering BOTH teams' strengths.
     
-    This is for the fixture heatmap display, not for xPts calculation.
-    Shows how easy/hard the fixture is considering BOTH teams.
+    Calculates expected goals for the specific matchup, then converts to FDR.
+    
+    For MID/FWD (attacking FDR):
+        expected_goals = (our_xG / avg) × (opp_xGA / avg) × avg × venue
+        Higher expected goals → Lower FDR (easier to score)
+    
+    For GKP/DEF (defensive FDR):
+        expected_goals_against = (opp_xG / avg) × (our_xGA / avg) × avg × venue
+        Lower expected goals against → Lower FDR (easier CS)
     
     Args:
         team_id: Player's team ID
         opponent_id: Opponent team ID
         is_home: Is player at home?
-        position: Player position (determines attack vs defence FDR)
+        position: Player position (1=GKP, 2=DEF, 3=MID, 4=FWD)
     
     Returns:
         FDR 1-10 (1=very easy, 10=very hard)
     """
-    if position in [3, 4]:  # MID, FWD - care about attacking
-        # Get matchup multiplier (higher = easier)
-        multiplier = calculate_matchup_attack_multiplier(
-            team_id, opponent_id, is_home, 
-            player_price=8.0,  # Use mid-range for display
-            position=position
-        )
-        # Convert to FDR: 1.5x multiplier = FDR 2, 0.7x = FDR 8
-        # Neutral (1.0) = FDR 5
-        if multiplier >= 1.40:
-            return 2
-        elif multiplier >= 1.25:
-            return 3
-        elif multiplier >= 1.12:
-            return 4
-        elif multiplier >= 1.00:
-            return 5
-        elif multiplier >= 0.90:
-            return 6
-        elif multiplier >= 0.80:
-            return 7
-        elif multiplier >= 0.70:
-            return 8
-        elif multiplier >= 0.60:
-            return 9
+    if not cache.fdr_data:
+        return 5  # Neutral fallback
+    
+    # Get team data (with fallbacks)
+    team_data = cache.fdr_data.get(team_id, {})
+    opp_data = cache.fdr_data.get(opponent_id, {})
+    
+    # Team strengths (blended = baseline + form)
+    team_xg = team_data.get('blended_xg', LEAGUE_AVG_XG)
+    team_xga = team_data.get('blended_xga', LEAGUE_AVG_XGA)
+    opp_xg = opp_data.get('blended_xg', LEAGUE_AVG_XG)
+    opp_xga = opp_data.get('blended_xga', LEAGUE_AVG_XGA)
+    
+    # Venue adjustments
+    if is_home:
+        # We're home: we attack better (+15%), they attack worse (-13%)
+        team_attack_adj = team_xg * 1.15
+        opp_attack_adj = opp_xg * 0.87
+        # We defend better (-10%), they defend worse (+15%)
+        team_defence_adj = team_xga * 0.90
+        opp_defence_adj = opp_xga * 1.15
+    else:
+        # We're away: we attack worse (-13%), they attack better (+15%)
+        team_attack_adj = team_xg * 0.87
+        opp_attack_adj = opp_xg * 1.15
+        # We defend worse (+15%), they defend better (-10%)
+        team_defence_adj = team_xga * 1.15
+        opp_defence_adj = opp_xga * 0.90
+    
+    if position in [3, 4]:  # MID, FWD - care about scoring
+        # Expected goals WE score = our attack vs their defence
+        # Formula: (our_xG / avg) × (their_xGA / avg) × avg
+        expected_goals = (team_attack_adj / LEAGUE_AVG_XG) * (opp_defence_adj / LEAGUE_AVG_XGA) * LEAGUE_AVG_XG
+        
+        # Convert to FDR: more expected goals = easier = lower FDR
+        if expected_goals >= 2.50:
+            return 1   # Elite attack vs terrible defence
+        elif expected_goals >= 2.10:
+            return 2   # Very easy
+        elif expected_goals >= 1.80:
+            return 3   # Easy
+        elif expected_goals >= 1.55:
+            return 4   # Decent
+        elif expected_goals >= 1.35:
+            return 5   # Average (league avg ~1.35)
+        elif expected_goals >= 1.15:
+            return 6   # Below average
+        elif expected_goals >= 1.00:
+            return 7   # Hard
+        elif expected_goals >= 0.85:
+            return 8   # Very hard
+        elif expected_goals >= 0.70:
+            return 9   # Elite defence
         else:
-            return 10
-    else:  # GKP, DEF - care about CS
-        # Get CS probability (higher = easier)
-        cs_prob, _ = calculate_matchup_cs_probability(
-            team_id, opponent_id, is_home,
-            team_base_cs=0.22
-        )
-        # Convert to FDR: 50% CS = FDR 2, 15% CS = FDR 8
-        if cs_prob >= 0.50:
-            return 2
-        elif cs_prob >= 0.42:
-            return 3
-        elif cs_prob >= 0.35:
-            return 4
-        elif cs_prob >= 0.28:
-            return 5
-        elif cs_prob >= 0.22:
-            return 6
-        elif cs_prob >= 0.17:
-            return 7
-        elif cs_prob >= 0.12:
-            return 8
-        elif cs_prob >= 0.08:
-            return 9
+            return 10  # Near impossible
+    
+    else:  # GKP, DEF - care about clean sheets
+        # Expected goals AGAINST us = their attack vs our defence
+        expected_goals_against = (opp_attack_adj / LEAGUE_AVG_XG) * (team_defence_adj / LEAGUE_AVG_XGA) * LEAGUE_AVG_XG
+        
+        # Convert to FDR: fewer expected goals against = easier CS = lower FDR
+        if expected_goals_against <= 0.60:
+            return 1   # Elite defence vs terrible attack
+        elif expected_goals_against <= 0.80:
+            return 2   # Very easy CS
+        elif expected_goals_against <= 1.00:
+            return 3   # Easy CS
+        elif expected_goals_against <= 1.15:
+            return 4   # Decent CS chance
+        elif expected_goals_against <= 1.35:
+            return 5   # Average (league avg ~1.35)
+        elif expected_goals_against <= 1.55:
+            return 6   # Below average
+        elif expected_goals_against <= 1.80:
+            return 7   # Hard
+        elif expected_goals_against <= 2.10:
+            return 8   # Very hard
+        elif expected_goals_against <= 2.50:
+            return 9   # Very weak defence vs elite attack
         else:
-            return 10
+            return 10  # Near impossible CS
 
 
 def detect_backup_status(player: Dict, all_players: List[Dict], current_gw: int) -> tuple[bool, float, str]:
