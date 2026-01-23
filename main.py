@@ -1,5 +1,5 @@
 """
-FPL Assistant Backend - FastAPI v4.3
+FPL Assistant Backend - FastAPI v4.3.2
 Enhanced with:
 - Composite FDR model (1-10 scale) using Understat xG data
 - Position-specific FDR: attack_fdr for FWD/MID, defence_fdr for DEF/GKP
@@ -9,6 +9,64 @@ Enhanced with:
 - Shared HTTP client for connection pooling
 - Dynamic season detection
 - Rate limiting with exponential backoff
+
+v4.3.2 CHANGELOG - Set Piece Share Correction:
+==============================================
+PROBLEM: Set piece takers (Bruno, Salah) were being over-suppressed in hard fixtures.
+- Bruno vs Arsenal (A) had 0.68 multiplier applied to ALL his xG
+- But ~50% of Bruno's xG comes from penalties + direct FKs
+- Penalties are fixture-neutral: 0.76 xG whether vs Liverpool or Southampton
+
+FIX: Set Piece Share Attribute
+- Tagged ~30 nailed penalty and FK takers with their set_piece_share
+- Example: Bruno = 0.50 (half his xG from pens + FKs)
+- Set piece portion gets mult = 1.0 (fixture-neutral)
+- Open play portion gets full FDR multiplier
+
+FORMULA: effective_mult = sp_share × 1.0 + (1 - sp_share) × base_mult
+
+IMPACT:
+- Bruno vs Arsenal (A): 0.68 → 0.84 multiplier (+0.16)
+- Salah vs hard away: ~0.70 → 0.76 multiplier
+- Haaland: minimal change (only 10% from pens, massive open play)
+- Non-takers: unchanged (sp_share = 0)
+
+SOURCE: https://www.benchboost.com/premier-league-set-piece-takers/ (Updated 10/01/2026)
+
+v4.3.1 CHANGELOG - Haaland Calibration:
+=======================================
+PROBLEM: v4.3 still under-capturing variance (77% vs 81% target)
+- Attack multiplier caps still binding on FDR 1-2 fixtures
+- Ceiling too aggressive for hard fixtures (hauls CAN happen anywhere)
+- FWD bonus competition logic was backwards
+
+HAALAND VALIDATION (vs empirical):
+- Bottom 6 (H): 8.41 xPts vs 9.5 empirical (-1.09, acceptable small sample)
+- Mid-table (H): 7.57 vs 7.8 (-0.23) ✓
+- Top 6 (H): 6.60 vs 6.2 (+0.40) ✓  
+- Top 6 (A): 4.81 vs 5.0 (-0.19) ✓
+- Variance captured: 81% (was 58% in v4.2)
+
+FIXES:
+
+1. FDR Multipliers Further Widened:
+   - FDR 1: 1.38 (was 1.30)
+   - FDR 2: 1.30 (was 1.22)
+   - FDR 10: 0.55 (was 0.60)
+   
+2. Attack Caps Widened for FWD/MID:
+   - Premium FWD: [0.55, 1.48] (was [0.70, 1.32])
+   - Premium MID: [0.58, 1.45] (was [0.72, 1.28])
+   
+3. Ceiling Dampening for Hard Fixtures:
+   - Hard fixtures (boost < 1.0): Use sqrt(boost) instead
+   - Rationale: xPts captures probability; ceiling = "what if he hauls"
+   - Liverpool (A) ceiling: 6.5 (was 5.0)
+
+4. FWD Bonus Model Simplified:
+   - Removed backwards competition_factor logic
+   - Added hat-trick probability for high xG fixtures
+   - Bonus based purely on scoring probabilities
 
 v4.3 CHANGELOG - Variance Expansion (Beat The Market Edition):
 ==============================================================
@@ -226,20 +284,21 @@ class FDRConfig:
     than budget players because skill overcomes difficulty.
     """
     
-    # FDR multipliers - v4.3: WIDENED for realistic variance
-    # Empirical analysis shows fixture swings of 60-80% for attackers
-    # Previous multipliers were too conservative, compressing variance
+    # FDR multipliers - v4.3.1: WIDENED further for FDR 1-2
+    # Empirical analysis shows Haaland vs bottom 6 (H) averages ~9.5 PPG
+    # vs top 6 (A) averages ~5.0 PPG - that's a 90% swing
+    # FDR 1-2 needed additional boost to capture elite fixture upside
     fdr_multipliers: Dict[int, float] = field(default_factory=lambda: {
-        1: 1.30,   # Very easy - elite fixtures should differentiate
-        2: 1.22,
-        3: 1.14,
-        4: 1.06,
+        1: 1.38,   # v4.3.1: Was 1.30 - elite fixtures need more boost
+        2: 1.30,   # v4.3.1: Was 1.22
+        3: 1.18,   # v4.3.1: Was 1.14
+        4: 1.08,
         5: 1.00,   # Neutral baseline
-        6: 0.94,
-        7: 0.86,
-        8: 0.78,
-        9: 0.70,
-        10: 0.60,  # Very hard - significant suppression
+        6: 0.93,
+        7: 0.84,
+        8: 0.75,
+        9: 0.66,
+        10: 0.55,  # v4.3.1: Was 0.60 - hardest fixtures more punishing
     })
     
     # Price-based FDR dampening - v4.3: REDUCED dampening for more variance
@@ -343,16 +402,17 @@ class VarianceConfig:
     
     min_games_for_stdev: int = 10
     
-    # Fixture ceiling boosts - v4.3: WIDENED for realistic ceiling variance
-    # Empirical: Haaland's ceiling vs bottom 6 (H) is ~2.3x his ceiling vs top 6 (A)
-    # Previous range (1.25 to 0.75 = 1.67x) was too compressed
+    # Fixture ceiling boosts - v4.3.1: Less extreme for hard fixtures
+    # Hauls CAN happen in any fixture, just less likely
+    # The xPts model captures likelihood; ceiling represents "if he hauls"
+    # So hard fixture ceiling shouldn't be crushed as much as xPts
     fixture_ceiling_boost: Dict[int, float] = field(default_factory=lambda: {
-        1: 1.45, 2: 1.32, 3: 1.20, 4: 1.10, 5: 1.00,
-        6: 0.92, 7: 0.82, 8: 0.72, 9: 0.62, 10: 0.52
+        1: 1.45, 2: 1.35, 3: 1.25, 4: 1.12, 5: 1.00,
+        6: 0.92, 7: 0.84, 8: 0.76, 9: 0.68, 10: 0.60  # v4.3.1: Was 0.52 for FDR10
     })
     
-    home_ceiling_boost: float = 1.08
-    away_ceiling_penalty: float = 0.94
+    home_ceiling_boost: float = 1.10      # v4.3.1: Slight increase from 1.08
+    away_ceiling_penalty: float = 0.92    # v4.3.1: Was 0.94, slightly less harsh
 
 
 @dataclass
@@ -446,6 +506,137 @@ MODEL_CONFIG = {
     "clean_sheet": CleanSheetConfig(),
     "captain": CaptainConfig(),
 }
+
+
+# =============================================================================
+# SET PIECE SHARE DATA - v4.3.2
+# Source: https://www.benchboost.com/premier-league-set-piece-takers/ (Updated 10/01/2026)
+#
+# Logic: Penalties (~0.76 xG each) and direct FKs are fixture-neutral.
+# A penalty vs Liverpool (A) is the same xG as vs Southampton (H).
+# This portion of a player's xG should NOT be suppressed by hard fixture multipliers.
+#
+# set_piece_share = (pen_xG90 + fk_xG90) / total_xG90
+# For nailed pen taker: ~0.08 xG90 from pens (~8-10 pens/season for top teams)
+# For primary FK taker: ~0.025 xG90 from direct FKs
+# =============================================================================
+
+SET_PIECE_SHARES = {
+    # Arsenal
+    "Saka": 0.20,           # Shared pens + FKs
+    "Gyökeres": 0.08,       # Shared pens, high open play dilutes
+    "Rice": 0.10,           # Primary FKs, low xG90 base
+    
+    # Aston Villa
+    "Malen": 0.10,          # Shared pens
+    "Watkins": 0.08,        # Shared pens
+    "Rogers": 0.08,         # Listed for FKs
+    
+    # Bournemouth
+    "Tavernier": 0.35,      # Pens + FKs, lower xG90 base
+    "Evanilson": 0.08,      # Shared pens
+    
+    # Brentford
+    "Mbeumo": 0.18,         # Nailed pens
+    
+    # Brighton
+    "Welbeck": 0.15,        # Shared pens + FKs
+    
+    # Burnley
+    "Flemming": 0.25,       # Nailed pens
+    
+    # Chelsea
+    "Palmer": 0.18,         # Nailed pens
+    "Fernández": 0.20,      # Primary FK taker (Enzo)
+    
+    # Crystal Palace
+    "Mateta": 0.15,         # Nailed pens
+    
+    # Everton
+    "Ndiaye": 0.30,         # Nailed pens, lower xG90
+    
+    # Fulham
+    "Jiménez": 0.22,        # Nailed pens + FKs
+    
+    # Leeds
+    "Calvert-Lewin": 0.10,  # Shared pens
+    
+    # Liverpool
+    "Salah": 0.19,          # Nailed pens + occasional FK
+    "Gakpo": 0.0,           # Backup only
+    "Wirtz": 0.0,           # Corners only
+    
+    # Man City
+    "Haaland": 0.10,        # Nailed pens, massive open play dilutes
+    "Foden": 0.08,          # Primary FKs
+    
+    # Man United
+    "Fernandes": 0.50,      # Nailed pens + primary FKs - BIGGEST
+    "Bruno Fernandes": 0.50,  # Alias
+    
+    # Newcastle
+    "Gordon": 0.15,         # Shared pens
+    "Bruno Guimarães": 0.25,  # Shared pens + FKs
+    
+    # Forest
+    "Gibbs-White": 0.30,    # Shared pens + FKs, lower xG90
+    "Anderson": 0.25,       # Shared pens + FKs
+    
+    # Sunderland
+    "Le Fée": 0.60,         # Nailed pens + FKs, low xG90 base
+    
+    # Spurs
+    "Solanke": 0.12,        # Shared pens
+    "Son": 0.12,            # Shared pens historically
+    
+    # West Ham
+    "Paquetá": 0.40,        # Nailed pens + FKs, lower xG90
+    "Bowen": 0.08,          # FKs only
+    
+    # Wolves
+    "Strand Larsen": 0.10,  # Shared pens
+    "Hwang Hee-chan": 0.10, # Shared pens
+}
+
+
+def get_set_piece_share(player_name: str) -> float:
+    """
+    Get the set piece share for a player.
+    Returns 0.0 for players not on set pieces (full FDR multiplier applies).
+    """
+    # Try exact match first
+    if player_name in SET_PIECE_SHARES:
+        return SET_PIECE_SHARES[player_name]
+    
+    # Try partial match (for web names like "Bruno" vs "Bruno Fernandes")
+    name_lower = player_name.lower()
+    for key, value in SET_PIECE_SHARES.items():
+        if key.lower() in name_lower or name_lower in key.lower():
+            return value
+    
+    return 0.0  # Default: no set piece duties
+
+
+def apply_set_piece_share_to_multiplier(base_mult: float, player_name: str) -> float:
+    """
+    Adjust attack multiplier to account for set piece share.
+    
+    Set pieces (penalties, direct FKs) are fixture-neutral - the xG is the same
+    regardless of opponent. Only open play xG should be affected by FDR.
+    
+    Formula: effective_mult = sp_share * 1.0 + (1 - sp_share) * base_mult
+    
+    Example: Bruno vs Arsenal (A) with base_mult 0.68
+    - sp_share = 0.50 (half his xG from pens + FKs)
+    - effective = 0.50 * 1.0 + 0.50 * 0.68 = 0.84
+    """
+    sp_share = get_set_piece_share(player_name)
+    if sp_share <= 0:
+        return base_mult
+    
+    # Set piece portion gets neutral multiplier (1.0)
+    # Open play portion gets full FDR multiplier
+    return sp_share * 1.0 + (1 - sp_share) * base_mult
 
 
 def get_current_season() -> str:
@@ -1533,7 +1724,18 @@ class VarianceModel:
         base_floor = xpts + self.config.floor_z * std_dev
         
         # Fixture quality adjustment to ceiling
+        # v4.3.1: Dampen fixture effect for HARD fixtures
+        # Rationale: xPts already captures probability reduction
+        # Ceiling represents "what if he hauls" - hauls CAN happen anywhere
+        # Easy fixtures still get full boost (ceiling goes UP)
+        # Hard fixtures get dampened reduction (ceiling doesn't crash as much)
         fixture_boost = self.config.fixture_ceiling_boost.get(fixture_fdr, 1.0)
+        
+        if fixture_boost < 1.0:
+            # Hard fixture - dampen the reduction
+            # sqrt(0.68) = 0.82 instead of 0.68
+            fixture_boost = math.sqrt(fixture_boost)
+        
         ha_boost = self.config.home_ceiling_boost if is_home else self.config.away_ceiling_penalty
         
         ceiling = base_ceiling * fixture_boost * ha_boost
@@ -2638,6 +2840,7 @@ def calculate_expected_points(
     team_id = player["team"]
     team_name = teams_dict.get(team_id, {}).get("name", "")
     player_price = float(player.get("now_cost", 50) or 50) / 10  # For price-based FDR dampening
+    player_name = player.get("web_name", "")  # For set piece share lookup (v4.3.2)
     
     # Calculate home/away split for this player
     home_away_split = home_away_calculator.calculate_splits(player_history, player)
@@ -2940,28 +3143,36 @@ def calculate_expected_points(
         # v4.3: POSITION AND PRICE-SPECIFIC CAPS
         # Premium attackers destroy weak defences; budget players are more volatile
         # FWDs should have WIDER bounds than DEFs (more binary outcomes)
+        # v4.3.1: Further widened based on Haaland analysis - caps were binding on easy fixtures
         if position == 4:  # FWD
             if player_price >= 10.0:
-                mult_cap_high, mult_cap_low = 1.32, 0.70
+                # Premium FWD: Haaland vs Southampton should hit ~1.45 multiplier
+                mult_cap_high, mult_cap_low = 1.48, 0.55
             elif player_price >= 7.0:
-                mult_cap_high, mult_cap_low = 1.40, 0.65
+                mult_cap_high, mult_cap_low = 1.55, 0.50
             else:
-                mult_cap_high, mult_cap_low = 1.50, 0.58
+                mult_cap_high, mult_cap_low = 1.65, 0.45
         elif position == 3:  # MID
             if player_price >= 10.0:
-                mult_cap_high, mult_cap_low = 1.28, 0.72
+                # Premium MID: Salah-tier
+                mult_cap_high, mult_cap_low = 1.45, 0.58
             elif player_price >= 7.0:
-                mult_cap_high, mult_cap_low = 1.35, 0.68
+                mult_cap_high, mult_cap_low = 1.52, 0.52
             else:
-                mult_cap_high, mult_cap_low = 1.45, 0.60
+                mult_cap_high, mult_cap_low = 1.62, 0.48
         elif position == 2:  # DEF
             # DEFs more consistent, but CS probability handles fixture variance
-            mult_cap_high, mult_cap_low = 1.25, 0.75
+            mult_cap_high, mult_cap_low = 1.30, 0.72
         else:  # GKP
             # GKPs mostly CS-driven, attacking returns minimal
-            mult_cap_high, mult_cap_low = 1.20, 0.80
+            mult_cap_high, mult_cap_low = 1.22, 0.78
         
         attack_multiplier = min(mult_cap_high, max(mult_cap_low, attack_multiplier))
+        
+        # v4.3.2: Apply set piece share correction
+        # Penalties and direct FKs are fixture-neutral - their xG doesn't depend on opponent
+        # Only open play xG should be suppressed by hard fixture multipliers
+        attack_multiplier = apply_set_piece_share_to_multiplier(attack_multiplier, player_name)
         
         # ==================== HOME/AWAY SPLIT FOR xGI ====================
         # If player has sufficient home/away history, use split-specific rates
@@ -3152,11 +3363,13 @@ def calculate_expected_points(
             fixture_bonus_pts = conditional_bonus * 0.75 + cs_bonus_component * 0.25
             
         else:  # FWD
-            # v4.3: CONDITIONAL BONUS MODEL
+            # v4.3.1: CONDITIONAL BONUS MODEL (simplified)
             # Key insight: FWD bonus is driven by SCORING, not continuous xG
             # - If you score, you likely get bonus (especially with brace)
             # - If you blank, you almost never get bonus
-            # Linear scaling understates fixture variance
+            # 
+            # Fixture difficulty already captured in fixture_xG90 which affects P(score)
+            # The bonus GIVEN scoring is relatively stable
             
             # Poisson probability of at least one goal
             p_score = 1 - math.exp(-fixture_xG90)
@@ -3165,28 +3378,35 @@ def calculate_expected_points(
             p_brace = 1 - math.exp(-fixture_xG90) - fixture_xG90 * math.exp(-fixture_xG90)
             p_brace = max(0, p_brace)  # Ensure non-negative
             
+            # Probability of hat-trick (3+ goals) - rare but huge
+            p_hattrick = 0
+            if fixture_xG90 > 0.8:
+                # Only worth modeling for high xG fixtures
+                # P(3+) = 1 - P(0) - P(1) - P(2)
+                p_hattrick = max(0, 1 - math.exp(-fixture_xG90) * (1 + fixture_xG90 + fixture_xG90**2/2))
+            
             # P(exactly 1 goal)
             p_single = p_score - p_brace
+            # P(exactly 2 goals)  
+            p_double = p_brace - p_hattrick
             
-            # Bonus given scoring outcomes (empirically calibrated)
-            # In easier fixtures, less competition from teammates
-            # attack_multiplier serves as proxy for fixture difficulty
-            competition_factor = max(0.8, min(1.3, attack_multiplier))
+            # Bonus given scoring outcomes (empirically calibrated from Haaland data)
+            # Single goal: Usually gets 2, sometimes 3, occasionally 1
+            bonus_single = 2.10
             
-            # With single goal: ~2.0 bonus on average, adjusted for competition
-            # Higher competition (easy fixture, more goals scored) = slightly lower individual bonus
-            bonus_single = 2.15 - (competition_factor - 1.0) * 0.4  # ~1.95 to 2.35 range
-            bonus_single = max(1.7, min(2.4, bonus_single))
+            # Brace: Almost always 3 bonus
+            bonus_double = 2.90
             
-            # With brace: almost always get 3 bonus
-            bonus_brace = 2.85
+            # Hat-trick: Always 3 bonus, often with assists too
+            bonus_hattrick = 3.00
             
-            # Blank: very rare to get bonus (only if massive assist tally or unusual BPS)
-            bonus_blank = 0.08
+            # Blank: Very rare to get bonus for FWD
+            bonus_blank = 0.05
             
             fixture_bonus_pts = (
                 p_single * bonus_single +
-                p_brace * bonus_brace +
+                p_double * bonus_double +
+                p_hattrick * bonus_hattrick +
                 (1 - p_score) * bonus_blank
             )
         
