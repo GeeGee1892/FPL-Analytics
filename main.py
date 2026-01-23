@@ -521,7 +521,7 @@ class CleanSheetConfig:
     # v4.3.3: Lowered CS cap from 52% to 45% - DEFs were overvalued
     # Even Arsenal's elite defence rarely exceeds 45% CS rate
     cs_prob_min: float = 0.05            # v4.3: Raised from 0.03 - very hard fixtures still have small chance
-    cs_prob_max: float = 0.45            # v4.3.3: Lowered from 0.52 - realistic cap
+    cs_prob_max: float = 0.52            # v4.3.4: Raised back to 0.52 - Arsenal/Liverpool can hit 50%+ vs weak teams
     league_avg_goals_per_game: float = 1.35
     league_avg_cs_rate: float = 0.27
     # v4.3: Steepness factor for Poisson CS calculation
@@ -1716,7 +1716,7 @@ def detect_backup_status(player: Dict, all_players: List[Dict], current_gw: int)
 
 
 # Admin manager ID - overrides from this account become global
-ADMIN_MANAGER_ID = 616495  # Gerti's manager ID for global overrides
+ADMIN_MANAGER_ID = 1806834  # Gerti's manager ID for global overrides
 
 # Base CS probability by team tier (used when FDR data unavailable)
 # Based on 2024/25 data - top teams keep ~35% CS, bottom ~15%
@@ -2679,6 +2679,106 @@ async def _do_fdr_refresh():
         # Set a timestamp even on failure to prevent immediate retry
         if not cache.fdr_data:
             cache.fdr_last_update = datetime.now()
+        
+        # v4.3.4: FALLBACK TO MANUAL DATA ONLY
+        # If we have Analytic FPL manual data, use it at 100% weight
+        if cache.manual_team_strength:
+            logger.info(f"Using Analytic FPL manual data for {len(cache.manual_team_strength)} teams (Understat unavailable)")
+            fdr_data = {}
+            
+            for team_id, manual_data in cache.manual_team_strength.items():
+                # Use manual data at 100% weight (no Understat form blend)
+                manual_xg = manual_data.get('adjxg_for', 1.35)
+                manual_xga = manual_data.get('adjxg_ag', 1.35)
+                team_name = manual_data.get('team_name', f'Team {team_id}')
+                
+                # Get trend adjustments
+                attack_delta = manual_data.get('attack_delta') or 0
+                defence_delta = manual_data.get('defence_delta') or 0
+                attack_trend = manual_data.get('attack_trend') or 0
+                defence_trend = manual_data.get('defence_trend') or 0
+                
+                # Combine delta and trend into momentum
+                attack_momentum = attack_delta * 0.6 + attack_trend * 0.4
+                defence_momentum = defence_delta * 0.6 + defence_trend * 0.4
+                
+                # Apply trend as additive adjustment (capped ±0.15)
+                attack_adjustment = max(-0.15, min(0.15, attack_momentum * 0.3))
+                defence_adjustment = max(-0.15, min(0.15, defence_momentum * 0.3))
+                
+                blended_xg = manual_xg + attack_adjustment
+                blended_xga = manual_xga + defence_adjustment
+                
+                # Estimate home/away splits (typical 15% swing)
+                home_xga = blended_xga * 0.85  # Better defence at home
+                away_xga = blended_xga * 1.15  # Worse defence away
+                
+                # Calculate CS probability
+                cs_probability = math.exp(-blended_xga) if blended_xga > 0 else 0.25
+                cs_probability = min(0.52, max(0.08, cs_probability))
+                
+                # Calculate FDR scores
+                attack_fdr = xga_to_attack_fdr(blended_xga, is_opponent_home=None)
+                attack_fdr_home = xga_to_attack_fdr(home_xga, is_opponent_home=True)
+                attack_fdr_away = xga_to_attack_fdr(away_xga, is_opponent_home=False)
+                defence_fdr = xg_to_defence_fdr(blended_xg)
+                
+                fdr_data[team_id] = {
+                    'season_xg': 0,
+                    'season_xga': 0,
+                    'season_matches': 0,
+                    'form_xg': manual_xg,
+                    'form_xga': manual_xga,
+                    'form_ppg': 0,
+                    'season_xg_per_game': manual_xg,
+                    'season_xga_per_game': manual_xga,
+                    'blended_xg': round(blended_xg, 2),
+                    'blended_xga': round(blended_xga, 2),
+                    'home_xga_per_game': round(home_xga, 2),
+                    'away_xga_per_game': round(away_xga, 2),
+                    'cs_probability': round(cs_probability, 3),
+                    'xg_per_game': round(blended_xg, 2),
+                    'attack_fdr': max(1, min(10, attack_fdr)),
+                    'attack_fdr_home': max(1, min(10, attack_fdr_home)),
+                    'attack_fdr_away': max(1, min(10, attack_fdr_away)),
+                    'defence_fdr': max(1, min(10, defence_fdr)),
+                    'composite_fdr': round((attack_fdr + defence_fdr) / 2, 1),
+                    'data_source': 'analytic_fpl_only',
+                    'trend_info': {
+                        'attack_momentum': round(attack_momentum, 3),
+                        'defence_momentum': round(defence_momentum, 3),
+                        'attack_adjustment': round(attack_adjustment, 3),
+                        'defence_adjustment': round(defence_adjustment, 3),
+                    },
+                }
+            
+            # Add defaults for any missing promoted teams
+            for team_id, defaults in PROMOTED_TEAM_DEFAULTS.items():
+                if team_id not in fdr_data:
+                    logger.info(f"Adding default FDR for promoted team: {defaults['name']}")
+                    fdr_data[team_id] = {
+                        'season_xg': 0, 'season_xga': 0, 'season_matches': 0,
+                        'form_xg': defaults['xg'], 'form_xga': defaults['xga'], 'form_ppg': 0,
+                        'season_xg_per_game': defaults['xg'], 'season_xga_per_game': defaults['xga'],
+                        'blended_xg': defaults['xg'], 'blended_xga': defaults['xga'],
+                        'home_xga_per_game': defaults['xga'] * 0.85,
+                        'away_xga_per_game': defaults['xga'] * 1.15,
+                        'cs_probability': round(math.exp(-defaults['xga']), 3),
+                        'xg_per_game': defaults['xg'],
+                        'attack_fdr': defaults['attack_fdr'],
+                        'attack_fdr_home': min(10, defaults['attack_fdr'] + 1),
+                        'attack_fdr_away': max(1, defaults['attack_fdr'] - 1),
+                        'defence_fdr': defaults['defence_fdr'],
+                        'composite_fdr': round((defaults['attack_fdr'] + defaults['defence_fdr']) / 2, 1),
+                        'data_source': 'promoted_team_defaults',
+                        'trend_info': None,
+                    }
+            
+            cache.fdr_data = fdr_data
+            cache.fdr_last_update = datetime.now()
+            logger.info(f"FDR data populated from Analytic FPL manual data for {len(fdr_data)} teams")
+            return fdr_data
+        
         return cache.fdr_data or {}
     
     # Aggregate by team - v4.3.2: Add home/away venue split
@@ -2817,7 +2917,7 @@ async def _do_fdr_refresh():
         
         # Calculate clean sheet probability using Poisson: P(0 goals) = e^(-xGA)
         cs_probability = math.exp(-blended_xga) if blended_xga > 0 else 0.25
-        cs_probability = min(0.50, max(0.08, cs_probability))  # Bound 8%-50%
+        cs_probability = min(0.52, max(0.08, cs_probability))  # Bound 8%-52% (matches CleanSheetConfig.cs_prob_max)
         
         # v4.3.2: Calculate venue-specific xGA
         home_matches = len(data.get('home_matches', []))
@@ -4617,7 +4717,7 @@ async def update_team_strength(data: TeamStrengthBulkImport):
     The trend data (Δ and Trend columns) captures teams improving/declining.
     """
     if data.manager_id != ADMIN_MANAGER_ID:
-        raise HTTPException(status_code=403, detail="Admin access required (manager_id=616495)")
+        raise HTTPException(status_code=403, detail="Admin access required (manager_id=1806834)")
     
     updated = []
     skipped = []
@@ -4676,7 +4776,7 @@ async def import_fixture_xg(data: FixtureXGBulkImport):
     - GW+2: 55% fixture xG, 25% team strength, 20% form
     """
     if data.manager_id != ADMIN_MANAGER_ID:
-        raise HTTPException(status_code=403, detail="Admin access required (manager_id=616495)")
+        raise HTTPException(status_code=403, detail="Admin access required (manager_id=1806834)")
     
     fpl_data = await fetch_fpl_data()
     teams_by_name = {}
@@ -7099,7 +7199,10 @@ def calculate_tier_benchmarks(
             stats = calculate_expected_points(
                 player, position_id, current_gw, upcoming, teams_dict, fixtures, []
             )
-            horizon_xpts = stats.get("xpts", 0) * horizon
+            # v4.3.3c FIX: stats["xpts"] already includes the full horizon
+            # Previously this was multiplied by horizon AGAIN, causing 6x inflation
+            # e.g., Raya 26.6 xPts became 159.6 xPts
+            horizon_xpts = stats.get("xpts", 0)
         except:
             horizon_xpts = form * horizon
         
@@ -7344,6 +7447,7 @@ def detect_squad_problems(heatmap: Dict, benchmarks: Dict, current_gw: int, hori
             })
     
     # Better value exists
+    # v4.3.3c: Don't flag elite assets or compare players to themselves
     for p in players:
         pos_id = p.get("position_id")
         price = p.get("price", 0)
@@ -7351,7 +7455,34 @@ def detect_squad_problems(heatmap: Dict, benchmarks: Dict, current_gw: int, hori
         key = f"{pos_id}_{tier}"
         tier_data = benchmarks.get(key, {})
         best_xpts = tier_data.get("best_xpts", 25)
+        best_player_id = tier_data.get("best_player_id")
         player_xpts = p.get("horizon_xpts", 0)
+        player_id = p.get("id")
+        
+        # v4.3.3c: Skip if comparing player to themselves
+        if player_id == best_player_id:
+            continue
+        
+        # v4.3.3c: Skip elite assets - top performers shouldn't be flagged
+        # Check if player is in top 3 for their position across all tiers
+        all_pos_players = []
+        for tier_key, tier_info in benchmarks.items():
+            if tier_key.startswith(f"{pos_id}_"):
+                all_pos_players.append({
+                    "id": tier_info.get("best_player_id"),
+                    "xpts": tier_info.get("best_xpts", 0)
+                })
+        all_pos_players.sort(key=lambda x: -x["xpts"])
+        top_3_ids = [pp["id"] for pp in all_pos_players[:3]]
+        if player_id in top_3_ids:
+            continue
+        
+        # v4.3.3c: Skip template players (>40% ownership) with good fixtures
+        ownership = float(p.get("ownership", 0) or 0)
+        avg_fdr = p.get("avg_fdr", 5)
+        if ownership > 40 and avg_fdr <= 5:
+            continue
+        
         if best_xpts > 0 and player_xpts < best_xpts - 3:
             gap = (best_xpts - player_xpts) / best_xpts
             if gap > config.xpts_gap_threshold:
@@ -7391,16 +7522,40 @@ def detect_squad_problems(heatmap: Dict, benchmarks: Dict, current_gw: int, hori
     return unique
 
 
-def calculate_sell_pressure(player: Dict, benchmarks: Dict, config=None) -> Dict:
-    """Calculate sell pressure score (0-100)."""
+def calculate_sell_pressure(player: Dict, benchmarks: Dict, config=None, all_benchmarks: Dict = None) -> Dict:
+    """
+    Calculate sell pressure score (0-100).
+    
+    v4.3.3c: Added elite asset protection - top performers are never sell candidates.
+    """
     if config is None:
         config = MODEL_CONFIG["planner"]
     
     pos_id = player.get("position_id")
     price = player.get("price", 0)
+    player_id = player.get("id")
     tier = get_player_price_tier(price, pos_id)
     key = f"{pos_id}_{tier}"
     tier_data = benchmarks.get(key, {})
+    
+    # v4.3.3c: Elite asset protection
+    # Check if player is top 3 at their position (across all price tiers)
+    is_elite = False
+    if all_benchmarks:
+        all_pos_players = []
+        for tier_key, tier_info in all_benchmarks.items():
+            if tier_key.startswith(f"{pos_id}_"):
+                all_pos_players.append({
+                    "id": tier_info.get("best_player_id"),
+                    "xpts": tier_info.get("best_xpts", 0)
+                })
+        all_pos_players.sort(key=lambda x: -x["xpts"])
+        top_3_ids = [pp["id"] for pp in all_pos_players[:3]]
+        is_elite = player_id in top_3_ids
+    
+    # Also protect if player IS the best in their tier
+    if player_id == tier_data.get("best_player_id"):
+        is_elite = True
     
     avg_fdr = player.get("avg_fdr", 5)
     blank_count = player.get("blank_count", 0)
@@ -7424,6 +7579,10 @@ def calculate_sell_pressure(player: Dict, benchmarks: Dict, config=None) -> Dict
     total = (fixture_score * config.sell_weight_fixtures + form_score * config.sell_weight_form +
              xpts_score * config.sell_weight_xpts_vs_tier + minutes_score * config.sell_weight_minutes)
     
+    # v4.3.3c: Heavily discount sell pressure for elite assets
+    if is_elite:
+        total = total * 0.3  # Elite assets rarely worth selling
+    
     reasons = []
     if fixture_score >= 60:
         reasons.append(f"Hard fixtures (FDR {avg_fdr:.1f})")
@@ -7431,15 +7590,19 @@ def calculate_sell_pressure(player: Dict, benchmarks: Dict, config=None) -> Dict
         reasons.append(f"{blank_count} blank(s)")
     if form_score >= 60 and player_form < avg_form:
         reasons.append(f"Poor form ({player_form:.1f})")
-    if xpts_score >= 50:
+    if xpts_score >= 50 and not is_elite:  # Don't flag xPts for elites
         reasons.append(f"Low xPts ({player_xpts:.1f})")
     if minutes_score >= 50:
         reasons.append("Rotation risk")
     
+    # v4.3.3c: Elite assets need much higher threshold to be sell candidates
+    sell_threshold = 70 if is_elite else 50
+    is_sell = total >= sell_threshold or (len(reasons) >= 2 and not is_elite)
+    
     return {
-        "id": player.get("id"), "name": player.get("name"), "team": player.get("team"),
+        "id": player_id, "name": player.get("name"), "team": player.get("team"),
         "position": player.get("position"), "price": price, "score": round(total, 1),
-        "reasons": reasons, "is_sell_candidate": total >= 50 or len(reasons) >= 2
+        "reasons": reasons, "is_sell_candidate": is_sell, "is_elite": is_elite
     }
 
 
@@ -7613,7 +7776,9 @@ async def get_fixture_first_plan(manager_id: int, horizon: int = Query(6, ge=1, 
         for problem in problems:
             problem["solutions"] = find_solutions_for_problem(problem, squad, all_players, heatmap, fixtures, teams, next_gw, horizon, bank, elements)
         
-        sell_candidates = [calculate_sell_pressure(p, benchmarks) for p in heatmap["players"] if calculate_sell_pressure(p, benchmarks)["is_sell_candidate"]]
+        # v4.3.3c: Calculate sell pressure for all players once, passing benchmarks for elite check
+        all_sell_pressures = [calculate_sell_pressure(p, benchmarks, all_benchmarks=benchmarks) for p in heatmap["players"]]
+        sell_candidates = [sp for sp in all_sell_pressures if sp["is_sell_candidate"]]
         sell_candidates.sort(key=lambda x: -x["score"])
         
         gw_health = {gw: calculate_gw_health(gw, heatmap, problems) for gw in heatmap["gw_range"]}
@@ -7622,6 +7787,9 @@ async def get_fixture_first_plan(manager_id: int, horizon: int = Query(6, ge=1, 
         overall_status = "Good" if overall_health >= 7 else "Needs attention" if overall_health >= 5 else "Critical"
         
         total_horizon_xpts = sum(p["horizon_xpts"] for p in heatmap["players"])
+        
+        # v4.3.3c: Get planner config for health breakdown
+        planner_config = MODEL_CONFIG["planner"]
         
         return {
             "manager_id": manager_id,
@@ -7636,7 +7804,16 @@ async def get_fixture_first_plan(manager_id: int, horizon: int = Query(6, ge=1, 
                 "overall_status": overall_status,
                 "by_gw": gw_health,
                 "problem_count": len(problems),
-                "critical_problems": sum(1 for p in problems if p["severity"] == "CRITICAL")
+                "critical_problems": sum(1 for p in problems if p["severity"] == "CRITICAL"),
+                # v4.3.3c: Transparent health breakdown
+                "breakdown": {
+                    "base_score": 10.0,
+                    "bgw_deductions": sum(1 for p in problems if p["type"] == "bgw_no_coverage") * planner_config.health_weight_bgw,
+                    "position_clash_deductions": sum(1 for p in problems if p["type"] == "position_fixture_clash") * planner_config.health_weight_position_clash,
+                    "premium_hard_deductions": sum(1 for p in problems if p["type"] == "premium_hard_fixture") * planner_config.health_weight_premium_hard,
+                    "poor_form_deductions": sum(1 for p in problems if p["type"] == "poor_form") * planner_config.health_weight_poor_form,
+                    "explanation": f"10.0 - {len([p for p in problems if p['type'] == 'bgw_no_coverage'])} BGW issues - {len([p for p in problems if p['type'] == 'position_fixture_clash'])} clashes - {len([p for p in problems if p['type'] == 'premium_hard_fixture'])} hard premiums - {len([p for p in problems if p['type'] == 'poor_form'])} form issues"
+                }
             },
             "gw_info": gw_info,
             "heatmap": heatmap,
