@@ -552,44 +552,6 @@ class CaptainConfig:
     ])
 
 
-@dataclass
-class PlannerConfig:
-    """Fixture-first transfer planner configuration."""
-    
-    price_tiers: Dict[int, Dict[str, float]] = field(default_factory=lambda: {
-        1: {"budget_max": 4.5, "mid_max": 5.4},
-        2: {"budget_max": 5.0, "mid_max": 6.4},
-        3: {"budget_max": 6.0, "mid_max": 9.4},
-        4: {"budget_max": 7.0, "mid_max": 9.4},
-    })
-    
-    # v4.3.3: Raised thresholds to reduce flag spam
-    # FDR 8 = top 6 away fixture, should only flag FDR 9-10 as "hard"
-    hard_fixture_fdr: int = 8           # Was 7 - only flag genuinely hard fixtures
-    very_hard_fixture_fdr: int = 9      # Was 8 - premium hard = top 4 away only
-    fixture_run_length: int = 3
-    bgw_starter_threshold: int = 2
-    poor_form_percentile: float = 0.25
-    xpts_gap_threshold: float = 0.20    # Was 0.15 - only flag 20%+ gap (was too sensitive)
-    
-    sell_weight_fixtures: float = 0.30
-    sell_weight_form: float = 0.30
-    sell_weight_xpts_vs_tier: float = 0.25
-    sell_weight_minutes: float = 0.15
-    
-    optimal_solutions: int = 2
-    differential_solutions: int = 1
-    differential_ownership_max: float = 10.0
-    
-    health_weight_bgw: float = 3.0
-    health_weight_position_clash: float = 2.0
-    health_weight_premium_hard: float = 1.5
-    health_weight_poor_form: float = 1.0
-    
-    # v4.3.3: Limit problems per player to reduce noise
-    max_problems_per_player: int = 2
-
-
 # Initialize global config
 MODEL_CONFIG = {
     "fdr": FDRConfig(),
@@ -599,7 +561,6 @@ MODEL_CONFIG = {
     "bonus": BonusConfig(),
     "clean_sheet": CleanSheetConfig(),
     "captain": CaptainConfig(),
-    "planner": PlannerConfig(),
 }
 
 
@@ -1299,7 +1260,9 @@ def xg_to_defence_fdr(xg: float) -> int:
 # attack_fdr = how hard to score against them (based on their xGA)
 # defence_fdr = how hard to keep CS against them (based on their xG)
 DEFAULT_TEAM_STRENGTH = {
-    # 25/26 FPL API Team IDs (verified from /api/bootstrap-static/)
+    # v4.3.7 FIXED: Correct 25/26 FPL API Team IDs
+    # Team IDs shifted due to Burnley (3), Leeds (11), Sunderland (17) promotion
+    # Verified from /api/bootstrap-static/
     # Sorted by defensive strength (xGA low to high)
     1:  {"name": "Arsenal", "xg": 1.84, "xga": 0.81},       # ARS
     12: {"name": "Liverpool", "xg": 1.78, "xga": 1.06},     # LIV
@@ -1308,26 +1271,26 @@ DEFAULT_TEAM_STRENGTH = {
     2:  {"name": "Aston Villa", "xg": 1.41, "xga": 1.22},   # AVL
     14: {"name": "Man Utd", "xg": 1.48, "xga": 1.24},       # MUN
     8:  {"name": "Crystal Palace", "xg": 1.41, "xga": 1.33},# CRY
-    6:  {"name": "Brighton", "xg": 1.37, "xga": 1.33},      # BHA
-    5:  {"name": "Brentford", "xg": 1.41, "xga": 1.35},     # BRE
-    9:  {"name": "Everton", "xg": 1.03, "xga": 1.38},       # EVE
-    10: {"name": "Fulham", "xg": 1.24, "xga": 1.39},        # FUL
-    4:  {"name": "Bournemouth", "xg": 1.24, "xga": 1.40},   # BOU
+    6:  {"name": "Brighton", "xg": 1.37, "xga": 1.33},      # BHA - ID 6 (was 5)
+    5:  {"name": "Brentford", "xg": 1.41, "xga": 1.35},     # BRE - ID 5 (was 4)
+    9:  {"name": "Everton", "xg": 1.03, "xga": 1.38},       # EVE - ID 9 (was 8)
+    10: {"name": "Fulham", "xg": 1.24, "xga": 1.39},        # FUL - ID 10 (was 9)
+    4:  {"name": "Bournemouth", "xg": 1.24, "xga": 1.40},   # BOU - ID 4 (was 3)
     20: {"name": "Wolves", "xg": 1.08, "xga": 1.43},        # WOL
-    17: {"name": "Sunderland", "xg": 0.82, "xga": 1.43},    # SUN (promoted)
-    7:  {"name": "Chelsea", "xg": 1.54, "xga": 1.44},       # CHE
+    17: {"name": "Sunderland", "xg": 0.82, "xga": 1.43},    # SUN (promoted) - ID 17
+    7:  {"name": "Chelsea", "xg": 1.54, "xga": 1.44},       # CHE - ID 7 (was 6)
     19: {"name": "West Ham", "xg": 1.22, "xga": 1.45},      # WHU
     16: {"name": "Nott'm Forest", "xg": 1.16, "xga": 1.48}, # NFO
     18: {"name": "Tottenham", "xg": 1.44, "xga": 1.63},     # TOT
-    11: {"name": "Leeds United", "xg": 1.15, "xga": 1.70},  # LEE (promoted)
-    3:  {"name": "Burnley", "xg": 0.84, "xga": 1.82},       # BUR (promoted)
+    11: {"name": "Leeds United", "xg": 1.15, "xga": 1.70},  # LEE (promoted) - ID 11
+    3:  {"name": "Burnley", "xg": 0.84, "xga": 1.82},       # BUR (promoted) - ID 3
 }
 
 # Legacy alias for backwards compatibility - also with correct 25/26 IDs
 PROMOTED_TEAM_DEFAULTS = {
-    11: {"name": "Leeds United", "xg": 1.15, "xga": 1.70, "attack_fdr": 5, "defence_fdr": 3},
-    3:  {"name": "Burnley", "xg": 0.84, "xga": 1.82, "attack_fdr": 2, "defence_fdr": 1},
-    17: {"name": "Sunderland", "xg": 0.82, "xga": 1.43, "attack_fdr": 4, "defence_fdr": 1},
+    3:  {"name": "Burnley", "xg": 0.84, "xga": 1.82, "attack_fdr": 2, "defence_fdr": 1},       # BUR - ID 3
+    11: {"name": "Leeds United", "xg": 1.15, "xga": 1.70, "attack_fdr": 5, "defence_fdr": 3}, # LEE - ID 11
+    17: {"name": "Sunderland", "xg": 0.82, "xga": 1.43, "attack_fdr": 4, "defence_fdr": 1},   # SUN - ID 17
 }
 
 # Horizon regression from config
@@ -1810,24 +1773,26 @@ TEAM_BASE_XG = {
 }
 
 # Team name mappings: FPL short_name -> (fpl_id, understat_name)
+# v4.3.7 FIXED: Updated for 25/26 FPL API team IDs
+# Previous mapping was from 24/25 and caused display issues
 TEAM_NAME_MAPPING = {
     "ARS": (1, "Arsenal"),
     "AVL": (2, "Aston Villa"),
-    "BOU": (3, "Bournemouth"),
-    "BRE": (4, "Brentford"),
-    "BHA": (5, "Brighton"),
-    "CHE": (6, "Chelsea"),
-    "CRY": (7, "Crystal Palace"),
-    "EVE": (8, "Everton"),
-    "FUL": (9, "Fulham"),
-    "BUR": (10, "Burnley"),  # Promoted 25/26
-    "LEE": (11, "Leeds United"),  # Promoted 25/26
+    "BUR": (3, "Burnley"),            # Promoted 25/26 - ID 3
+    "BOU": (4, "Bournemouth"),        # ID 4 (was 3 in 24/25)
+    "BRE": (5, "Brentford"),          # ID 5 (was 4 in 24/25)
+    "BHA": (6, "Brighton"),           # ID 6 (was 5 in 24/25)
+    "CHE": (7, "Chelsea"),            # ID 7 (was 6 in 24/25)
+    "CRY": (8, "Crystal Palace"),     # ID 8 (was 7 in 24/25)
+    "EVE": (9, "Everton"),            # ID 9 (was 8 in 24/25)
+    "FUL": (10, "Fulham"),            # ID 10 (was 9 in 24/25)
+    "LEE": (11, "Leeds United"),      # Promoted 25/26 - ID 11
     "LIV": (12, "Liverpool"),
     "MCI": (13, "Manchester City"),
     "MUN": (14, "Manchester United"),
     "NEW": (15, "Newcastle United"),
     "NFO": (16, "Nottingham Forest"),
-    "SUN": (17, "Sunderland"),  # Promoted 25/26
+    "SUN": (17, "Sunderland"),        # Promoted 25/26 - ID 17
     "TOT": (18, "Tottenham"),
     "WHU": (19, "West Ham"),
     "WOL": (20, "Wolverhampton Wanderers"),
@@ -1837,19 +1802,24 @@ UNDERSTAT_TO_FPL_ID = {v[1]: v[0] for v in TEAM_NAME_MAPPING.values()}
 FPL_ID_TO_UNDERSTAT = {v[0]: v[1] for v in TEAM_NAME_MAPPING.values()}
 
 # Analytic FPL team names to FPL ID mapping (handles various name formats)
-# Updated for 25/26 season: Burnley, Leeds, Sunderland promoted
+# v4.3.7 FIXED: Updated for 25/26 season - Burnley (3), Leeds (11), Sunderland (17) promoted
 ANALYTIC_FPL_TO_ID = {
-    "Arsenal": 1, "Aston Villa": 2, "Bournemouth": 3, "Brentford": 4,
-    "Brighton": 5, "Brighton & Hove Albion": 5, "Brighton and Hove Albion": 5,
-    "Chelsea": 6, "Crystal Palace": 7, "Everton": 8,
-    "Fulham": 9, 
-    "Burnley": 10,  # Promoted 25/26
-    "Leeds United": 11, "Leeds": 11,  # Promoted 25/26
-    "Liverpool": 12, "Manchester City": 13, "Man City": 13,
+    "Arsenal": 1, "Aston Villa": 2, 
+    "Burnley": 3,  # Promoted 25/26 - ID 3
+    "Bournemouth": 4,  # ID 4 (was 3 in 24/25)
+    "Brentford": 5,    # ID 5 (was 4 in 24/25)
+    "Brighton": 6, "Brighton & Hove Albion": 6, "Brighton and Hove Albion": 6,  # ID 6 (was 5)
+    "Chelsea": 7,      # ID 7 (was 6)
+    "Crystal Palace": 8,  # ID 8 (was 7)
+    "Everton": 9,      # ID 9 (was 8)
+    "Fulham": 10,      # ID 10 (was 9)
+    "Leeds United": 11, "Leeds": 11,  # Promoted 25/26 - ID 11
+    "Liverpool": 12, 
+    "Manchester City": 13, "Man City": 13,
     "Manchester Utd": 14, "Manchester United": 14, "Man Utd": 14, "Man United": 14,
     "Newcastle Utd": 15, "Newcastle United": 15, "Newcastle": 15,
     "Nott'ham Forest": 16, "Nottingham Forest": 16, "Nott'm Forest": 16, "Forest": 16,
-    "Sunderland": 17,  # Promoted 25/26
+    "Sunderland": 17,  # Promoted 25/26 - ID 17
     "Tottenham": 18, "Spurs": 18, "Tottenham Hotspur": 18,
     "West Ham": 19, "West Ham United": 19,
     "Wolves": 20, "Wolverhampton": 20, "Wolverhampton Wanderers": 20,
@@ -1915,72 +1885,6 @@ class SquadPlayer(BaseModel):
     xpts_single_gw: float
     exp_mins: float
     fixture_ticker: str
-    
-    class Config:
-        extra = "allow"
-
-
-class TransferAction(BaseModel):
-    """Schema for a transfer action in planner."""
-    type: str  # "transfer" or "roll"
-    player_out: Optional[Dict] = None
-    player_in: Optional[Dict] = None
-    gain: Optional[float] = None
-    is_hit: bool = False
-
-
-class GwTimeline(BaseModel):
-    """Schema for a gameweek in planner timeline."""
-    gw: int
-    actions: List[Dict]
-    chip: Optional[str] = None
-    is_dgw: bool = False
-    starting_xi: Optional[List[Dict]] = None
-    bench: Optional[List[Dict]] = None
-    captain: Optional[Dict] = None
-    vice_captain: Optional[Dict] = None
-    gw_xpts: Optional[float] = None
-    
-    class Config:
-        extra = "allow"
-
-
-class TransferPlan(BaseModel):
-    """Schema for transfer plan response."""
-    total_xpts: float
-    baseline_xpts: float
-    xpts_gain: float
-    total_hits: int
-    hit_cost: int
-    net_xpts_gain: float
-    transfers_by_gw: Dict[int, int]
-    timeline: List[GwTimeline]
-    
-    class Config:
-        extra = "allow"
-
-
-class ChipStatus(BaseModel):
-    """Schema for chip availability."""
-    WC: bool
-    FH: bool
-    BB: bool
-    TC: bool
-
-
-class PlannerResponse(BaseModel):
-    """Full planner API response schema."""
-    manager_id: int
-    current_gw: int
-    planning_horizon: str
-    available_chips: Dict[str, bool]
-    chip_schedule: Dict[str, int]
-    chip_suggestions: List[Dict]
-    gw_info: Dict[int, Dict]
-    bank: float
-    free_transfers: int
-    ft_disclaimer: str
-    plan: TransferPlan
     
     class Config:
         extra = "allow"
@@ -5024,6 +4928,21 @@ async def get_rankings(
         ownership_pct = float(player.get("selected_by_percent", 0) or 0)
         ownership_tier, tier_desc = get_ownership_tier(ownership_pct)
         
+        # Calculate avg_fdr and fixture_ticker from upcoming fixtures
+        avg_fdr = 5.0  # Default neutral
+        fixture_ticker = ""
+        if upcoming:
+            fdrs = [f.get("difficulty", 5) for f in upcoming[:5]]
+            avg_fdr = round(sum(fdrs) / len(fdrs), 1) if fdrs else 5.0
+            
+            # Build fixture ticker: "WOL(H) TOT(A) LIV(A)"
+            ticker_parts = []
+            for fix in upcoming[:5]:
+                opp = fix.get("opponent_short", fix.get("opponent", "???")[:3])
+                venue = "H" if fix.get("is_home", True) else "A"
+                ticker_parts.append(f"{opp}({venue})")
+            fixture_ticker = " ".join(ticker_parts)
+        
         ranked_players.append({
             "id": player["id"],
             "name": player["web_name"],
@@ -5037,6 +4956,7 @@ async def get_rankings(
             "xpts_ceiling": stats.get("xpts_ceiling", stats["xpts"] * 1.2),
             "xpts_floor": stats.get("xpts_floor", stats["xpts"] * 0.7),
             "expected_minutes": stats["expected_minutes"],
+            "exp_mins": stats["expected_minutes"],  # Alias for schema compatibility
             "minutes_reason": stats["minutes_reason"],
             "prob_60_plus": stats.get("prob_60_plus", 0.8),
             "form": float(player.get("form", 0) or 0),
@@ -5056,6 +4976,8 @@ async def get_rankings(
             "cs_prob": stats["cs_prob"],
             "xG_per_90": stats["xG_per_90"],
             "xA_per_90": stats["xA_per_90"],
+            "avg_fdr": avg_fdr,
+            "fixture_ticker": fixture_ticker,
             "fixtures": upcoming[:8],
             "news": player.get("news", ""),
             "status": player.get("status", "a"),
@@ -6499,1112 +6421,6 @@ def find_player_by_name(name: str, players: List[Dict], squad_ids: set = None) -
             return p
     
     return None
-
-
-def solve_transfer_plan(
-    squad: List[Dict],
-    bank: float,
-    free_transfers: int,
-    all_players: List[Dict],
-    teams_dict: Dict,
-    elements: Dict,
-    fixtures: List[Dict],
-    events: List[Dict],
-    start_gw: int,
-    horizon: int,
-    chip_gws: Dict[str, int],  # {chip_name: gw} - user specified chip GWs
-    max_hits: int = 1,
-    booked_transfers: List[Dict] = None  # [{gw: int, out: str, in: str}]
-) -> Dict:
-    """
-    Tree-based solver for optimal transfer path.
-    
-    Explores paths: roll FT, use FT for best transfer, take hit for additional transfer.
-    Prunes paths that fall too far behind.
-    
-    booked_transfers: List of forced transfers by GW. Names are matched to player IDs.
-    """
-    end_gw = min(start_gw + horizon, 39)
-    gw_info = detect_dgw_bgw(fixtures, events, start_gw, end_gw)
-    
-    # Parse booked transfers - match names to player IDs
-    booked_by_gw = {}
-    if booked_transfers:
-        squad_ids = {p["id"] for p in squad}
-        logger.info(f"Processing {len(booked_transfers)} booked transfers")
-        for bt in booked_transfers:
-            gw = bt.get("gw")
-            out_name = bt.get("out", "")
-            in_name = bt.get("in", "")
-            
-            if not gw or not out_name or not in_name:
-                logger.warning(f"Invalid booked transfer: {bt}")
-                continue
-            
-            # Find the players
-            out_player = find_player_by_name(out_name, list(elements.values()), squad_ids)
-            in_player = find_player_by_name(in_name, all_players)
-            
-            if not out_player:
-                logger.warning(f"Could not find out player: '{out_name}' in squad")
-            if not in_player:
-                logger.warning(f"Could not find in player: '{in_name}'")
-            
-            if out_player and in_player:
-                if gw not in booked_by_gw:
-                    booked_by_gw[gw] = []
-                booked_by_gw[gw].append({
-                    "out": out_player,
-                    "in": in_player
-                })
-                logger.info(f"Booked GW{gw}: {out_player.get('web_name')} -> {in_player.get('web_name')}")
-    
-    # Track ALL booked-in players across entire horizon - these cannot be transferred out
-    all_booked_in_ids = set()
-    for gw_booked in booked_by_gw.values():
-        for bt in gw_booked:
-            all_booked_in_ids.add(bt["in"]["id"])
-    
-    # Track booked-out players by GW - cannot transfer out BEFORE their booked GW
-    booked_out_before_gw = {}  # player_id -> gw they're booked out
-    for gw_num, gw_booked in booked_by_gw.items():
-        for bt in gw_booked:
-            booked_out_before_gw[bt["out"]["id"]] = gw_num
-    
-    if all_booked_in_ids:
-        logger.info(f"Protected booked-in player IDs: {all_booked_in_ids}")
-    if booked_out_before_gw:
-        logger.info(f"Booked-out players: {booked_out_before_gw}")
-    
-    # Initialize root path
-    root = TransferPath(squad, bank, free_transfers)
-    
-    # Create shared caches for performance
-    player_gw_cache = {}  # (player_id, gw) -> xpts - shared across all evaluations
-    gw_to_chip = {v: k for k, v in chip_gws.items()}  # gw -> chip_name lookup
-    
-    # Helper to recompute xpts from a given GW onwards
-    def recompute_from(path: TransferPath, from_gw: int):
-        for g in range(from_gw, end_gw):
-            chip = gw_to_chip.get(g)
-            path.gw_xpts[g] = evaluate_squad_xpts(
-                path.squad, g, fixtures, teams_dict, elements, events, chip, player_gw_cache
-            )
-        path.total_xpts = sum(path.gw_xpts.values()) - (path.hits * 4)
-    
-    # Calculate baseline xPts for root (populate gw_xpts cache)
-    for gw in range(start_gw, end_gw):
-        chip = gw_to_chip.get(gw)
-        root.gw_xpts[gw] = evaluate_squad_xpts(
-            squad, gw, fixtures, teams_dict, elements, events, chip, player_gw_cache
-        )
-    root.total_xpts = sum(root.gw_xpts.values())
-    
-    # Save baseline xPts BEFORE we start modifying paths
-    baseline_xpts = root.total_xpts
-    
-    # BFS through decision tree
-    paths = [root]
-    
-    for gw in range(start_gw, end_gw):
-        new_paths = []
-        
-        # Get chip for this GW if specified
-        chip_this_gw = None
-        for chip_name, chip_gw in chip_gws.items():
-            if chip_gw == gw:
-                chip_this_gw = chip_name
-                break
-        
-        # Check for booked transfers in this GW
-        booked_this_gw = booked_by_gw.get(gw, [])
-        
-        for path in paths:
-            # ALWAYS apply booked transfers first if any exist for this GW
-            # Booked transfers are MANDATORY - not optional branches
-            working_path = path.copy()
-            booked_applied = False
-            
-            if booked_this_gw:
-                for booked in booked_this_gw:
-                    out_player = booked["out"]
-                    in_player = booked["in"]
-                    
-                    # Check if out_player is still in squad
-                    squad_dict = {p["id"]: p for p in working_path.squad}
-                    if out_player["id"] not in squad_dict:
-                        logger.warning(f"Booked transfer: {out_player.get('web_name')} not in squad, skipping")
-                        continue  # Player already transferred out
-                    
-                    # Get the squad version of out_player (has selling_price)
-                    squad_out_player = squad_dict[out_player["id"]]
-                    selling_price = squad_out_player.get("selling_price", squad_out_player.get("price", out_player.get("now_cost", 0) / 10))
-                    
-                    # Build transfer dict
-                    position_id = out_player.get("element_type", in_player.get("element_type", 0))
-                    upcoming = get_player_upcoming_fixtures(in_player["team"], fixtures, gw, end_gw, teams_dict)
-                    stats = calculate_expected_points(in_player, position_id, gw - 1, upcoming, teams_dict, fixtures, events)
-                    
-                    transfer = {
-                        "out": {
-                            "id": out_player["id"],
-                            "name": out_player.get("web_name", ""),
-                            "team_id": out_player.get("team"),
-                            "position_id": out_player.get("element_type"),
-                            "price": out_player.get("now_cost", 0) / 10,
-                            "selling_price": selling_price,
-                        },
-                        "in": {
-                            "id": in_player["id"],
-                            "name": in_player.get("web_name", ""),
-                            "team_id": in_player.get("team"),
-                            "position_id": in_player.get("element_type"),
-                            "price": in_player.get("now_cost", 0) / 10,
-                            "xpts": stats["xpts"],
-                            "form": float(in_player.get("form", 0) or 0),
-                            "minutes": in_player.get("minutes", 0),
-                        },
-                        "xpts_gain": 0,
-                        "is_booked": True
-                    }
-                    
-                    logger.info(f"Applying booked transfer GW{gw}: {out_player.get('web_name')} -> {in_player.get('web_name')}")
-                    
-                    # Use FT if available, otherwise take hit
-                    if working_path.ft > 0:
-                        working_path.use_ft()
-                        working_path.apply_transfer(transfer, gw, is_hit=False)
-                    else:
-                        working_path.apply_transfer(transfer, gw, is_hit=True)
-                    booked_applied = True
-                
-                # Recompute after booked transfers
-                if booked_applied:
-                    recompute_from(working_path, gw)
-            
-            # Now explore options FROM the working_path (which has booked transfers applied)
-            # Option 1: Roll FT (or just continue if no FTs)
-            roll_path = working_path.copy()
-            if not booked_applied:  # Only roll if we didn't use FT for booked
-                roll_path.roll_transfer(gw)
-            elif working_path.ft > 0:  # Had FTs left after booked transfer
-                roll_path.roll_transfer(gw)
-            new_paths.append(roll_path)
-            
-            # Option 2: Use remaining FT for additional transfer (after booked or as main)
-            if working_path.ft > 0:
-                # Get candidates - exclude transfers that would:
-                # 1. Remove a player we booked in (now or future)
-                # 2. Remove a player we plan to book out later (before their booked GW)
-                candidates = get_transfer_candidates(
-                    working_path.squad, all_players, teams_dict, fixtures, gw, end_gw - gw, 
-                    working_path.bank, limit=5, elements=elements
-                )
-                
-                def is_protected(player_id):
-                    # Can't transfer out booked-in players
-                    if player_id in all_booked_in_ids:
-                        return True
-                    # Can't transfer out players before their booked-out GW
-                    if player_id in booked_out_before_gw and gw < booked_out_before_gw[player_id]:
-                        return True
-                    return False
-                
-                candidates = [c for c in candidates if not is_protected(c["out"]["id"])]
-                
-                for i, transfer in enumerate(candidates[:3]):
-                    ft_path = working_path.copy()
-                    ft_path.use_ft()
-                    ft_path.apply_transfer(transfer, gw, is_hit=False)
-                    recompute_from(ft_path, gw)
-                    new_paths.append(ft_path)
-                    
-                    # Option 3: Take hit for second transfer (if allowed)
-                    if max_hits > 0 and working_path.hits < max_hits and len(candidates) > 1:
-                        for second_transfer in candidates[i+1:i+3]:
-                            # Can't sell the same player twice!
-                            if second_transfer["out"]["id"] == transfer["out"]["id"]:
-                                continue
-                            # Can't sell what you just bought
-                            if second_transfer["out"]["id"] == transfer["in"]["id"]:
-                                continue
-                            # Can't buy what you just sold
-                            if second_transfer["in"]["id"] == transfer["out"]["id"]:
-                                continue
-                            # Can't buy the same player twice
-                            if second_transfer["in"]["id"] == transfer["in"]["id"]:
-                                continue
-                            
-                            hit_path = ft_path.copy()
-                            hit_path.apply_transfer(second_transfer, gw, is_hit=True)
-                            recompute_from(hit_path, gw)
-                            new_paths.append(hit_path)
-        
-        # Prune: keep top 20 paths by xPts
-        new_paths.sort(key=lambda p: -p.total_xpts)
-        paths = new_paths[:20]
-    
-    # Find best path
-    best_path = max(paths, key=lambda p: p.total_xpts)
-    
-    # Build timeline with per-GW squad snapshots
-    timeline = []
-    current_squad = squad.copy()
-    
-    for gw in range(start_gw, end_gw):
-        gw_actions = [a for a in best_path.actions if a.get("gw") == gw]
-        chip = chip_gws.get(gw)
-        
-        # Apply transfers for this GW to get the squad state
-        for action in gw_actions:
-            if action["type"] == "transfer":
-                # Remove the out player and add the in player
-                current_squad = [p for p in current_squad if p["id"] != action["out"]["id"]]
-                current_squad.append({
-                    "id": action["in"]["id"],
-                    "name": action["in"]["name"],
-                    "team_id": action["in"].get("team_id", 0),
-                    "position_id": action["in"].get("position_id", 0),
-                    "price": action["in"].get("price", 0),
-                    "selling_price": action["in"].get("price", 0),
-                    "xpts": action["in"].get("xpts", 0),
-                    "form": action["in"].get("form", 0),
-                    "minutes": action["in"].get("minutes", 0),
-                })
-        
-        # Calculate xPts for each player for this specific GW
-        squad_with_gw_xpts = []
-        for player in current_squad:
-            element = elements.get(player["id"], {})
-            position_id = player.get("position_id") or element.get("element_type", 0)
-            team_id = player.get("team_id") or element.get("team", 0)
-            
-            upcoming = get_player_upcoming_fixtures(team_id, fixtures, gw, gw, teams_dict)
-            if upcoming:
-                stats = calculate_expected_points(element, position_id, gw, upcoming, teams_dict, fixtures, events)
-                # calculate_expected_points already sums xpts for all fixtures in the GW - do NOT divide
-                gw_xpts = stats.get("xpts", 0)
-            else:
-                gw_xpts = player.get("xpts", 0) / horizon if horizon > 0 else 0
-            
-            squad_with_gw_xpts.append({
-                "id": player["id"],
-                "name": player.get("name", element.get("web_name", "?")),
-                "team": teams_dict.get(team_id, {}).get("short_name", "???"),
-                "position": POSITION_MAP.get(position_id, "?"),
-                "position_id": position_id,
-                "xpts": round(gw_xpts, 1),
-                "price": player.get("price", element.get("now_cost", 0) / 10),
-            })
-        
-        # Sort by position for lineup selection, then by xPts
-        squad_with_gw_xpts.sort(key=lambda p: (p["position_id"], -p["xpts"]))
-        
-        # Select starting XI (best by xPts, respecting position constraints)
-        gkps = [p for p in squad_with_gw_xpts if p["position_id"] == 1]
-        defs = [p for p in squad_with_gw_xpts if p["position_id"] == 2]
-        mids = [p for p in squad_with_gw_xpts if p["position_id"] == 3]
-        fwds = [p for p in squad_with_gw_xpts if p["position_id"] == 4]
-        
-        # Sort each position by xPts
-        defs.sort(key=lambda p: -p["xpts"])
-        mids.sort(key=lambda p: -p["xpts"])
-        fwds.sort(key=lambda p: -p["xpts"])
-        
-        # Standard formation logic: pick best 11 while respecting min/max constraints
-        # Min: 1 GKP, 3 DEF, 2 MID, 1 FWD
-        starting_xi = []
-        bench = []
-        
-        # Always 1 GKP
-        if gkps:
-            starting_xi.append(gkps[0])
-            if len(gkps) > 1:
-                bench.extend(gkps[1:])
-        
-        # Pick best outfield players (10 spots)
-        outfield = defs + mids + fwds
-        outfield.sort(key=lambda p: -p["xpts"])
-        
-        # Ensure minimums: 3 DEF, 2 MID, 1 FWD
-        def_count = mid_count = fwd_count = 0
-        remaining = []
-        
-        for p in outfield:
-            if p["position_id"] == 2 and def_count < 3:
-                starting_xi.append(p)
-                def_count += 1
-            elif p["position_id"] == 3 and mid_count < 2:
-                starting_xi.append(p)
-                mid_count += 1
-            elif p["position_id"] == 4 and fwd_count < 1:
-                starting_xi.append(p)
-                fwd_count += 1
-            else:
-                remaining.append(p)
-        
-        # Fill remaining spots (up to 11 total) with best remaining players
-        # Respecting max: 5 DEF, 5 MID, 3 FWD
-        remaining.sort(key=lambda p: -p["xpts"])
-        for p in remaining:
-            if len(starting_xi) >= 11:
-                bench.append(p)
-            else:
-                pos_in_xi = len([x for x in starting_xi if x["position_id"] == p["position_id"]])
-                max_pos = {2: 5, 3: 5, 4: 3}.get(p["position_id"], 1)
-                if pos_in_xi < max_pos:
-                    starting_xi.append(p)
-                else:
-                    bench.append(p)
-        
-        # Sort starting XI by position for display
-        starting_xi.sort(key=lambda p: (p["position_id"], -p["xpts"]))
-        
-        # Sort bench by xPts (optimal bench order)
-        bench.sort(key=lambda p: -p["xpts"])
-        
-        # Captain selection using ceiling score, not just raw xPts
-        if starting_xi:
-            for p in starting_xi:
-                player_data = elements.get(p["id"], {})
-                player_team_id = p.get("team_id") or player_data.get("team")
-                
-                # Get next fixture for this player
-                player_next_fixtures = get_player_upcoming_fixtures(
-                    player_team_id, fixtures, gw, gw, teams_dict
-                )
-                next_fix = player_next_fixtures[0] if player_next_fixtures else None
-                
-                # Use ceiling if available, else estimate as 1.2x xPts
-                ceiling_xpts = p.get("xpts_ceiling", p["xpts"] * 1.2)
-                
-                cap_data = calculate_captain_score(
-                    player=player_data,
-                    position_id=p["position_id"],
-                    base_xpts=p["xpts"],
-                    ceiling_xpts=ceiling_xpts,
-                    next_fixture=next_fix
-                )
-                p["captain_score"] = cap_data["captain_score"]
-                p["ceiling_mult"] = cap_data["ceiling_mult"]
-            
-            starting_xi_by_cap = sorted(starting_xi, key=lambda p: -p.get("captain_score", p["xpts"]))
-            captain = starting_xi_by_cap[0]
-            vice_captain = starting_xi_by_cap[1] if len(starting_xi_by_cap) > 1 else None
-        else:
-            captain = None
-            vice_captain = None
-        
-        # Calculate total GW xPts
-        gw_total_xpts = sum(p["xpts"] for p in starting_xi)
-        if captain:
-            gw_total_xpts += captain["xpts"]  # Captain counted twice
-        
-        timeline.append({
-            "gw": gw,
-            "actions": gw_actions,
-            "chip": CHIP_DISPLAY.get(chip) if chip else None,
-            "is_dgw": gw_info[gw]["is_dgw"],
-            "is_bgw": gw_info[gw]["is_bgw"],
-            "dgw_count": gw_info[gw]["dgw_count"],
-            "starting_xi": starting_xi,
-            "bench": bench,
-            "captain": captain,
-            "vice_captain": vice_captain,
-            "gw_xpts": round(gw_total_xpts, 1),
-        })
-    
-    return {
-        "total_xpts": round(best_path.total_xpts, 1),
-        "baseline_xpts": round(baseline_xpts, 1),
-        "xpts_gain": round(best_path.total_xpts - baseline_xpts, 1),
-        "total_hits": best_path.hits,
-        "hit_cost": best_path.hits * 4,
-        "net_xpts_gain": round(best_path.total_xpts - baseline_xpts, 1),
-        "final_bank": round(best_path.bank, 1),
-        "timeline": timeline,
-        "transfers": [a for a in best_path.actions if a["type"] == "transfer"],
-        "final_squad": best_path.squad,
-    }
-
-
-
-# ============ FIXTURE-FIRST TRANSFER PLANNER ============
-
-def get_player_price_tier(price: float, position_id: int) -> str:
-    """Categorize player into price tier based on position."""
-    config = MODEL_CONFIG["planner"]
-    tiers = config.price_tiers.get(position_id, {"budget_max": 5.0, "mid_max": 8.0})
-    if price < tiers["budget_max"]:
-        return "budget"
-    elif price <= tiers["mid_max"]:
-        return "mid"
-    return "premium"
-
-
-def calculate_tier_benchmarks(
-    all_players: List[Dict],
-    fixtures: List[Dict],
-    teams_dict: Dict,
-    current_gw: int,
-    horizon: int
-) -> Dict[str, Dict[str, float]]:
-    """Calculate form and xPts benchmarks for each position/tier combination."""
-    tier_players = defaultdict(list)
-    
-    for player in all_players:
-        if player.get("status") in ["i", "s", "u"]:
-            continue
-        if player.get("minutes", 0) < 300:
-            continue
-        
-        position_id = player["element_type"]
-        price = player["now_cost"] / 10
-        tier = get_player_price_tier(price, position_id)
-        key = f"{position_id}_{tier}"
-        
-        form = float(player.get("form", 0) or 0)
-        
-        try:
-            upcoming = get_player_upcoming_fixtures(
-                player["team"], fixtures, current_gw, current_gw + horizon, teams_dict, position_id
-            )
-            stats = calculate_expected_points(
-                player, position_id, current_gw, upcoming, teams_dict, fixtures, []
-            )
-            # v4.3.3c FIX: stats["xpts"] already includes the full horizon
-            # Previously this was multiplied by horizon AGAIN, causing 6x inflation
-            # e.g., Raya 26.6 xPts became 159.6 xPts
-            horizon_xpts = stats.get("xpts", 0)
-        except:
-            horizon_xpts = form * horizon
-        
-        tier_players[key].append({
-            "form": form,
-            "xpts": horizon_xpts,
-            "id": player["id"],
-            "name": player.get("web_name", "")
-        })
-    
-    benchmarks = {}
-    for key, players in tier_players.items():
-        if not players:
-            benchmarks[key] = {"avg_form": 4.0, "best_form": 5.0, "p25_form": 3.0, "avg_xpts": 20.0, "best_xpts": 25.0, "best_player": None, "best_player_id": None, "player_count": 0}
-            continue
-        
-        forms = [p["form"] for p in players]
-        xpts_list = [p["xpts"] for p in players]
-        best_player = max(players, key=lambda x: x["xpts"])
-        
-        benchmarks[key] = {
-            "avg_form": sum(forms) / len(forms) if forms else 4.0,
-            "best_form": max(forms) if forms else 5.0,
-            "p25_form": sorted(forms)[int(len(forms) * 0.25)] if len(forms) >= 4 else min(forms) if forms else 3.0,
-            "avg_xpts": sum(xpts_list) / len(xpts_list) if xpts_list else 20.0,
-            "best_xpts": max(xpts_list) if xpts_list else 25.0,
-            "best_player": best_player["name"],
-            "best_player_id": best_player["id"],
-            "player_count": len(players)
-        }
-    
-    return benchmarks
-
-
-def build_player_fixture_map(
-    player: Dict,
-    fixtures: List[Dict],
-    teams_dict: Dict,
-    current_gw: int,
-    horizon: int,
-    position_id: int,
-    elements: Dict = None
-) -> List[Dict]:
-    """Build per-GW fixture data for a player with matchup-aware FDR."""
-    team_id = player.get("team") or player.get("team_id")
-    fixture_list = []
-    
-    for gw in range(current_gw, current_gw + horizon):
-        gw_fixtures = [
-            f for f in fixtures 
-            if f.get("event") == gw and (f.get("team_h") == team_id or f.get("team_a") == team_id)
-        ]
-        
-        if not gw_fixtures:
-            fixture_list.append({
-                "gw": gw, "opponent_id": None, "opponent": "BLANK", "opponent_short": "BLANK",
-                "fdr": 0, "xpts": 0, "is_dgw": False, "is_blank": True
-            })
-            continue
-        
-        gw_total_xpts = 0
-        gw_avg_fdr = 0
-        gw_opponents = []
-        
-        for fix in gw_fixtures:
-            is_home = fix.get("team_h") == team_id
-            opponent_id = fix.get("team_a") if is_home else fix.get("team_h")
-            
-            fpl_difficulty = fix.get("team_h_difficulty") if not is_home else fix.get("team_a_difficulty")
-            # v4.3.3c: Pass team_id for matchup-based FDR calculation
-            fdr = get_fixture_fdr(opponent_id, is_home, position_id, fpl_difficulty, team_id=team_id)
-            
-            opponent_data = teams_dict.get(opponent_id, {})
-            opponent_short = opponent_data.get("short_name", "???")
-            
-            try:
-                upcoming = [{"gameweek": gw, "opponent_id": opponent_id, "is_home": is_home, "fdr": fdr, "opponent_name": opponent_data.get("name", "???")}]
-                player_data = elements.get(player.get("id"), player) if elements else player
-                stats = calculate_expected_points(player_data, position_id, gw, upcoming, teams_dict, fixtures, [])
-                xpts = stats.get("xpts", 0)
-            except:
-                xpts = float(player.get("form", 0) or 0)
-            
-            gw_total_xpts += xpts
-            gw_avg_fdr += fdr
-            gw_opponents.append({"opponent_id": opponent_id, "opponent_short": opponent_short, "fdr": fdr, "is_home": is_home})
-        
-        is_dgw = len(gw_fixtures) > 1
-        
-        if is_dgw:
-            opponent_short_display = "/".join([o["opponent_short"] for o in gw_opponents])
-            avg_fdr = round(gw_avg_fdr / len(gw_opponents))
-        else:
-            h_a = "(H)" if gw_opponents[0]["is_home"] else "(A)"
-            opponent_short_display = f"{gw_opponents[0]['opponent_short']}{h_a}"
-            avg_fdr = gw_opponents[0]["fdr"]
-        
-        fixture_list.append({
-            "gw": gw, "opponent_id": gw_opponents[0]["opponent_id"] if gw_opponents else None,
-            "opponent": opponent_short_display, "opponent_short": opponent_short_display,
-            "fdr": avg_fdr, "xpts": round(gw_total_xpts, 2), "is_dgw": is_dgw, "is_blank": False
-        })
-    
-    return fixture_list
-
-
-def build_squad_heatmap(
-    squad: List[Dict],
-    fixtures: List[Dict],
-    teams_dict: Dict,
-    current_gw: int,
-    horizon: int,
-    elements: Dict = None
-) -> Dict:
-    """Build the full squad fixture heatmap."""
-    config = MODEL_CONFIG["planner"]
-    gw_range = list(range(current_gw, current_gw + horizon))
-    
-    players_data = []
-    by_position = defaultdict(list)
-    
-    for p in squad:
-        player_id = p.get("id")
-        position_id = p.get("position_id") or p.get("element_type")
-        team_id = p.get("team_id") or p.get("team")
-        
-        # Skip if no position_id (defensive)
-        if not position_id:
-            continue
-        
-        full_player = elements.get(player_id, p) if elements else p
-        
-        fixture_data = build_player_fixture_map(
-            full_player, fixtures, teams_dict, current_gw, horizon, position_id, elements
-        )
-        
-        horizon_xpts = sum(f["xpts"] for f in fixture_data)
-        non_blank_fixtures = [f for f in fixture_data if not f["is_blank"]]
-        avg_fdr = sum(f["fdr"] for f in non_blank_fixtures) / len(non_blank_fixtures) if non_blank_fixtures else 5
-        blank_count = sum(1 for f in fixture_data if f["is_blank"])
-        dgw_count = sum(1 for f in fixture_data if f["is_dgw"])
-        hard_count = sum(1 for f in fixture_data if f["fdr"] >= config.hard_fixture_fdr and not f["is_blank"])
-        
-        player_info = {
-            "id": player_id,
-            "name": p.get("name") or full_player.get("web_name", "???"),
-            "team": teams_dict.get(team_id, {}).get("short_name", "???"),
-            "team_id": team_id,
-            "position": POSITION_MAP.get(position_id, "???"),
-            "position_id": position_id,
-            "price": p.get("price") or (full_player.get("now_cost", 0) / 10),
-            "selling_price": p.get("selling_price", p.get("price", 0)),
-            "form": float(full_player.get("form", 0) or 0),
-            "total_points": full_player.get("total_points", 0),
-            "minutes": full_player.get("minutes", 0),
-            "fixtures": fixture_data,
-            "horizon_xpts": round(horizon_xpts, 1),
-            "avg_fdr": round(avg_fdr, 1),
-            "blank_count": blank_count,
-            "dgw_count": dgw_count,
-            "hard_fixture_count": hard_count
-        }
-        
-        players_data.append(player_info)
-        by_position[position_id].append(player_info)
-    
-    for pos_id in by_position:
-        by_position[pos_id].sort(key=lambda x: -x["horizon_xpts"])
-    
-    return {"gw_range": gw_range, "players": players_data, "by_position": dict(by_position)}
-
-
-def detect_squad_problems(heatmap: Dict, benchmarks: Dict, current_gw: int, horizon: int) -> List[Dict]:
-    """Detect problems in squad based on fixtures, form, and comparative value."""
-    config = MODEL_CONFIG["planner"]
-    problems = []
-    players = heatmap["players"]
-    gw_range = heatmap["gw_range"]
-    
-    # BGW problems
-    gw_blanks = defaultdict(list)
-    for p in players:
-        for fix in p["fixtures"]:
-            if fix["is_blank"]:
-                gw_blanks[fix["gw"]].append(p["name"])
-    
-    for gw, blanking in gw_blanks.items():
-        if len(blanking) >= config.bgw_starter_threshold:
-            problems.append({
-                "severity": "CRITICAL", "type": "bgw_no_coverage", "gw": gw,
-                "description": f"{len(blanking)} players blank in GW{gw}",
-                "affected": blanking,
-                "affected_details": [p for p in players if p["name"] in blanking],
-                "priority": 1
-            })
-    
-    # Position fixture clash
-    for gw in gw_range:
-        for pos_id in [2, 3, 4]:
-            pos_players = heatmap["by_position"].get(pos_id, [])
-            if len(pos_players) < 3:
-                continue
-            hard_count = sum(1 for p in pos_players if any(f["gw"] == gw and f["fdr"] >= config.hard_fixture_fdr and not f["is_blank"] for f in p["fixtures"]))
-            if hard_count == len(pos_players):
-                problems.append({
-                    "severity": "HIGH", "type": "position_fixture_clash", "gw": gw,
-                    "description": f"All {POSITION_MAP.get(pos_id)}s face hard fixtures in GW{gw}",
-                    "affected": [p["name"] for p in pos_players],
-                    "affected_details": pos_players, "priority": 2
-                })
-    
-    # Premium hard fixtures
-    for p in players:
-        price = p.get("price", 0)
-        pos_id = p.get("position_id")
-        tier = get_player_price_tier(price, pos_id)
-        if tier != "premium":
-            continue
-        for fix in p["fixtures"]:
-            if fix["fdr"] >= config.very_hard_fixture_fdr and not fix["is_blank"]:
-                problems.append({
-                    "severity": "HIGH" if fix["fdr"] >= 9 else "MEDIUM",
-                    "type": "premium_hard_fixture", "gw": fix["gw"],
-                    "description": f"£{price:.1f}m {p['name']} faces {fix['opponent_short']} (FDR {fix['fdr']})",
-                    "affected": [p["name"]], "affected_details": [p], "priority": 3
-                })
-    
-    # Poor form
-    for p in players:
-        pos_id = p.get("position_id")
-        price = p.get("price", 0)
-        tier = get_player_price_tier(price, pos_id)
-        key = f"{pos_id}_{tier}"
-        tier_data = benchmarks.get(key, {})
-        p25_form = tier_data.get("p25_form", 3.0)
-        player_form = p.get("form", 0)
-        if player_form < p25_form and player_form < 4.0:
-            problems.append({
-                "severity": "MEDIUM", "type": "poor_form", "gw": current_gw,
-                "description": f"{p['name']} form ({player_form:.1f}) below {tier} {POSITION_MAP.get(pos_id)} avg ({tier_data.get('avg_form', 4):.1f})",
-                "affected": [p["name"]], "affected_details": [p], "priority": 5
-            })
-    
-    # Better value exists
-    # v4.3.3c: Don't flag elite assets or compare players to themselves
-    for p in players:
-        pos_id = p.get("position_id")
-        price = p.get("price", 0)
-        tier = get_player_price_tier(price, pos_id)
-        key = f"{pos_id}_{tier}"
-        tier_data = benchmarks.get(key, {})
-        best_xpts = tier_data.get("best_xpts", 25)
-        best_player_id = tier_data.get("best_player_id")
-        player_xpts = p.get("horizon_xpts", 0)
-        player_id = p.get("id")
-        
-        # v4.3.3c: Skip if comparing player to themselves
-        if player_id == best_player_id:
-            continue
-        
-        # v4.3.3c: Skip elite assets - top performers shouldn't be flagged
-        # Check if player is in top 3 for their position across all tiers
-        all_pos_players = []
-        for tier_key, tier_info in benchmarks.items():
-            if tier_key.startswith(f"{pos_id}_"):
-                all_pos_players.append({
-                    "id": tier_info.get("best_player_id"),
-                    "xpts": tier_info.get("best_xpts", 0)
-                })
-        all_pos_players.sort(key=lambda x: -x["xpts"])
-        top_3_ids = [pp["id"] for pp in all_pos_players[:3]]
-        if player_id in top_3_ids:
-            continue
-        
-        # v4.3.3c: Skip template players (>40% ownership) with good fixtures
-        ownership = float(p.get("ownership", 0) or 0)
-        avg_fdr = p.get("avg_fdr", 5)
-        if ownership > 40 and avg_fdr <= 5:
-            continue
-        
-        if best_xpts > 0 and player_xpts < best_xpts - 3:
-            gap = (best_xpts - player_xpts) / best_xpts
-            if gap > config.xpts_gap_threshold:
-                problems.append({
-                    "severity": "LOW", "type": "better_value_exists", "gw": current_gw,
-                    "description": f"{p['name']} ({player_xpts:.1f} xPts) behind {tier_data.get('best_player', '?')} ({best_xpts:.1f} xPts)",
-                    "affected": [p["name"]], "affected_details": [p], "priority": 6,
-                    "better_alternative": {"name": tier_data.get("best_player"), "id": tier_data.get("best_player_id"), "xpts": best_xpts}
-                })
-    
-    problems.sort(key=lambda x: x["priority"])
-    seen = set()
-    unique = []
-    
-    # v4.3.3: Track problems per player to reduce noise
-    problems_per_player = defaultdict(int)
-    max_per_player = config.max_problems_per_player
-    
-    for p in problems:
-        key = (p["type"], p["gw"], tuple(p["affected"]))
-        if key not in seen:
-            # Check if any affected player has too many problems already
-            affected_names = p["affected"]
-            skip = False
-            for name in affected_names:
-                if problems_per_player[name] >= max_per_player:
-                    skip = True
-                    break
-            
-            if not skip:
-                seen.add(key)
-                unique.append(p)
-                # Increment counters for affected players
-                for name in affected_names:
-                    problems_per_player[name] += 1
-    
-    return unique
-
-
-def calculate_sell_pressure(player: Dict, benchmarks: Dict, config=None, all_benchmarks: Dict = None) -> Dict:
-    """
-    Calculate sell pressure score (0-100).
-    
-    v4.3.3c: Added elite asset protection - top performers are never sell candidates.
-    """
-    if config is None:
-        config = MODEL_CONFIG["planner"]
-    
-    pos_id = player.get("position_id")
-    price = player.get("price", 0)
-    player_id = player.get("id")
-    tier = get_player_price_tier(price, pos_id)
-    key = f"{pos_id}_{tier}"
-    tier_data = benchmarks.get(key, {})
-    
-    # v4.3.3c: Elite asset protection
-    # Check if player is top 3 at their position (across all price tiers)
-    is_elite = False
-    if all_benchmarks:
-        all_pos_players = []
-        for tier_key, tier_info in all_benchmarks.items():
-            if tier_key.startswith(f"{pos_id}_"):
-                all_pos_players.append({
-                    "id": tier_info.get("best_player_id"),
-                    "xpts": tier_info.get("best_xpts", 0)
-                })
-        all_pos_players.sort(key=lambda x: -x["xpts"])
-        top_3_ids = [pp["id"] for pp in all_pos_players[:3]]
-        is_elite = player_id in top_3_ids
-    
-    # Also protect if player IS the best in their tier
-    if player_id == tier_data.get("best_player_id"):
-        is_elite = True
-    
-    avg_fdr = player.get("avg_fdr", 5)
-    blank_count = player.get("blank_count", 0)
-    hard_count = player.get("hard_fixture_count", 0)
-    fixture_score = min(100, (avg_fdr - 1) * 11.1 + blank_count * 15 + hard_count * 8)
-    
-    player_form = player.get("form", 0)
-    avg_form = tier_data.get("avg_form", 4.0)
-    form_score = max(0, min(100, (1 - player_form / avg_form) * 50 + 50)) if avg_form > 0 else 50
-    if player_form > avg_form:
-        form_score = max(0, 50 - ((player_form / avg_form) - 1) * 50)
-    
-    player_xpts = player.get("horizon_xpts", 0)
-    best_xpts = tier_data.get("best_xpts", 25)
-    xpts_score = max(0, min(100, (1 - player_xpts / best_xpts) * 100)) if best_xpts > 0 else 50
-    
-    minutes = player.get("minutes", 0)
-    mins_per_gw = minutes / max(1, 22)
-    minutes_score = min(100, (90 - mins_per_gw) * 2) if mins_per_gw < 60 else max(0, 90 - mins_per_gw)
-    
-    total = (fixture_score * config.sell_weight_fixtures + form_score * config.sell_weight_form +
-             xpts_score * config.sell_weight_xpts_vs_tier + minutes_score * config.sell_weight_minutes)
-    
-    # v4.3.3c: Heavily discount sell pressure for elite assets
-    if is_elite:
-        total = total * 0.3  # Elite assets rarely worth selling
-    
-    reasons = []
-    if fixture_score >= 60:
-        reasons.append(f"Hard fixtures (FDR {avg_fdr:.1f})")
-    if blank_count > 0:
-        reasons.append(f"{blank_count} blank(s)")
-    if form_score >= 60 and player_form < avg_form:
-        reasons.append(f"Poor form ({player_form:.1f})")
-    if xpts_score >= 50 and not is_elite:  # Don't flag xPts for elites
-        reasons.append(f"Low xPts ({player_xpts:.1f})")
-    if minutes_score >= 50:
-        reasons.append("Rotation risk")
-    
-    # v4.3.3c: Elite assets need much higher threshold to be sell candidates
-    sell_threshold = 70 if is_elite else 50
-    is_sell = total >= sell_threshold or (len(reasons) >= 2 and not is_elite)
-    
-    return {
-        "id": player_id, "name": player.get("name"), "team": player.get("team"),
-        "position": player.get("position"), "price": price, "score": round(total, 1),
-        "reasons": reasons, "is_sell_candidate": is_sell, "is_elite": is_elite
-    }
-
-
-def find_solutions_for_problem(problem: Dict, squad: List[Dict], all_players: List[Dict], heatmap: Dict,
-                               fixtures: List[Dict], teams_dict: Dict, current_gw: int, horizon: int,
-                               bank: float, elements: Dict = None) -> List[Dict]:
-    """Find transfer solutions for a problem."""
-    config = MODEL_CONFIG["planner"]
-    solutions = []
-    
-    squad_ids = {p.get("id") for p in squad}
-    team_counts = defaultdict(int)
-    for p in squad:
-        team_counts[p.get("team_id") or p.get("team")] += 1
-    
-    affected_ids = {p.get("id") for p in problem.get("affected_details", [])}
-    sell_candidates = [p for p in heatmap["players"] if p.get("id") in affected_ids][:1]
-    
-    for out_player in sell_candidates:
-        out_id = out_player["id"]
-        out_pos_id = out_player["position_id"]
-        out_team_id = out_player.get("team_id")
-        out_price = out_player.get("selling_price") or out_player.get("price", 0)
-        out_xpts = out_player.get("horizon_xpts", 0)
-        available_budget = bank + out_price
-        
-        potential_ins = []
-        for player in all_players:
-            if player["id"] in squad_ids or player["element_type"] != out_pos_id:
-                continue
-            price = player["now_cost"] / 10
-            if price > available_budget:
-                continue
-            player_team = player["team"]
-            current_count = team_counts[player_team] - (1 if out_team_id == player_team else 0)
-            if current_count >= 3 or player.get("status") in ["i", "s", "u"] or player.get("minutes", 0) < 300:
-                continue
-            
-            in_fixtures = build_player_fixture_map(player, fixtures, teams_dict, current_gw, horizon, out_pos_id, elements)
-            in_xpts = sum(f["xpts"] for f in in_fixtures)
-            
-            if problem["type"] == "bgw_no_coverage":
-                gw = problem["gw"]
-                gw_fix = next((f for f in in_fixtures if f["gw"] == gw), None)
-                if gw_fix and gw_fix.get("is_blank"):
-                    continue
-            
-            potential_ins.append({"player": player, "in_xpts": in_xpts, "xpts_gain": in_xpts - out_xpts, "price": price})
-        
-        potential_ins.sort(key=lambda x: -x["xpts_gain"])
-        
-        for pick in potential_ins[:config.optimal_solutions]:
-            player = pick["player"]
-            solutions.append({
-                "solution_type": "optimal",
-                "out": {"id": out_id, "name": out_player["name"], "team": out_player["team"], "price": out_price, "position": out_player["position"]},
-                "in": {"id": player["id"], "name": player.get("web_name", "???"), "team": teams_dict.get(player["team"], {}).get("short_name", "???"),
-                       "price": pick["price"], "position": POSITION_MAP.get(out_pos_id, "???"),
-                       "ownership": float(player.get("selected_by_percent", 0) or 0), "form": float(player.get("form", 0) or 0)},
-                "xpts_gain": round(pick["xpts_gain"], 1), "xpts_in_horizon": round(pick["in_xpts"], 1),
-                "cost_change": round(pick["price"] - out_price, 1), "why": f"+{pick['xpts_gain']:.1f} xPts over {horizon} GWs"
-            })
-        
-        # Differential picks
-        diffs = [p for p in potential_ins if float(p["player"].get("selected_by_percent", 100) or 100) <= config.differential_ownership_max and p["xpts_gain"] > 0]
-        for pick in diffs[:config.differential_solutions]:
-            player = pick["player"]
-            own = float(player.get("selected_by_percent", 0) or 0)
-            solutions.append({
-                "solution_type": "differential",
-                "out": {"id": out_id, "name": out_player["name"], "team": out_player["team"], "price": out_price, "position": out_player["position"]},
-                "in": {"id": player["id"], "name": player.get("web_name", "???"), "team": teams_dict.get(player["team"], {}).get("short_name", "???"),
-                       "price": pick["price"], "position": POSITION_MAP.get(out_pos_id, "???"), "ownership": own, "form": float(player.get("form", 0) or 0)},
-                "xpts_gain": round(pick["xpts_gain"], 1), "xpts_in_horizon": round(pick["in_xpts"], 1),
-                "cost_change": round(pick["price"] - out_price, 1), "why": f"Differential ({own:.1f}%) +{pick['xpts_gain']:.1f} xPts"
-            })
-    
-    return solutions
-
-
-def calculate_gw_health(gw: int, heatmap: Dict, problems: List[Dict]) -> Dict:
-    """Calculate health score (1-10) for a GW."""
-    config = MODEL_CONFIG["planner"]
-    score = 10.0
-    issues = []
-    
-    for problem in [p for p in problems if p.get("gw") == gw]:
-        ptype = problem["type"]
-        if ptype == "bgw_no_coverage":
-            score -= config.health_weight_bgw * len(problem.get("affected", []))
-            issues.append(f"{len(problem.get('affected', []))} blanks")
-        elif ptype == "position_fixture_clash":
-            score -= config.health_weight_position_clash
-            issues.append("Position clash")
-        elif ptype == "premium_hard_fixture":
-            score -= config.health_weight_premium_hard
-            issues.append("Premium hard")
-        elif ptype == "poor_form":
-            score -= config.health_weight_poor_form
-            issues.append("Poor form")
-    
-    score = max(1, min(10, score))
-    status = "Good" if score >= 8 else "Minor issues" if score >= 6 else "Needs attention" if score >= 4 else "Critical"
-    return {"score": round(score, 1), "status": status, "issues": issues}
-
-
-@app.get("/api/planner/{manager_id}")
-async def get_fixture_first_plan(manager_id: int, horizon: int = Query(6, ge=1, le=8)):
-    """Fixture-First Transfer Planner - Returns squad analysis with heatmap and problems."""
-    try:
-        await refresh_fdr_data()
-        
-        data = await fetch_fpl_data()
-        fixtures = await fetch_fixtures()
-        history = await fetch_manager_history(manager_id)
-        
-        elements = {e["id"]: e for e in data["elements"]}
-        all_players = data["elements"]
-        teams = {t["id"]: t for t in data["teams"]}
-        events = data["events"]
-        current_gw = get_current_gameweek(events)
-        next_gw = get_next_gameweek(events)
-        
-        team_data = await fetch_manager_team(manager_id, current_gw)
-        picks = team_data["picks"]["picks"]
-        entry_history = team_data["picks"].get("entry_history", {})
-        bank = entry_history.get("bank", 0) / 10
-        
-        # Calculate free transfers
-        manager_history = history.get("current", [])
-        free_transfers = 1
-        recent_gws = sorted([h for h in manager_history if h.get("event", 0) <= current_gw], key=lambda x: x.get("event", 0), reverse=True)[:5]
-        consecutive_rolls = 0
-        for gw_data in recent_gws:
-            if gw_data.get("event_transfers", 0) == 0:
-                consecutive_rolls += 1
-            else:
-                break
-        current_gw_transfers = entry_history.get("event_transfers", 0)
-        if current_gw_transfers == 0:
-            free_transfers = min(5, 1 + consecutive_rolls)
-        else:
-            free_transfers = max(1, min(5, 1 + consecutive_rolls - 1))
-        
-        available_chips = get_available_chips(history, current_gw)
-        
-        # Build squad
-        squad = []
-        for pick in picks:
-            player_id = pick["element"]
-            player = elements.get(player_id, {})
-            if not player:
-                continue
-            squad.append({
-                "id": player_id,
-                "name": player.get("web_name", "???"),
-                "team_id": player.get("team"),
-                "position_id": player.get("element_type"),
-                "price": player.get("now_cost", 0) / 10,
-                "selling_price": pick.get("selling_price", player.get("now_cost", 0)) / 10,
-                "form": float(player.get("form", 0) or 0),
-                "minutes": player.get("minutes", 0),
-                "total_points": player.get("total_points", 0)
-            })
-        
-        gw_info = detect_dgw_bgw(fixtures, events, next_gw, next_gw + horizon - 1)
-        benchmarks = calculate_tier_benchmarks(all_players, fixtures, teams, next_gw, horizon)
-        heatmap = build_squad_heatmap(squad, fixtures, teams, next_gw, horizon, elements)
-        problems = detect_squad_problems(heatmap, benchmarks, next_gw, horizon)
-        
-        for problem in problems:
-            problem["solutions"] = find_solutions_for_problem(problem, squad, all_players, heatmap, fixtures, teams, next_gw, horizon, bank, elements)
-        
-        # v4.3.3c: Calculate sell pressure for all players once, passing benchmarks for elite check
-        all_sell_pressures = [calculate_sell_pressure(p, benchmarks, all_benchmarks=benchmarks) for p in heatmap["players"]]
-        sell_candidates = [sp for sp in all_sell_pressures if sp["is_sell_candidate"]]
-        sell_candidates.sort(key=lambda x: -x["score"])
-        
-        gw_health = {gw: calculate_gw_health(gw, heatmap, problems) for gw in heatmap["gw_range"]}
-        health_scores = [h["score"] for h in gw_health.values()]
-        overall_health = sum(health_scores) / len(health_scores) if health_scores else 7.0
-        overall_status = "Good" if overall_health >= 7 else "Needs attention" if overall_health >= 5 else "Critical"
-        
-        total_horizon_xpts = sum(p["horizon_xpts"] for p in heatmap["players"])
-        
-        # v4.3.3c: Get planner config for health breakdown
-        planner_config = MODEL_CONFIG["planner"]
-        
-        return {
-            "manager_id": manager_id,
-            "current_gw": current_gw,
-            "planning_horizon": f"GW{next_gw}-GW{next_gw + horizon - 1}",
-            "horizon_gws": list(range(next_gw, next_gw + horizon)),
-            "bank": round(bank, 1),
-            "free_transfers": free_transfers,
-            "available_chips": {CHIP_DISPLAY.get(k, k): v for k, v in available_chips.items()},
-            "squad_health": {
-                "overall_score": round(overall_health, 1),
-                "overall_status": overall_status,
-                "by_gw": gw_health,
-                "problem_count": len(problems),
-                "critical_problems": sum(1 for p in problems if p["severity"] == "CRITICAL"),
-                # v4.3.3c: Transparent health breakdown
-                "breakdown": {
-                    "base_score": 10.0,
-                    "bgw_deductions": sum(1 for p in problems if p["type"] == "bgw_no_coverage") * planner_config.health_weight_bgw,
-                    "position_clash_deductions": sum(1 for p in problems if p["type"] == "position_fixture_clash") * planner_config.health_weight_position_clash,
-                    "premium_hard_deductions": sum(1 for p in problems if p["type"] == "premium_hard_fixture") * planner_config.health_weight_premium_hard,
-                    "poor_form_deductions": sum(1 for p in problems if p["type"] == "poor_form") * planner_config.health_weight_poor_form,
-                    "explanation": f"10.0 - {len([p for p in problems if p['type'] == 'bgw_no_coverage'])} BGW issues - {len([p for p in problems if p['type'] == 'position_fixture_clash'])} clashes - {len([p for p in problems if p['type'] == 'premium_hard_fixture'])} hard premiums - {len([p for p in problems if p['type'] == 'poor_form'])} form issues"
-                }
-            },
-            "gw_info": gw_info,
-            "heatmap": heatmap,
-            "problems": problems,
-            "sell_candidates": sell_candidates,
-            "summary": {
-                "total_horizon_xpts": round(total_horizon_xpts, 1),
-                "avg_xpts_per_gw": round(total_horizon_xpts / horizon, 1) if horizon > 0 else 0,
-                "players_with_blanks": sum(1 for p in heatmap["players"] if p["blank_count"] > 0),
-                "players_with_hard_runs": sum(1 for p in heatmap["players"] if p["hard_fixture_count"] >= 3)
-            }
-        }
-    except Exception as e:
-        logger.error(f"Fixture-first planner error for manager {manager_id}: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 # ============ MODEL BACKTESTING ============
 
