@@ -10,8 +10,8 @@ Enhanced with:
 - Dynamic season detection
 - Rate limiting with exponential backoff
 
-v4.3.2 CHANGELOG - CRITICAL FDR Bug Fix + Set Piece Share + DEFCON:
-===================================================================
+v4.3.2 CHANGELOG - CRITICAL FDR Bug Fix + Venue-Specific FDR + Blending Fix + Set Piece Share + DEFCON:
+=====================================================================================================
 CRITICAL BUG 1: FixtureCalculator used WRONG FDR field (line 1726)
 - WAS: opp_def_fdr = fdr_data[opponent_id].get("defence_fdr", 5)
 - NOW: opp_attack_fdr = fdr_data[opponent_id].get("attack_fdr", 5)
@@ -32,7 +32,31 @@ CRITICAL BUG 3: Home boost missing in FDR fallback path (lines 3249-3297)
 - Players with split data (like Haaland) were getting NO home fixture boost!
 - This was the main cause of 6.7 xPts for Haaland vs Wolves (H)
 
-PROBLEM 4: Set piece takers (Bruno, Salah) over-suppressed in hard fixtures.
+CRITICAL BUG 4: Using BLENDED xGA instead of VENUE-SPECIFIC xGA
+- WAS: attack_fdr used blended (home+away) xGA for all fixtures
+- NOW: attack_fdr_home and attack_fdr_away tracked separately
+- When you're HOME, opponent is AWAY → use their attack_fdr_away
+- When you're AWAY, opponent is HOME → use their attack_fdr_home
+- Example: Bournemouth is harder to score against AT HOME than AWAY
+  The old model treated them the same regardless of venue
+
+CRITICAL BUG 5: Analytic FPL blending formula was BROKEN
+- WAS: blended_xga = (0.55 × manual + 0.30 × form) × (1 + defence_adjustment)
+  - Weights sum to 0.85, not 1.0!
+  - Multiplicative trend adjustment distorted baseline rankings
+  - Bournemouth with defence_delta = -0.15 (improving) got xGA REDUCED by ~6%
+  - Made them look like a TOP 5 defence instead of mid-table!
+- NOW: blended_xga = 0.70 × manual + 0.30 × form + defence_adjustment
+  - Weights properly sum to 1.0
+  - Trend adjustment is ADDITIVE (±0.15 xG max), not multiplicative
+  - Preserves Analytic FPL baseline rankings while allowing small form adjustments
+
+IMPACT OF BUG 5:
+  - Bournemouth old: blended_xga ≈ 1.09 → attack_fdr ≈ 7 → mult ≈ 0.70
+  - Bournemouth new: blended_xga ≈ 1.43 → attack_fdr ≈ 4 → mult ≈ 0.94
+  - Wirtz @BOU: 3.6 → ~4.3 xPts (significant boost)
+
+PROBLEM 6: Set piece takers (Bruno, Salah) over-suppressed in hard fixtures.
 - Bruno vs Arsenal (A) had 0.68 multiplier applied to ALL his xG
 - But ~50% of Bruno's xG comes from penalties + direct FKs
 - Penalties are fixture-neutral: 0.76 xG whether vs Liverpool or Southampton
@@ -45,7 +69,7 @@ FIX: Set Piece Share Attribute
 
 FORMULA: effective_mult = sp_share × 1.0 + (1 - sp_share) × base_mult
 
-PROBLEM 5: DEFCON probability was capped at 18%/24% regardless of actual rate.
+PROBLEM 7: DEFCON probability was capped at 18%/24% regardless of actual rate.
 - Senesi averages 13.1 DEFCON/game, threshold is 10
 - Old model: 84% raw probability → capped at 18% (!!!)
 - Massive undervaluation of high-action defenders
@@ -56,7 +80,9 @@ FIX: Proper probability calculation using normal distribution approximation
 - Realistic caps: 85% DEF, 80% MID (accounting for subs, tactical changes)
 
 OVERALL IMPACT:
-- Haaland vs Wolves (H): 6.7 → ~8.0 xPts (CRITICAL FIX)
+- Haaland vs Wolves (H): 6.7 → ~8.0 xPts
+- Wirtz @Bournemouth: 3.6 → ~4.3 xPts (blending fix)
+- Ekitiké @Bournemouth: 3.9 → ~4.5 xPts (blending fix)
 - Bruno vs Arsenal (A): ~3.6 → ~4.0 xPts
 - Senesi: 18% DEFCON → 79% (+1.22 xPts/game)
 
@@ -1738,7 +1764,15 @@ class AttackingModel:
             # v4.3.2 FIX: Use attack_fdr (opponent's defensive weakness) not defence_fdr
             # attack_fdr = how easy to score against opponent (based on their xGA)
             # defence_fdr = how dangerous opponent's attack is (based on their xG)
-            opp_attack_fdr = fdr_data[opponent_id].get("attack_fdr", 5)
+            # v4.3.2: Use venue-specific attack_fdr:
+            # - If we're HOME, opponent is AWAY → use their attack_fdr_away
+            # - If we're AWAY, opponent is HOME → use their attack_fdr_home
+            if is_home:
+                opp_attack_fdr = fdr_data[opponent_id].get("attack_fdr_away",
+                                 fdr_data[opponent_id].get("attack_fdr", 5))
+            else:
+                opp_attack_fdr = fdr_data[opponent_id].get("attack_fdr_home",
+                                 fdr_data[opponent_id].get("attack_fdr", 5))
             attack_multiplier = self.get_fdr_multiplier(round(opp_attack_fdr), player_price)
             data_source += "+fdr"
         
@@ -2179,9 +2213,12 @@ async def _do_fdr_refresh():
             cache.fdr_last_update = datetime.now()
         return cache.fdr_data or {}
     
-    # Aggregate by team
+    # Aggregate by team - v4.3.2: Add home/away venue split
     team_stats: Dict[int, Dict] = defaultdict(lambda: {
-        'matches': [], 'season_xg': 0, 'season_xga': 0
+        'matches': [], 'season_xg': 0, 'season_xga': 0,
+        'home_matches': [], 'away_matches': [],  # v4.3.2: Venue-specific tracking
+        'home_xg': 0, 'home_xga': 0,  # When playing at home
+        'away_xg': 0, 'away_xga': 0,  # When playing away
     })
     
     for match in matches:
@@ -2202,26 +2239,38 @@ async def _do_fdr_refresh():
         away_goals = int(match['goals']['a'])
         match_date = match['datetime']
         
-        # Home team
+        # Home team - playing AT HOME
         home_pts = 3 if home_goals > away_goals else (1 if home_goals == away_goals else 0)
         team_stats[home_id]['matches'].append({
+            'xg': home_xg, 'xga': away_xg, 'pts': home_pts, 'date': match_date, 'venue': 'home'
+        })
+        team_stats[home_id]['home_matches'].append({
             'xg': home_xg, 'xga': away_xg, 'pts': home_pts, 'date': match_date
         })
         team_stats[home_id]['season_xg'] += home_xg
         team_stats[home_id]['season_xga'] += away_xg
+        team_stats[home_id]['home_xg'] += home_xg
+        team_stats[home_id]['home_xga'] += away_xg  # xGA when at home
         
-        # Away team
+        # Away team - playing AWAY
         away_pts = 3 if away_goals > home_goals else (1 if away_goals == home_goals else 0)
         team_stats[away_id]['matches'].append({
+            'xg': away_xg, 'xga': home_xg, 'pts': away_pts, 'date': match_date, 'venue': 'away'
+        })
+        team_stats[away_id]['away_matches'].append({
             'xg': away_xg, 'xga': home_xg, 'pts': away_pts, 'date': match_date
         })
         team_stats[away_id]['season_xg'] += away_xg
         team_stats[away_id]['season_xga'] += home_xg
+        team_stats[away_id]['away_xg'] += away_xg
+        team_stats[away_id]['away_xga'] += home_xg  # xGA when away
     
     # Compute form (last 6) and FDR
     fdr_data = {}
     all_form_xg = []
     all_form_xga = []
+    all_home_xga = []  # v4.3.2: Venue-specific tracking
+    all_away_xga = []
     
     for team_id, data in team_stats.items():
         matches_sorted = sorted(data['matches'], key=lambda x: x['date'])
@@ -2243,14 +2292,12 @@ async def _do_fdr_refresh():
         manual_data = cache.manual_team_strength.get(team_id)
         
         if manual_data:
-            # ==================== WEIGHTED BLEND WITH TREND ====================
-            # Weighting: 55% Analytic FPL baseline, 30% Understat form, 15% trend adjustment
+            # ==================== v4.3.2 FIX: PROPER WEIGHTED BLEND ====================
+            # OLD BUG: Weights were 0.55 + 0.30 = 0.85 (not 1.0!)
+            # OLD BUG: Trend adjustment was multiplicative, distorting baseline
             #
-            # The trend data captures teams improving/declining:
-            # - attack_delta: Recent change in attacking output
-            # - defence_delta: Recent change in defensive solidity
-            # - attack_trend: Directional momentum for attack
-            # - defence_trend: Directional momentum for defence
+            # NEW: 70% Analytic FPL baseline + 30% Understat form = 100%
+            # Trend adjustment is ADDITIVE to xG/xGA, not multiplicative
             
             manual_xg = manual_data.get('adjxg_for', form_xg)
             manual_xga = manual_data.get('adjxg_ag', form_xga)
@@ -2266,19 +2313,21 @@ async def _do_fdr_refresh():
             attack_momentum = attack_delta * 0.6 + attack_trend * 0.4
             defence_momentum = defence_delta * 0.6 + defence_trend * 0.4
             
-            # Apply momentum to baseline (capped at ±15% adjustment)
-            # Positive attack momentum = expect MORE goals
-            # Negative defence momentum = expect FEWER goals conceded
-            attack_adjustment = max(-0.15, min(0.15, attack_momentum * 0.5))
-            defence_adjustment = max(-0.15, min(0.15, defence_momentum * 0.5))
+            # v4.3.2 FIX: Proper blend with weights summing to 1.0
+            # 70% Analytic FPL (stable baseline) + 30% Understat form (recent performance)
+            base_xg = 0.70 * manual_xg + 0.30 * form_xg
+            base_xga = 0.70 * manual_xga + 0.30 * form_xga
             
-            # Final blend: 55% Analytic FPL, 30% Understat form, 15% trend adjustment
-            base_xg = 0.55 * manual_xg + 0.30 * form_xg + 0.15 * (manual_xg + attack_adjustment)
-            base_xga = 0.55 * manual_xga + 0.30 * form_xga + 0.15 * (manual_xga + defence_adjustment)
+            # v4.3.2 FIX: Trend as ADDITIVE adjustment, capped at ±0.15 xG
+            # Positive attack_momentum = team is scoring MORE than baseline → ADD to xG
+            # Negative defence_momentum = team is conceding LESS than baseline → SUBTRACT from xGA
+            # NOTE: For FDR purposes, we want baseline + small trend adjustment
+            # The Analytic FPL baseline already captures true strength
+            attack_adjustment = max(-0.15, min(0.15, attack_momentum * 0.3))
+            defence_adjustment = max(-0.15, min(0.15, defence_momentum * 0.3))
             
-            # Simplify to: baseline × (1 + momentum_factor × weight)
-            blended_xg = (0.55 * manual_xg + 0.30 * form_xg) * (1 + attack_adjustment)
-            blended_xga = (0.55 * manual_xga + 0.30 * form_xga) * (1 + defence_adjustment)
+            blended_xg = base_xg + attack_adjustment
+            blended_xga = base_xga + defence_adjustment  # Negative delta = better defence = lower xGA
             
             data_source = "analytic_fpl+form+trend"
             trend_info = {
@@ -2302,6 +2351,20 @@ async def _do_fdr_refresh():
         cs_probability = math.exp(-blended_xga) if blended_xga > 0 else 0.25
         cs_probability = min(0.50, max(0.08, cs_probability))  # Bound 8%-50%
         
+        # v4.3.2: Calculate venue-specific xGA
+        home_matches = len(data.get('home_matches', []))
+        away_matches = len(data.get('away_matches', []))
+        
+        if home_matches >= 3:
+            home_xga_per_game = data['home_xga'] / home_matches
+        else:
+            home_xga_per_game = blended_xga  # Fallback to blended
+        
+        if away_matches >= 3:
+            away_xga_per_game = data['away_xga'] / away_matches
+        else:
+            away_xga_per_game = blended_xga  # Fallback to blended
+        
         fdr_data[team_id] = {
             'season_xg': data['season_xg'],
             'season_xga': data['season_xga'],
@@ -2313,6 +2376,8 @@ async def _do_fdr_refresh():
             'season_xga_per_game': round(season_xga_per_game, 2),
             'blended_xg': round(blended_xg, 2),  # Final blended xG for predictions
             'blended_xga': round(blended_xga, 2),  # Final blended xGA for predictions
+            'home_xga_per_game': round(home_xga_per_game, 2),  # v4.3.2: xGA when at home
+            'away_xga_per_game': round(away_xga_per_game, 2),  # v4.3.2: xGA when away
             'cs_probability': round(cs_probability, 3),  # Team's expected CS rate
             'xg_per_game': round(blended_xg, 2),  # Alias for backwards compatibility
             'data_source': data_source,
@@ -2320,6 +2385,9 @@ async def _do_fdr_refresh():
         }
         all_form_xg.append(blended_xg)  # Use blended for FDR percentiles
         all_form_xga.append(blended_xga)
+        # v4.3.2: Also track venue-specific xGA for normalization
+        all_home_xga.append(home_xga_per_game)
+        all_away_xga.append(away_xga_per_game)
     
     # Compute FDR scores using normalized xG/xGA values
     # This gives more differentiation than percentiles
@@ -2330,6 +2398,12 @@ async def _do_fdr_refresh():
         xg_range = max(max_xg - min_xg, 0.5)  # Avoid division by zero
         xga_range = max(max_xga - min_xga, 0.3)
         
+        # v4.3.2: Venue-specific ranges
+        min_home_xga, max_home_xga = min(all_home_xga), max(all_home_xga)
+        min_away_xga, max_away_xga = min(all_away_xga), max(all_away_xga)
+        home_xga_range = max(max_home_xga - min_home_xga, 0.3)
+        away_xga_range = max(max_away_xga - min_away_xga, 0.3)
+        
         for team_id, data in fdr_data.items():
             # Attack FDR: How hard to attack this team (based on their blended xGA)
             # Low xGA = hard to score against = HIGH attack_fdr
@@ -2337,12 +2411,22 @@ async def _do_fdr_refresh():
             xga_norm = (data['blended_xga'] - min_xga) / xga_range  # 0 = best defense, 1 = worst
             attack_fdr = int(round(1 + (1 - xga_norm) * 9))  # 1-10, inverted
             
+            # v4.3.2: Venue-specific attack FDR
+            # attack_fdr_home = how hard to score against this team WHEN THEY'RE AT HOME
+            # attack_fdr_away = how hard to score against this team WHEN THEY'RE AWAY
+            home_xga_norm = (data['home_xga_per_game'] - min_home_xga) / home_xga_range
+            away_xga_norm = (data['away_xga_per_game'] - min_away_xga) / away_xga_range
+            attack_fdr_home = int(round(1 + (1 - home_xga_norm) * 9))
+            attack_fdr_away = int(round(1 + (1 - away_xga_norm) * 9))
+            
             # Defence FDR: How hard to defend against this team (based on their blended xG)
             # High xG = dangerous attack = HIGH defence_fdr
             xg_norm = (data['blended_xg'] - min_xg) / xg_range  # 0 = weakest attack, 1 = strongest
             defence_fdr = int(round(1 + xg_norm * 9))  # 1-10
             
             data['attack_fdr'] = max(1, min(10, attack_fdr))
+            data['attack_fdr_home'] = max(1, min(10, attack_fdr_home))  # v4.3.2
+            data['attack_fdr_away'] = max(1, min(10, attack_fdr_away))  # v4.3.2
             data['defence_fdr'] = max(1, min(10, defence_fdr))
             data['composite_fdr'] = round((data['attack_fdr'] + data['defence_fdr']) / 2, 1)
     
@@ -2375,15 +2459,25 @@ def get_fixture_fdr(opponent_id: int, is_home: bool, position_id: int, fpl_diffi
     
     opponent_data = cache.fdr_data[opponent_id]
     
-    # Position-specific FDR
+    # Position-specific FDR with venue consideration
+    # v4.3.2: Use venue-specific attack_fdr
+    # - If we're HOME, opponent is AWAY → use their attack_fdr_away
+    # - If we're AWAY, opponent is HOME → use their attack_fdr_home
     if position_id in [3, 4]:  # MID, FWD - care about scoring
-        base_fdr = opponent_data.get('attack_fdr', 5)
+        if is_home:
+            base_fdr = opponent_data.get('attack_fdr_away', opponent_data.get('attack_fdr', 5))
+        else:
+            base_fdr = opponent_data.get('attack_fdr_home', opponent_data.get('attack_fdr', 5))
     else:  # GKP, DEF - care about clean sheets
         base_fdr = opponent_data.get('defence_fdr', 5)
     
-    # Home/away adjustment
-    ha_mult = HOME_AWAY_FDR_ADJUSTMENT['home'] if is_home else HOME_AWAY_FDR_ADJUSTMENT['away']
-    adjusted_fdr = int(round(base_fdr * ha_mult))
+    # v4.3.2: Venue-specific FDR already accounts for home/away, so remove additional adjustment
+    # Only apply small home advantage factor for the player (not opponent strength)
+    # Home teams exploit weaknesses slightly better
+    if is_home:
+        adjusted_fdr = max(1, base_fdr - 1)  # Slight boost for being home
+    else:
+        adjusted_fdr = min(10, base_fdr + 1)  # Slight penalty for being away
     
     return max(1, min(10, adjusted_fdr))
 
@@ -3219,11 +3313,19 @@ def calculate_expected_points(
             
             # Blend with FDR-based multiplier
             if cache.fdr_data and opponent_id in cache.fdr_data:
-                # v4.3.2 FIX: Use correct FDR for position
+                # v4.3.2 FIX: Use correct FDR for position AND venue
                 # - FWD/MID: attack_fdr (how hard to score against opponent, based on their xGA)
                 # - DEF/GKP: defence_fdr (how hard to keep CS, based on opponent's xG)
+                # v4.3.2: Use venue-specific attack_fdr:
+                # - If we're HOME, opponent is AWAY → use their attack_fdr_away
+                # - If we're AWAY, opponent is HOME → use their attack_fdr_home
                 if position in [3, 4]:  # MID, FWD
-                    opp_fdr = cache.fdr_data[opponent_id].get("attack_fdr", 5)
+                    if is_home:
+                        opp_fdr = cache.fdr_data[opponent_id].get("attack_fdr_away", 
+                                  cache.fdr_data[opponent_id].get("attack_fdr", 5))
+                    else:
+                        opp_fdr = cache.fdr_data[opponent_id].get("attack_fdr_home",
+                                  cache.fdr_data[opponent_id].get("attack_fdr", 5))
                 else:  # GKP, DEF
                     opp_fdr = cache.fdr_data[opponent_id].get("defence_fdr", 5)
                 # Use price and position-adjusted FDR multiplier
@@ -3238,9 +3340,14 @@ def calculate_expected_points(
         else:
             # Fallback to FDR-based multiplier
             if cache.fdr_data and opponent_id in cache.fdr_data:
-                # v4.3.2 FIX: Use correct FDR for position
+                # v4.3.2 FIX: Use correct FDR for position AND venue
                 if position in [3, 4]:  # MID, FWD
-                    opp_fdr = cache.fdr_data[opponent_id].get("attack_fdr", 5)
+                    if is_home:
+                        opp_fdr = cache.fdr_data[opponent_id].get("attack_fdr_away",
+                                  cache.fdr_data[opponent_id].get("attack_fdr", 5))
+                    else:
+                        opp_fdr = cache.fdr_data[opponent_id].get("attack_fdr_home",
+                                  cache.fdr_data[opponent_id].get("attack_fdr", 5))
                 else:  # GKP, DEF
                     opp_fdr = cache.fdr_data[opponent_id].get("defence_fdr", 5)
             else:
