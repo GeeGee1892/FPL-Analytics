@@ -1151,33 +1151,41 @@ def xga_to_attack_fdr(xga: float) -> int:
     Higher xGA = weaker defence = LOWER attack FDR (easier to score against)
     Lower xGA = stronger defence = HIGHER attack FDR (harder to score against)
     
-    Thresholds calibrated to PL data:
-    - Elite defence (Arsenal): ~0.85-1.0 xGA -> FDR 9-10
-    - Good defence (Liverpool, City): ~1.0-1.2 xGA -> FDR 7-8
-    - Average defence: ~1.3-1.5 xGA -> FDR 5-6
-    - Weak defence: ~1.6-1.8 xGA -> FDR 3-4
-    - Very weak (promoted): ~1.9-2.2 xGA -> FDR 1-2
+    v4.3.3 RECALIBRATED: Neutral point at 1.42 xGA (was 1.55)
+    Based on Analytic FPL data - league average xGA is ~1.35
+    
+    Thresholds calibrated to actual 25/26 data:
+    - Arsenal: 0.81 xGA -> FDR 10
+    - Liverpool: 1.06 xGA -> FDR 9
+    - City/Newcastle: 1.13-1.14 xGA -> FDR 8
+    - Villa/Man Utd: 1.22-1.24 xGA -> FDR 7
+    - Chelsea/Everton/Brighton: 1.33-1.35 xGA -> FDR 6
+    - Fulham/Leeds/Brentford: 1.38-1.40 xGA -> FDR 5 (neutral)
+    - Spurs/Wolves/BOU/Forest: 1.43-1.48 xGA -> FDR 4
+    - Crystal Palace/West Ham: 1.44-1.63 xGA -> FDR 3
+    - Sunderland: 1.45 xGA -> FDR 3 (promoted but decent)
+    - Burnley: 1.82 xGA -> FDR 1
     """
-    if xga <= 0.85:
-        return 10  # Elite defence (rare)
-    elif xga <= 1.0:
-        return 9   # Top tier defence
+    if xga <= 0.90:
+        return 10  # Elite (Arsenal)
+    elif xga <= 1.05:
+        return 9   # Top tier (Liverpool)
     elif xga <= 1.15:
-        return 8   # Very good defence
-    elif xga <= 1.30:
-        return 7   # Good defence
-    elif xga <= 1.45:
-        return 6   # Above average
-    elif xga <= 1.55:
-        return 5   # Average (neutral)
-    elif xga <= 1.70:
-        return 4   # Below average
-    elif xga <= 1.85:
-        return 3   # Weak defence
-    elif xga <= 2.0:
-        return 2   # Very weak
+        return 8   # Very good (City, Newcastle)
+    elif xga <= 1.25:
+        return 7   # Good (Villa, Man Utd)
+    elif xga <= 1.35:
+        return 6   # Above average (Chelsea, Everton, Brighton)
+    elif xga <= 1.42:
+        return 5   # Average/Neutral (Fulham, Leeds, Brentford)
+    elif xga <= 1.50:
+        return 4   # Below average (Spurs, Wolves, BOU, Forest)
+    elif xga <= 1.60:
+        return 3   # Weak (Crystal Palace, West Ham)
+    elif xga <= 1.75:
+        return 2   # Very weak 
     else:
-        return 1   # Bottom tier (promoted teams struggling)
+        return 1   # Bottom tier (Burnley)
 
 
 def xg_to_defence_fdr(xg: float) -> int:
@@ -1187,33 +1195,42 @@ def xg_to_defence_fdr(xg: float) -> int:
     Higher xG = stronger attack = HIGHER defence FDR (harder to keep CS)
     Lower xG = weaker attack = LOWER defence FDR (easier to keep CS)
     
-    Thresholds calibrated to PL data:
-    - Elite attack (City, Liverpool): ~1.9-2.2 xG -> FDR 9-10
-    - Good attack (Arsenal, Chelsea): ~1.6-1.8 xG -> FDR 7-8
-    - Average attack: ~1.3-1.5 xG -> FDR 5-6
-    - Weak attack: ~1.0-1.2 xG -> FDR 3-4
-    - Very weak (promoted): ~0.7-0.9 xG -> FDR 1-2
+    v4.3.3 RECALIBRATED: Based on Analytic FPL 25/26 data
+    League average xG is ~1.30
+    
+    Thresholds:
+    - Man City: 1.98 xG -> FDR 10
+    - Arsenal: 1.84 xG -> FDR 9
+    - Liverpool: 1.78 xG -> FDR 9
+    - Chelsea: 1.54 xG -> FDR 7
+    - Newcastle/Man Utd: 1.48 xG -> FDR 7
+    - Spurs/Villa/Brentford/Palace: 1.41-1.44 xG -> FDR 6
+    - Brighton/Fulham/BOU: 1.24-1.37 xG -> FDR 5 (neutral)
+    - West Ham/Forest: 1.16-1.22 xG -> FDR 4
+    - Leeds: 1.15 xG -> FDR 4
+    - Wolves/Everton: 1.03-1.08 xG -> FDR 3
+    - Sunderland/Burnley: 0.82-0.84 xG -> FDR 1-2
     """
-    if xg >= 2.1:
-        return 10  # Elite attack (City level)
-    elif xg >= 1.9:
-        return 9   # Top tier attack
+    if xg >= 1.95:
+        return 10  # Elite attack (City)
     elif xg >= 1.75:
+        return 9   # Top tier (Arsenal, Liverpool)
+    elif xg >= 1.55:
         return 8   # Very good attack
-    elif xg >= 1.60:
-        return 7   # Good attack
     elif xg >= 1.45:
-        return 6   # Above average
-    elif xg >= 1.30:
-        return 5   # Average (neutral)
-    elif xg >= 1.15:
-        return 4   # Below average
+        return 7   # Good attack (Chelsea, Newcastle, Man Utd)
+    elif xg >= 1.38:
+        return 6   # Above average (Spurs, Villa, Brentford, Palace)
+    elif xg >= 1.25:
+        return 5   # Average/Neutral (Brighton, Fulham, BOU)
+    elif xg >= 1.12:
+        return 4   # Below average (West Ham, Forest, Leeds)
     elif xg >= 1.00:
-        return 3   # Weak attack
-    elif xg >= 0.85:
+        return 3   # Weak attack (Wolves, Everton)
+    elif xg >= 0.88:
         return 2   # Very weak
     else:
-        return 1   # Bottom tier
+        return 1   # Bottom tier (Sunderland, Burnley)
 
 
 # v4.3.3: Default team strength data for promoted teams and fallback
@@ -2654,7 +2671,7 @@ def get_ownership_tier(ownership: float) -> Tuple[str, str]:
         return "punt", "High variance"
 
 
-def calculate_defcon_per_90(player: Dict, position_id: int) -> tuple[float, float, int]:
+def calculate_defcon_per_90(player: Dict, position_id: int, team_xga: float = None) -> tuple[float, float, int]:
     """
     Get DEFCON per 90 from FPL API (already calculated) and compute probability.
     DEFCON = Defensive Contributions (tackles, interceptions, blocks, clearances, recoveries)
@@ -2665,6 +2682,22 @@ def calculate_defcon_per_90(player: Dict, position_id: int) -> tuple[float, floa
     Now using proper normal distribution approximation:
     - Estimate std dev as ~30% of mean (typical variance)
     - Calculate P(X >= threshold) directly
+    
+    v4.3.3b FIX: Added workload dampening based on team's defensive quality.
+    
+    Problem: DEFCON rewards "busy" defenders who make lots of defensive actions.
+    But elite teams (Arsenal 0.81 xGA) face fewer attacks than mid-table teams 
+    (Newcastle 1.14 xGA), so their defenders have fewer DEFCON opportunities.
+    
+    This was causing Thiaw (Newcastle) to have +1.0 xPts over Gabriel (Arsenal)
+    despite Gabriel being on a much better defensive unit.
+    
+    Fix: Scale DEFCON probability by team's defensive workload relative to league avg.
+    - Arsenal (0.81 xGA / 1.35 avg = 0.60) → 60% of baseline DEFCON prob
+    - Newcastle (1.14 xGA / 1.35 avg = 0.84) → 84% of baseline DEFCON prob
+    
+    This doesn't penalize DEFCON entirely - a busy defender still gets credit -
+    but it recognizes that elite team defenders have fewer opportunities.
     """
     total_minutes = int(player.get("minutes", 0) or 0)
     
@@ -2706,6 +2739,24 @@ def calculate_defcon_per_90(player: Dict, position_id: int) -> tuple[float, floa
         
         # Floor: even low DEFCON players occasionally hit threshold
         prob = max(prob, 0.02)
+    
+    # v4.3.3b: Apply workload dampening based on team's defensive quality
+    # Elite defensive teams face fewer attacks → fewer DEFCON opportunities
+    if team_xga is not None and team_xga > 0:
+        LEAGUE_AVG_XGA = 1.35
+        # Workload factor: how much defensive work does this team have to do?
+        # Arsenal (0.81 xGA) = 0.60 workload, Newcastle (1.14 xGA) = 0.84 workload
+        workload_factor = team_xga / LEAGUE_AVG_XGA
+        
+        # Cap between 0.5 and 1.2 to avoid extreme adjustments
+        # - Elite teams (Arsenal): 0.60 workload → prob * 0.60
+        # - Good teams (Newcastle): 0.84 workload → prob * 0.84
+        # - Weak teams (Burnley 1.82 xGA): 1.20 workload → prob * 1.20 (capped)
+        workload_factor = max(0.50, min(1.20, workload_factor))
+        
+        prob = prob * workload_factor
+        # Re-apply caps after dampening
+        prob = min(prob, 0.85 if position_id == 2 else 0.80)
     
     return round(defcon_per_90, 2), round(prob, 3), defcon_total
 
@@ -3267,16 +3318,20 @@ def calculate_expected_points(
     else:
         yellow_per_90 = position_yellow_baseline
     
-    # Calculate component stats
-    defcon_per_90, defcon_prob, defcon_pts_total = calculate_defcon_per_90(player, position)
-    saves_per_90, save_pts_per_90 = calculate_saves_per_90(player) if position == 1 else (0, 0)
-    bonus_per_90, expected_bonus = calculate_expected_bonus(player, position)
-    
-    # Get team's CS rate - prefer dynamic FDR data, fallback to hardcoded
+    # Get team's defensive data for CS rate and DEFCON workload dampening
+    # v4.3.3b: Moved up before DEFCON call so we can pass team_xga
     if cache.fdr_data and team_id in cache.fdr_data:
         team_base_cs = cache.fdr_data[team_id].get('cs_probability', 0.22)
+        team_xga = cache.fdr_data[team_id].get('blended_xga', 1.35)
     else:
         team_base_cs = TEAM_BASE_CS_RATES.get(team_name, 0.22)
+        team_xga = 1.35  # League average fallback
+    
+    # Calculate component stats
+    # v4.3.3b: Pass team_xga for workload dampening (elite teams have fewer DEFCON opportunities)
+    defcon_per_90, defcon_prob, defcon_pts_total = calculate_defcon_per_90(player, position, team_xga)
+    saves_per_90, save_pts_per_90 = calculate_saves_per_90(player) if position == 1 else (0, 0)
+    bonus_per_90, expected_bonus = calculate_expected_bonus(player, position)
     
     # Points per goal/assist by position
     goal_pts = {1: 6, 2: 6, 3: 5, 4: 4}.get(position, 4)
