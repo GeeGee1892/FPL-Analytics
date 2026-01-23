@@ -6862,41 +6862,41 @@ class TransferPlannerConfig:
     STRATEGIES = {
         "safe": {
             "min_xpts_gain_for_transfer": 1.5,  # Only transfer if gain > 1.5 xPts
-            "min_xpts_gain_for_hit": 8.0,  # Only hit if gain > 8 xPts
-            "max_hits_per_horizon": 1,
+            "min_xpts_gain_for_hit": 15.0,  # Very high - hits almost never worth it
+            "max_hits_per_horizon": 0,  # No hits for safe
             "prefer_nailed": True,
             "ownership_preference": "template",  # High ownership = safe
             "ceiling_weight": 0.2,  # Low ceiling weight
             "floor_weight": 0.4,  # High floor weight
             "risk_score": 2,
-            "description": "Conservative approach: Only essential transfers, avoid hits, prioritize proven nailed starters"
+            "description": "Conservative: No hits, only use free transfers for clear upgrades"
         },
         "balanced": {
-            "min_xpts_gain_for_transfer": 0.8,
-            "min_xpts_gain_for_hit": 6.0,
-            "max_hits_per_horizon": 2,
+            "min_xpts_gain_for_transfer": 1.0,
+            "min_xpts_gain_for_hit": 12.0,  # High threshold - hit must be very valuable
+            "max_hits_per_horizon": 1,  # At most 1 hit across entire horizon
             "prefer_nailed": False,
             "ownership_preference": "mixed",
             "ceiling_weight": 0.35,
             "floor_weight": 0.25,
             "risk_score": 5,
-            "description": "Moderate approach: Transfer for meaningful upgrades, selective hits for high-value moves"
+            "description": "Balanced: Free transfers for upgrades, max 1 hit only if exceptional value"
         },
         "risky": {
-            "min_xpts_gain_for_transfer": 0.4,
-            "min_xpts_gain_for_hit": 4.0,
-            "max_hits_per_horizon": 4,
+            "min_xpts_gain_for_transfer": 0.6,
+            "min_xpts_gain_for_hit": 8.0,  # Still need 8+ xPts to justify -4 hit
+            "max_hits_per_horizon": 2,  # Max 2 hits
             "prefer_nailed": False,
             "ownership_preference": "differential",  # Low ownership = upside
             "ceiling_weight": 0.5,  # High ceiling weight
             "floor_weight": 0.1,  # Low floor weight
             "risk_score": 8,
-            "description": "Aggressive approach: Chase differentials, take hits for upside, prioritize ceiling over floor"
+            "description": "Aggressive: Chase differentials, willing to take hits for high upside"
         }
     }
     
     # Roll value constants
-    ROLL_VALUE = 0.4  # xPts value of having 2FT vs 1FT (optionality)
+    ROLL_VALUE = 0.5  # Slightly higher - rolling is valuable
     MAX_FT = 5  # 2024/25 rules
 
 
@@ -7048,18 +7048,19 @@ def calculate_fixture_swings(
     """
     Calculate fixture swings for all teams.
     
-    Identifies teams with improving or worsening fixtures.
+    Uses actual FDR values to identify teams with improving or worsening fixtures.
+    Sorted by average FDR across horizon (lowest = easiest fixtures = top).
     """
     swings = []
-    horizon_end = min(current_gw + horizon, 38)
+    horizon_end = min(current_gw + horizon - 1, 38)
     
-    # Split horizon into "now" (GW to GW+3) and "later" (GW+3 to GW+6)
-    now_end = min(current_gw + 3, horizon_end)
-    later_end = min(current_gw + 6, horizon_end)
+    # Split horizon into "now" (first half) and "later" (second half)
+    mid_point = current_gw + (horizon // 2)
     
     for team_id, team in teams_dict.items():
         now_fdrs = []
         later_fdrs = []
+        all_fdrs = []
         dgws = []
         bgws = []
         
@@ -7082,14 +7083,17 @@ def calculate_fixture_swings(
             
             opponent_id = fix["team_a"] if is_home else fix["team_h"]
             
-            # Get FDR for this fixture (attack perspective for simplicity)
+            # Get FDR for this fixture
             fpl_diff = fix.get("team_h_difficulty" if is_away else "team_a_difficulty", 3)
             fdr = get_fixture_fdr(opponent_id, is_home, 4, fpl_difficulty=fpl_diff)
             
-            if current_gw <= gw <= now_end:
-                now_fdrs.append(fdr)
-            elif now_end < gw <= later_end:
-                later_fdrs.append(fdr)
+            if current_gw <= gw <= horizon_end:
+                all_fdrs.append(fdr)
+                
+                if gw < mid_point:
+                    now_fdrs.append(fdr)
+                else:
+                    later_fdrs.append(fdr)
         
         # Detect DGW and BGW
         for gw in range(current_gw, horizon_end + 1):
@@ -7102,20 +7106,20 @@ def calculate_fixture_swings(
         # Calculate averages
         current_fdr = sum(now_fdrs) / len(now_fdrs) if now_fdrs else 5.0
         upcoming_fdr = sum(later_fdrs) / len(later_fdrs) if later_fdrs else 5.0
-        swing = upcoming_fdr - current_fdr  # Negative = improving
+        avg_fdr = sum(all_fdrs) / len(all_fdrs) if all_fdrs else 5.0
+        swing = upcoming_fdr - current_fdr  # Negative = fixtures improving (getting easier)
         
-        # Determine rating
-        if swing <= -1.0:
-            rating = "IMPROVING"
-        elif swing >= 1.0:
-            rating = "WORSENING"
+        # Determine rating based on swing direction
+        if swing <= -0.8:
+            rating = "IMPROVING"  # Fixtures getting easier
+        elif swing >= 0.8:
+            rating = "WORSENING"  # Fixtures getting harder  
         else:
             rating = "NEUTRAL"
         
-        # Boost rating for DGW teams
-        if dgws:
-            if rating == "NEUTRAL":
-                rating = "IMPROVING"
+        # DGW teams get bonus (even if neutral fixtures, more games = more points)
+        if dgws and rating == "NEUTRAL":
+            rating = "IMPROVING"
         
         swings.append(FixtureSwing(
             team_id=team_id,
@@ -7129,8 +7133,9 @@ def calculate_fixture_swings(
             rating=rating
         ))
     
-    # Sort by swing (most improving first)
-    swings.sort(key=lambda x: x.swing)
+    # Sort by AVERAGE FDR across horizon (lowest = easiest fixtures first)
+    # This is more intuitive than swing direction
+    swings.sort(key=lambda x: (x.current_fdr + x.upcoming_fdr) / 2)
     
     return swings
 

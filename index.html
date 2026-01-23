@@ -2906,6 +2906,65 @@
             font-size: 1rem;
         }
 
+        /* Autocomplete Dropdown */
+        .autocomplete-wrapper {
+            position: relative;
+        }
+
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .autocomplete-item {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+
+        .autocomplete-item:hover,
+        .autocomplete-item.selected {
+            background: var(--bg-hover);
+        }
+
+        .autocomplete-item .player-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .autocomplete-item .player-name {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .autocomplete-item .player-meta {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+        }
+
+        .autocomplete-item .player-price {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-primary);
+            font-weight: 600;
+        }
+
         .booked-item {
             display: flex;
             justify-content: space-between;
@@ -3681,12 +3740,18 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                 <div class="planner-prebook" style="margin-top: 2rem; max-width: 500px; margin-left: auto; margin-right: auto;">
                     <div class="planner-card-title" style="text-align: left;">📌 Pre-book Transfers (Optional)</div>
                     <div class="prebook-help" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-                        Plan transfers for specific GWs before loading. These will be locked into the strategy.
+                        Plan transfers for specific GWs before loading. Type 3+ characters to search players.
                     </div>
                     <div id="preBookedList"></div>
                     <div class="booked-form" style="grid-template-columns: 1fr 1fr 70px 36px;">
-                        <input type="text" id="preBookedOut" placeholder="Out player name">
-                        <input type="text" id="preBookedIn" placeholder="In player name">
+                        <div class="autocomplete-wrapper">
+                            <input type="text" id="preBookedOut" placeholder="Out player" autocomplete="off" oninput="showAutocomplete(this, 'preBookedOutDropdown')">
+                            <div class="autocomplete-dropdown" id="preBookedOutDropdown" style="display: none;"></div>
+                        </div>
+                        <div class="autocomplete-wrapper">
+                            <input type="text" id="preBookedIn" placeholder="In player" autocomplete="off" oninput="showAutocomplete(this, 'preBookedInDropdown')">
+                            <div class="autocomplete-dropdown" id="preBookedInDropdown" style="display: none;"></div>
+                        </div>
                         <select id="preBookedGw">
                             <option value="23">GW23</option>
                             <option value="24">GW24</option>
@@ -5227,11 +5292,87 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
         let preBookedTransfers = [];  // Before team load (by name)
         let plannerLoaded = false;
         let allPlayersBootstrap = [];
+        let activeAutocompleteInput = null;
+
+        // Load bootstrap data for autocomplete (called once when planner tab is first accessed)
+        async function ensureBootstrapLoaded() {
+            if (allPlayersBootstrap.length === 0) {
+                try {
+                    const bootstrapRes = await fetch(`${API_BASE}/api/bootstrap`);
+                    const bootstrapData = await bootstrapRes.json();
+                    allPlayersBootstrap = bootstrapData.elements || [];
+                } catch (err) {
+                    console.error('Failed to load bootstrap for autocomplete:', err);
+                }
+            }
+        }
+
+        // Autocomplete functionality
+        function showAutocomplete(input, dropdownId) {
+            const query = input.value.trim().toLowerCase();
+            const dropdown = document.getElementById(dropdownId);
+            
+            if (query.length < 3) {
+                dropdown.style.display = 'none';
+                return;
+            }
+
+            // Ensure bootstrap is loaded
+            if (allPlayersBootstrap.length === 0) {
+                ensureBootstrapLoaded().then(() => showAutocomplete(input, dropdownId));
+                return;
+            }
+
+            // Find matching players
+            const matches = allPlayersBootstrap
+                .filter(p => p.web_name.toLowerCase().includes(query) || 
+                            (p.first_name + ' ' + p.second_name).toLowerCase().includes(query))
+                .slice(0, 10);
+
+            if (matches.length === 0) {
+                dropdown.style.display = 'none';
+                return;
+            }
+
+            // Get team names
+            const posMap = {1: 'GKP', 2: 'DEF', 3: 'MID', 4: 'FWD'};
+
+            dropdown.innerHTML = matches.map(p => `
+                <div class="autocomplete-item" onclick="selectAutocomplete('${input.id}', '${dropdownId}', '${p.web_name}', ${p.id})">
+                    <div class="player-info">
+                        <span class="player-name">${p.web_name}</span>
+                        <span class="player-meta">${posMap[p.element_type] || 'MID'} • ${p.team_short || ''}</span>
+                    </div>
+                    <span class="player-price">£${(p.now_cost / 10).toFixed(1)}m</span>
+                </div>
+            `).join('');
+
+            dropdown.style.display = 'block';
+            activeAutocompleteInput = input;
+        }
+
+        function selectAutocomplete(inputId, dropdownId, name, playerId) {
+            const input = document.getElementById(inputId);
+            const dropdown = document.getElementById(dropdownId);
+            
+            input.value = name;
+            input.dataset.playerId = playerId;
+            dropdown.style.display = 'none';
+        }
+
+        // Close autocomplete when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.autocomplete-wrapper')) {
+                document.querySelectorAll('.autocomplete-dropdown').forEach(d => d.style.display = 'none');
+            }
+        });
 
         // Pre-booked transfer (before loading, by name)
         function addPreBookedTransfer() {
-            const outName = document.getElementById('preBookedOut').value.trim();
-            const inName = document.getElementById('preBookedIn').value.trim();
+            const outInput = document.getElementById('preBookedOut');
+            const inInput = document.getElementById('preBookedIn');
+            const outName = outInput.value.trim();
+            const inName = inInput.value.trim();
             const gw = parseInt(document.getElementById('preBookedGw').value);
 
             if (!outName || !inName) {
@@ -5245,8 +5386,8 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                 gw: gw
             });
 
-            document.getElementById('preBookedOut').value = '';
-            document.getElementById('preBookedIn').value = '';
+            outInput.value = '';
+            inInput.value = '';
 
             renderPreBookedList();
         }
@@ -5297,7 +5438,14 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                 if (allPlayersBootstrap.length === 0) {
                     const bootstrapRes = await fetch(`${API_BASE}/api/bootstrap`);
                     const bootstrapData = await bootstrapRes.json();
-                    allPlayersBootstrap = bootstrapData.elements || [];
+                    const teams = bootstrapData.teams || [];
+                    const teamMap = {};
+                    teams.forEach(t => teamMap[t.id] = t.short_name);
+                    
+                    allPlayersBootstrap = (bootstrapData.elements || []).map(p => ({
+                        ...p,
+                        team_short: teamMap[p.team] || ''
+                    }));
                 }
 
                 // Convert pre-booked transfers (by name) to booked transfers (by ID)
@@ -5557,7 +5705,7 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
             let html = `
                 <thead>
                     <tr>
-                        <th>Team</th>
+                        <th>Team (Avg FDR)</th>
                         ${sortedGws.map(gw => `<th>GW${gw}</th>`).join('')}
                     </tr>
                 </thead>
@@ -5565,13 +5713,19 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
             `;
 
             heatmap.forEach(team => {
+                // Calculate average FDR for display
+                const fdrValues = team.fixtures.map(f => f.fdr);
+                const avgFdr = fdrValues.length > 0 
+                    ? (fdrValues.reduce((a, b) => a + b, 0) / fdrValues.length).toFixed(1) 
+                    : '-';
+                
                 const swingBadge = team.rating === 'IMPROVING' 
                     ? `<span class="team-swing improving">↑</span>`
                     : team.rating === 'WORSENING'
                     ? `<span class="team-swing worsening">↓</span>`
                     : '';
 
-                html += `<tr><td>${team.team_short}${swingBadge}</td>`;
+                html += `<tr><td>${team.team_short} <span style="color: var(--text-muted); font-size: 0.65rem;">(${avgFdr})</span>${swingBadge}</td>`;
 
                 sortedGws.forEach(gw => {
                     const fixture = team.fixtures.find(f => f.gw === gw);
