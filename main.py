@@ -6789,6 +6789,1241 @@ def find_player_by_name(name: str, players: List[Dict], squad_ids: set = None) -
     
     return None
 
+# ============ COMPREHENSIVE TRANSFER PLANNER ============
+
+@dataclass
+class SquadHealthIssue:
+    """Represents a health issue with a squad player."""
+    player_id: int
+    player_name: str
+    team: str
+    position: str
+    issue_type: str  # injury, rotation, bgw_exposure, form_concern
+    severity: str  # critical, warning, minor
+    description: str
+    affected_gws: List[int] = field(default_factory=list)
+    recommendation: str = ""
+
+
+@dataclass
+class FixtureSwing:
+    """Represents a team's fixture swing trajectory."""
+    team_id: int
+    team_name: str
+    team_short: str
+    current_fdr: float  # Avg FDR for GW [now, now+3]
+    upcoming_fdr: float  # Avg FDR for GW [now+3, now+6]
+    swing: float  # negative = improving, positive = worsening
+    dgw_in_horizon: List[int] = field(default_factory=list)
+    bgw_in_horizon: List[int] = field(default_factory=list)
+    rating: str = "NEUTRAL"  # IMPROVING, NEUTRAL, WORSENING
+
+
+@dataclass
+class TransferRecommendation:
+    """A single transfer recommendation."""
+    out_player: Dict
+    in_player: Dict
+    gw: int
+    xpts_gain: float
+    reason: str
+    is_essential: bool  # Injury replacement, BGW fix
+    is_hit: bool
+    priority: int  # 1 = highest
+
+
+@dataclass
+class ChipRecommendation:
+    """Chip usage recommendation."""
+    chip: str  # wildcard, freehit, bboost, 3xc
+    recommended_gw: int
+    confidence: str  # high, medium, low
+    reason: str
+    expected_value: float  # xPts gained from chip
+
+
+@dataclass
+class StrategyPlan:
+    """A complete transfer strategy plan."""
+    name: str  # safe, balanced, risky
+    description: str
+    gw_actions: Dict[int, Dict]  # gw -> {action, transfers, chip, reasoning}
+    total_xpts: float
+    hit_cost: int
+    transfers_made: int
+    chip_recommendations: List[ChipRecommendation]
+    risk_score: float  # 0-10 (10 = riskiest)
+    headline: str
+
+
+class TransferPlannerConfig:
+    """Configuration for different strategy types."""
+    
+    STRATEGIES = {
+        "safe": {
+            "min_xpts_gain_for_transfer": 1.5,  # Only transfer if gain > 1.5 xPts
+            "min_xpts_gain_for_hit": 8.0,  # Only hit if gain > 8 xPts
+            "max_hits_per_horizon": 1,
+            "prefer_nailed": True,
+            "ownership_preference": "template",  # High ownership = safe
+            "ceiling_weight": 0.2,  # Low ceiling weight
+            "floor_weight": 0.4,  # High floor weight
+            "risk_score": 2,
+            "description": "Conservative approach: Only essential transfers, avoid hits, prioritize proven nailed starters"
+        },
+        "balanced": {
+            "min_xpts_gain_for_transfer": 0.8,
+            "min_xpts_gain_for_hit": 6.0,
+            "max_hits_per_horizon": 2,
+            "prefer_nailed": False,
+            "ownership_preference": "mixed",
+            "ceiling_weight": 0.35,
+            "floor_weight": 0.25,
+            "risk_score": 5,
+            "description": "Moderate approach: Transfer for meaningful upgrades, selective hits for high-value moves"
+        },
+        "risky": {
+            "min_xpts_gain_for_transfer": 0.4,
+            "min_xpts_gain_for_hit": 4.0,
+            "max_hits_per_horizon": 4,
+            "prefer_nailed": False,
+            "ownership_preference": "differential",  # Low ownership = upside
+            "ceiling_weight": 0.5,  # High ceiling weight
+            "floor_weight": 0.1,  # Low floor weight
+            "risk_score": 8,
+            "description": "Aggressive approach: Chase differentials, take hits for upside, prioritize ceiling over floor"
+        }
+    }
+    
+    # Roll value constants
+    ROLL_VALUE = 0.4  # xPts value of having 2FT vs 1FT (optionality)
+    MAX_FT = 5  # 2024/25 rules
+
+
+def analyze_squad_health(
+    squad: List[Dict],
+    fixtures: List[Dict],
+    events: List[Dict],
+    teams_dict: Dict,
+    elements_dict: Dict,
+    current_gw: int,
+    horizon: int = 8
+) -> List[SquadHealthIssue]:
+    """
+    Analyze squad for health issues.
+    
+    Returns list of issues sorted by severity.
+    """
+    issues = []
+    horizon_end = min(current_gw + horizon, 38)
+    
+    # Build team fixture counts for BGW detection
+    team_gw_fixtures = defaultdict(lambda: defaultdict(int))
+    for fix in fixtures:
+        gw = fix.get("event")
+        if gw and current_gw <= gw <= horizon_end:
+            team_gw_fixtures[fix["team_h"]][gw] += 1
+            team_gw_fixtures[fix["team_a"]][gw] += 1
+    
+    for player in squad:
+        player_id = player["id"]
+        name = player.get("name", player.get("web_name", "Unknown"))
+        team = player.get("team", "???")
+        team_id = player.get("team_id", 0)
+        position = player.get("position", "???")
+        
+        # Get full player data for status check
+        full_player = elements_dict.get(player_id, {})
+        status = full_player.get("status", player.get("status", "a"))
+        news = full_player.get("news", player.get("news", ""))
+        chance_playing = full_player.get("chance_of_playing_next_round")
+        
+        # 1. INJURY FLAGS
+        if status == "i":  # Injured
+            issues.append(SquadHealthIssue(
+                player_id=player_id,
+                player_name=name,
+                team=team,
+                position=position,
+                issue_type="injury",
+                severity="critical",
+                description=f"Injured: {news}" if news else "Injured - no return date",
+                affected_gws=list(range(current_gw, horizon_end + 1)),
+                recommendation=f"Transfer out immediately - 0 xPts while injured"
+            ))
+        elif status == "d":  # Doubtful
+            severity = "critical" if chance_playing and chance_playing <= 25 else "warning"
+            issues.append(SquadHealthIssue(
+                player_id=player_id,
+                player_name=name,
+                team=team,
+                position=position,
+                issue_type="injury",
+                severity=severity,
+                description=f"Doubtful ({chance_playing}%): {news}" if news else f"Doubtful ({chance_playing}%)",
+                affected_gws=[current_gw],
+                recommendation=f"Monitor closely - {chance_playing}% chance of playing"
+            ))
+        elif status == "s":  # Suspended
+            issues.append(SquadHealthIssue(
+                player_id=player_id,
+                player_name=name,
+                team=team,
+                position=position,
+                issue_type="injury",
+                severity="critical",
+                description=f"Suspended: {news}" if news else "Suspended",
+                affected_gws=[current_gw],
+                recommendation="Check suspension length - may need transfer"
+            ))
+        
+        # 2. BGW EXPOSURE
+        bgw_gws = []
+        for gw in range(current_gw, horizon_end + 1):
+            if team_gw_fixtures[team_id][gw] == 0:
+                bgw_gws.append(gw)
+        
+        if bgw_gws:
+            severity = "critical" if len(bgw_gws) >= 2 or bgw_gws[0] == current_gw else "warning"
+            issues.append(SquadHealthIssue(
+                player_id=player_id,
+                player_name=name,
+                team=team,
+                position=position,
+                issue_type="bgw_exposure",
+                severity=severity,
+                description=f"Blank in GW{', GW'.join(map(str, bgw_gws))}",
+                affected_gws=bgw_gws,
+                recommendation="Consider FH if many blanks, or transfer for cover"
+            ))
+        
+        # 3. ROTATION RISK (based on minutes pattern)
+        expected_mins = player.get("expected_minutes", 90)
+        mins_reason = player.get("minutes_reason", "")
+        
+        if expected_mins < 60:
+            issues.append(SquadHealthIssue(
+                player_id=player_id,
+                player_name=name,
+                team=team,
+                position=position,
+                issue_type="rotation",
+                severity="warning",
+                description=f"Rotation risk - {expected_mins:.0f} expected mins ({mins_reason})",
+                affected_gws=list(range(current_gw, horizon_end + 1)),
+                recommendation="Consider upgrade to nailed starter"
+            ))
+        
+        # 4. FORM CONCERNS
+        form = float(player.get("form", 0) or 0)
+        xpts = player.get("xpts", 0)
+        
+        # If form significantly underperforms xPts projection, flag it
+        if form < 3.0 and xpts > 4.0:
+            issues.append(SquadHealthIssue(
+                player_id=player_id,
+                player_name=name,
+                team=team,
+                position=position,
+                issue_type="form_concern",
+                severity="minor",
+                description=f"Form ({form:.1f}) below expected ({xpts:.1f} xPts)",
+                affected_gws=[],
+                recommendation="May be due to bad luck (xG > G) - monitor but don't panic"
+            ))
+    
+    # Sort by severity: critical > warning > minor
+    severity_order = {"critical": 0, "warning": 1, "minor": 2}
+    issues.sort(key=lambda x: severity_order.get(x.severity, 3))
+    
+    return issues
+
+
+def calculate_fixture_swings(
+    fixtures: List[Dict],
+    teams_dict: Dict,
+    current_gw: int,
+    horizon: int = 8
+) -> List[FixtureSwing]:
+    """
+    Calculate fixture swings for all teams.
+    
+    Identifies teams with improving or worsening fixtures.
+    """
+    swings = []
+    horizon_end = min(current_gw + horizon, 38)
+    
+    # Split horizon into "now" (GW to GW+3) and "later" (GW+3 to GW+6)
+    now_end = min(current_gw + 3, horizon_end)
+    later_end = min(current_gw + 6, horizon_end)
+    
+    for team_id, team in teams_dict.items():
+        now_fdrs = []
+        later_fdrs = []
+        dgws = []
+        bgws = []
+        
+        # Count fixtures per GW for this team
+        gw_fixture_count = defaultdict(int)
+        
+        for fix in fixtures:
+            gw = fix.get("event")
+            if not gw:
+                continue
+            
+            is_home = fix["team_h"] == team_id
+            is_away = fix["team_a"] == team_id
+            
+            if not (is_home or is_away):
+                continue
+            
+            if current_gw <= gw <= horizon_end:
+                gw_fixture_count[gw] += 1
+            
+            opponent_id = fix["team_a"] if is_home else fix["team_h"]
+            
+            # Get FDR for this fixture (attack perspective for simplicity)
+            fpl_diff = fix.get("team_h_difficulty" if is_away else "team_a_difficulty", 3)
+            fdr = get_fixture_fdr(opponent_id, is_home, 4, fpl_difficulty=fpl_diff)
+            
+            if current_gw <= gw <= now_end:
+                now_fdrs.append(fdr)
+            elif now_end < gw <= later_end:
+                later_fdrs.append(fdr)
+        
+        # Detect DGW and BGW
+        for gw in range(current_gw, horizon_end + 1):
+            count = gw_fixture_count[gw]
+            if count >= 2:
+                dgws.append(gw)
+            elif count == 0:
+                bgws.append(gw)
+        
+        # Calculate averages
+        current_fdr = sum(now_fdrs) / len(now_fdrs) if now_fdrs else 5.0
+        upcoming_fdr = sum(later_fdrs) / len(later_fdrs) if later_fdrs else 5.0
+        swing = upcoming_fdr - current_fdr  # Negative = improving
+        
+        # Determine rating
+        if swing <= -1.0:
+            rating = "IMPROVING"
+        elif swing >= 1.0:
+            rating = "WORSENING"
+        else:
+            rating = "NEUTRAL"
+        
+        # Boost rating for DGW teams
+        if dgws:
+            if rating == "NEUTRAL":
+                rating = "IMPROVING"
+        
+        swings.append(FixtureSwing(
+            team_id=team_id,
+            team_name=team["name"],
+            team_short=team["short_name"],
+            current_fdr=round(current_fdr, 2),
+            upcoming_fdr=round(upcoming_fdr, 2),
+            swing=round(swing, 2),
+            dgw_in_horizon=dgws,
+            bgw_in_horizon=bgws,
+            rating=rating
+        ))
+    
+    # Sort by swing (most improving first)
+    swings.sort(key=lambda x: x.swing)
+    
+    return swings
+
+
+def get_chip_recommendations(
+    squad: List[Dict],
+    available_chips: Dict[str, bool],
+    fixtures: List[Dict],
+    events: List[Dict],
+    teams_dict: Dict,
+    elements_dict: Dict,
+    current_gw: int,
+    horizon: int = 8,
+    squad_health: List[SquadHealthIssue] = None
+) -> List[ChipRecommendation]:
+    """
+    Generate chip usage recommendations based on squad state and upcoming fixtures.
+    """
+    recommendations = []
+    horizon_end = min(current_gw + horizon, 38)
+    
+    # Detect DGW/BGW in horizon
+    gw_info = detect_dgw_bgw(fixtures, events, current_gw, horizon_end)
+    
+    # Count squad BGW exposure
+    squad_team_ids = {p.get("team_id", 0) for p in squad}
+    
+    for gw in range(current_gw, horizon_end + 1):
+        info = gw_info.get(gw, {})
+        
+        # FREE HIT recommendation
+        if available_chips.get("freehit", False):
+            bgw_teams = set(info.get("bgw_teams", []))
+            squad_blanks = len(squad_team_ids & bgw_teams)
+            
+            # Also count players with BGW exposure from health issues
+            if squad_health:
+                bgw_players = [i for i in squad_health 
+                              if i.issue_type == "bgw_exposure" and gw in i.affected_gws]
+                squad_blanks = max(squad_blanks, len(bgw_players))
+            
+            if squad_blanks >= 6:
+                recommendations.append(ChipRecommendation(
+                    chip="freehit",
+                    recommended_gw=gw,
+                    confidence="high",
+                    reason=f"GW{gw}: {squad_blanks} players blanking - FH value is high",
+                    expected_value=squad_blanks * 4.0  # ~4 xPts per blanking player saved
+                ))
+            elif squad_blanks >= 4:
+                recommendations.append(ChipRecommendation(
+                    chip="freehit",
+                    recommended_gw=gw,
+                    confidence="medium",
+                    reason=f"GW{gw}: {squad_blanks} players blanking - FH worth considering",
+                    expected_value=squad_blanks * 4.0
+                ))
+        
+        # BENCH BOOST recommendation
+        if available_chips.get("bboost", False):
+            dgw_teams = set(info.get("dgw_teams", []))
+            dgw_count = len(squad_team_ids & dgw_teams)
+            
+            if dgw_count >= 10:  # At least 10 DGW players
+                recommendations.append(ChipRecommendation(
+                    chip="bboost",
+                    recommended_gw=gw,
+                    confidence="high",
+                    reason=f"GW{gw}: {dgw_count} DGW players - excellent BB opportunity",
+                    expected_value=dgw_count * 1.5  # Extra bench value in DGW
+                ))
+            elif dgw_count >= 6:
+                recommendations.append(ChipRecommendation(
+                    chip="bboost",
+                    recommended_gw=gw,
+                    confidence="medium",
+                    reason=f"GW{gw}: {dgw_count} DGW players - good BB opportunity",
+                    expected_value=dgw_count * 1.2
+                ))
+        
+        # TRIPLE CAPTAIN recommendation
+        if available_chips.get("3xc", False):
+            dgw_teams = set(info.get("dgw_teams", []))
+            
+            # Find best premium in squad with DGW
+            premiums = [p for p in squad 
+                       if p.get("price", 0) >= 10.0 and p.get("team_id", 0) in dgw_teams]
+            
+            if premiums:
+                best_premium = max(premiums, key=lambda x: x.get("xpts", 0))
+                # Check if it's a favorable DGW (home games, weak opponents)
+                recommendations.append(ChipRecommendation(
+                    chip="3xc",
+                    recommended_gw=gw,
+                    confidence="medium",
+                    reason=f"GW{gw}: {best_premium.get('name', 'Premium')} has DGW - TC candidate",
+                    expected_value=best_premium.get("xpts", 0) * 0.5  # Extra captain points
+                ))
+    
+    # WILDCARD recommendation (based on squad health)
+    if available_chips.get("wildcard", False) and squad_health:
+        critical_issues = [i for i in squad_health if i.severity == "critical"]
+        warning_issues = [i for i in squad_health if i.severity == "warning"]
+        
+        if len(critical_issues) >= 3:
+            recommendations.append(ChipRecommendation(
+                chip="wildcard",
+                recommended_gw=current_gw,
+                confidence="high",
+                reason=f"{len(critical_issues)} critical issues - WC could fix squad structure",
+                expected_value=len(critical_issues) * 3.0
+            ))
+        elif len(critical_issues) + len(warning_issues) >= 5:
+            recommendations.append(ChipRecommendation(
+                chip="wildcard",
+                recommended_gw=current_gw,
+                confidence="medium",
+                reason=f"Multiple squad issues ({len(critical_issues)} critical, {len(warning_issues)} warnings) - consider WC",
+                expected_value=(len(critical_issues) * 3.0 + len(warning_issues) * 1.5)
+            ))
+    
+    # Sort by expected value
+    recommendations.sort(key=lambda x: -x.expected_value)
+    
+    return recommendations
+
+
+def generate_transfer_candidates(
+    squad: List[Dict],
+    elements: List[Dict],
+    fixtures: List[Dict],
+    teams_dict: Dict,
+    events: List[Dict],
+    current_gw: int,
+    bank: float,
+    horizon: int = 8,
+    strategy: str = "balanced",
+    fixture_swings: List[FixtureSwing] = None,
+    booked_transfers: List[Dict] = None
+) -> List[TransferRecommendation]:
+    """
+    Generate transfer recommendations based on strategy.
+    
+    Considers:
+    - xPts improvement over horizon
+    - Fixture swings (players from improving teams)
+    - Strategy preferences (nailed, differential, etc.)
+    """
+    config = TransferPlannerConfig.STRATEGIES[strategy]
+    recommendations = []
+    
+    # Build lookups
+    squad_ids = {p["id"] for p in squad}
+    team_counts = defaultdict(int)
+    elements_dict = {e["id"]: e for e in elements}
+    
+    for p in squad:
+        team_counts[p.get("team_id", 0)] += 1
+    
+    # Fixture swing bonus lookup
+    swing_bonus = {}
+    if fixture_swings:
+        for swing in fixture_swings:
+            if swing.rating == "IMPROVING":
+                swing_bonus[swing.team_id] = 0.15  # 15% boost for improving fixtures
+            elif swing.rating == "WORSENING":
+                swing_bonus[swing.team_id] = -0.10  # 10% penalty for worsening
+    
+    # Get booked out players
+    booked_out_ids = set()
+    booked_in_ids = set()
+    if booked_transfers:
+        for bt in booked_transfers:
+            booked_out_ids.add(bt.get("out_id"))
+            booked_in_ids.add(bt.get("in_id"))
+    
+    # For each squad player, find best replacement
+    for out_player in squad:
+        out_id = out_player["id"]
+        position_id = out_player.get("position_id", 3)
+        position = POSITION_MAP.get(position_id, "MID")
+        
+        # Skip if already booked for transfer
+        if out_id in booked_out_ids:
+            continue
+        
+        available_budget = bank + out_player.get("selling_price", out_player.get("price", 5.0))
+        out_xpts = out_player.get("xpts", 0)
+        
+        # Find candidates
+        for player in elements:
+            if player["id"] in squad_ids or player["id"] in booked_in_ids:
+                continue
+            if player["element_type"] != position_id:
+                continue
+            
+            price = player["now_cost"] / 10
+            if price > available_budget:
+                continue
+            
+            # Team limit check
+            player_team = player["team"]
+            current_count = team_counts[player_team] - (1 if out_player.get("team_id") == player_team else 0)
+            if current_count >= 3:
+                continue
+            
+            # Minutes filter
+            total_minutes = player.get("minutes", 0)
+            if total_minutes < 400:
+                continue
+            
+            # Status filter
+            status = player.get("status", "a")
+            if status in ["i", "s", "u"]:
+                continue
+            
+            # Calculate xPts
+            upcoming = get_player_upcoming_fixtures(
+                player["team"], fixtures, current_gw, current_gw + horizon, teams_dict
+            )
+            stats = calculate_expected_points(
+                player, position_id, current_gw, upcoming, teams_dict, fixtures, events
+            )
+            
+            in_xpts = stats["xpts"]
+            xpts_gain = in_xpts - out_xpts
+            
+            # Apply fixture swing bonus
+            swing = swing_bonus.get(player_team, 0)
+            effective_gain = xpts_gain * (1 + swing)
+            
+            # Apply strategy preferences
+            ownership = float(player.get("selected_by_percent", 0) or 0)
+            
+            if config["ownership_preference"] == "differential":
+                if ownership < 10:
+                    effective_gain *= 1.15  # Boost differentials
+            elif config["ownership_preference"] == "template":
+                if ownership > 20:
+                    effective_gain *= 1.05  # Slight boost for safe picks
+            
+            # Ceiling/floor weighting
+            ceiling = stats.get("xpts_ceiling", in_xpts * 1.2)
+            floor = stats.get("xpts_floor", in_xpts * 0.7)
+            
+            weighted_xpts = (
+                in_xpts * (1 - config["ceiling_weight"] - config["floor_weight"]) +
+                ceiling * config["ceiling_weight"] +
+                floor * config["floor_weight"]
+            )
+            weighted_gain = weighted_xpts - out_xpts
+            
+            # Nailed preference
+            exp_mins = stats.get("expected_minutes", 90)
+            if config["prefer_nailed"] and exp_mins < 75:
+                weighted_gain *= 0.85  # Penalty for rotation risk
+            
+            if effective_gain > config["min_xpts_gain_for_transfer"]:
+                recommendations.append(TransferRecommendation(
+                    out_player={
+                        "id": out_id,
+                        "name": out_player.get("name", "Unknown"),
+                        "team": out_player.get("team", "???"),
+                        "team_id": out_player.get("team_id", 0),
+                        "position": position,
+                        "position_id": position_id,
+                        "price": out_player.get("price", 0),
+                        "selling_price": out_player.get("selling_price", 0),
+                        "xpts": out_xpts,
+                    },
+                    in_player={
+                        "id": player["id"],
+                        "name": player["web_name"],
+                        "team": teams_dict.get(player_team, {}).get("short_name", "???"),
+                        "team_id": player_team,
+                        "position": position,
+                        "position_id": position_id,
+                        "price": price,
+                        "xpts": in_xpts,
+                        "xpts_ceiling": ceiling,
+                        "xpts_floor": floor,
+                        "form": float(player.get("form", 0) or 0),
+                        "ownership": ownership,
+                        "expected_minutes": exp_mins,
+                        "fixtures": upcoming[:5],
+                    },
+                    gw=current_gw,
+                    xpts_gain=round(effective_gain, 2),
+                    reason=f"+{effective_gain:.1f} xPts over {horizon}GW horizon",
+                    is_essential=False,
+                    is_hit=False,
+                    priority=2
+                ))
+    
+    # Sort by xPts gain
+    recommendations.sort(key=lambda x: -x.xpts_gain)
+    
+    return recommendations[:30]  # Top 30
+
+
+def build_strategy_plan(
+    squad: List[Dict],
+    bank: float,
+    free_transfers: int,
+    fixtures: List[Dict],
+    events: List[Dict],
+    teams_dict: Dict,
+    elements: List[Dict],
+    current_gw: int,
+    horizon: int,
+    strategy: str,
+    available_chips: Dict[str, bool],
+    squad_health: List[SquadHealthIssue],
+    fixture_swings: List[FixtureSwing],
+    chip_recommendations: List[ChipRecommendation],
+    booked_transfers: List[Dict] = None
+) -> StrategyPlan:
+    """
+    Build a complete strategy plan for the given strategy type.
+    """
+    config = TransferPlannerConfig.STRATEGIES[strategy]
+    elements_dict = {e["id"]: e for e in elements}
+    
+    # Initialize plan state
+    plan_squad = [p.copy() for p in squad]
+    plan_bank = bank
+    plan_ft = free_transfers
+    plan_hits = 0
+    plan_transfers = 0
+    gw_actions = {}
+    
+    # Apply booked transfers first
+    booked_by_gw = defaultdict(list)
+    if booked_transfers:
+        for bt in booked_transfers:
+            booked_by_gw[bt.get("gw", current_gw)].append(bt)
+    
+    horizon_end = min(current_gw + horizon, 38)
+    total_xpts = 0
+    
+    # Get critical issues that need immediate attention
+    critical_issues = [i for i in squad_health if i.severity == "critical"]
+    injury_player_ids = {i.player_id for i in critical_issues if i.issue_type == "injury"}
+    
+    for gw in range(current_gw, horizon_end + 1):
+        gw_action = {
+            "gw": gw,
+            "action": "hold",
+            "transfers": [],
+            "chip": None,
+            "reasoning": "",
+            "ft_before": plan_ft,
+            "ft_after": plan_ft,
+            "bank_before": round(plan_bank, 1),
+            "bank_after": round(plan_bank, 1),
+        }
+        
+        # Check for chip recommendations this GW
+        gw_chip_recs = [c for c in chip_recommendations if c.recommended_gw == gw]
+        
+        # Apply booked transfers for this GW
+        gw_booked = booked_by_gw.get(gw, [])
+        for bt in gw_booked:
+            out_player = next((p for p in plan_squad if p["id"] == bt["out_id"]), None)
+            in_element = elements_dict.get(bt["in_id"])
+            
+            if out_player and in_element:
+                # Execute booked transfer
+                plan_squad = [p for p in plan_squad if p["id"] != bt["out_id"]]
+                
+                position_id = in_element["element_type"]
+                in_price = in_element["now_cost"] / 10
+                
+                # Calculate xPts
+                upcoming = get_player_upcoming_fixtures(
+                    in_element["team"], fixtures, gw, gw + horizon, teams_dict
+                )
+                stats = calculate_expected_points(
+                    in_element, position_id, gw, upcoming, teams_dict, fixtures, events
+                )
+                
+                plan_squad.append({
+                    "id": in_element["id"],
+                    "name": in_element["web_name"],
+                    "team": teams_dict.get(in_element["team"], {}).get("short_name", "???"),
+                    "team_id": in_element["team"],
+                    "position": POSITION_MAP.get(position_id, "MID"),
+                    "position_id": position_id,
+                    "price": in_price,
+                    "selling_price": in_price,
+                    "xpts": stats["xpts"],
+                    "form": float(in_element.get("form", 0) or 0),
+                    "expected_minutes": stats["expected_minutes"],
+                })
+                
+                # Update bank
+                plan_bank += out_player.get("selling_price", out_player.get("price", 0)) - in_price
+                
+                is_hit = plan_ft <= 0
+                if is_hit:
+                    plan_hits += 1
+                else:
+                    plan_ft = max(0, plan_ft - 1)
+                
+                plan_transfers += 1
+                
+                gw_action["transfers"].append({
+                    "out": out_player,
+                    "in": {
+                        "id": in_element["id"],
+                        "name": in_element["web_name"],
+                        "team": teams_dict.get(in_element["team"], {}).get("short_name", "???"),
+                        "price": in_price,
+                        "xpts": stats["xpts"],
+                    },
+                    "is_booked": True,
+                    "is_hit": is_hit,
+                    "xpts_gain": stats["xpts"] - out_player.get("xpts", 0),
+                })
+                gw_action["action"] = "transfer"
+                gw_action["reasoning"] = "Executing booked transfer"
+        
+        # Generate transfer candidates if we haven't made a booked transfer
+        if not gw_booked and gw == current_gw:
+            # Generate fresh candidates for current GW
+            candidates = generate_transfer_candidates(
+                squad=plan_squad,
+                elements=elements,
+                fixtures=fixtures,
+                teams_dict=teams_dict,
+                events=events,
+                current_gw=gw,
+                bank=plan_bank,
+                horizon=horizon,
+                strategy=strategy,
+                fixture_swings=fixture_swings,
+                booked_transfers=booked_transfers
+            )
+            
+            # Check for essential transfers (injuries in current squad)
+            essential_transfers = []
+            for candidate in candidates:
+                if candidate.out_player["id"] in injury_player_ids:
+                    candidate.is_essential = True
+                    candidate.priority = 1
+                    candidate.reason = "Injury replacement - " + candidate.reason
+                    essential_transfers.append(candidate)
+            
+            # Decision logic based on strategy
+            transfers_to_make = []
+            
+            # Always prioritize essential transfers
+            for et in essential_transfers:
+                if plan_ft > 0 or et.xpts_gain > config["min_xpts_gain_for_hit"]:
+                    transfers_to_make.append(et)
+                    if len(transfers_to_make) >= min(plan_ft + config["max_hits_per_horizon"], 3):
+                        break
+            
+            # Then consider value transfers
+            remaining_ft = plan_ft - len([t for t in transfers_to_make if not t.is_hit])
+            
+            for candidate in candidates:
+                if candidate in transfers_to_make:
+                    continue
+                if len(transfers_to_make) >= 3:  # Max 3 transfers per GW
+                    break
+                
+                # Check if worth it
+                if remaining_ft > 0:
+                    if candidate.xpts_gain > config["min_xpts_gain_for_transfer"]:
+                        # Compare to roll value
+                        if candidate.xpts_gain > TransferPlannerConfig.ROLL_VALUE:
+                            transfers_to_make.append(candidate)
+                            remaining_ft -= 1
+                elif plan_hits < config["max_hits_per_horizon"]:
+                    if candidate.xpts_gain > config["min_xpts_gain_for_hit"]:
+                        candidate.is_hit = True
+                        transfers_to_make.append(candidate)
+            
+            # Execute transfers
+            for transfer in transfers_to_make:
+                out_p = transfer.out_player
+                in_p = transfer.in_player
+                
+                # Update squad
+                plan_squad = [p for p in plan_squad if p["id"] != out_p["id"]]
+                plan_squad.append({
+                    "id": in_p["id"],
+                    "name": in_p["name"],
+                    "team": in_p["team"],
+                    "team_id": in_p["team_id"],
+                    "position": in_p["position"],
+                    "position_id": in_p["position_id"],
+                    "price": in_p["price"],
+                    "selling_price": in_p["price"],
+                    "xpts": in_p["xpts"],
+                    "form": in_p.get("form", 0),
+                    "expected_minutes": in_p.get("expected_minutes", 90),
+                })
+                
+                plan_bank += out_p.get("selling_price", out_p.get("price", 0)) - in_p["price"]
+                
+                if transfer.is_hit:
+                    plan_hits += 1
+                else:
+                    plan_ft = max(0, plan_ft - 1)
+                
+                plan_transfers += 1
+                
+                gw_action["transfers"].append({
+                    "out": out_p,
+                    "in": in_p,
+                    "is_booked": False,
+                    "is_hit": transfer.is_hit,
+                    "xpts_gain": transfer.xpts_gain,
+                    "reason": transfer.reason,
+                })
+            
+            if transfers_to_make:
+                gw_action["action"] = "transfer"
+                reasons = [t.reason for t in transfers_to_make]
+                gw_action["reasoning"] = "; ".join(reasons[:2])
+            else:
+                # Roll the transfer
+                gw_action["action"] = "roll"
+                gw_action["reasoning"] = "No transfer meets threshold - banking FT for flexibility"
+        
+        # Calculate GW xPts
+        gw_xpts = evaluate_squad_xpts(
+            squad=plan_squad,
+            gw=gw,
+            fixtures=fixtures,
+            teams_dict=teams_dict,
+            elements=elements_dict,
+            events=events,
+            chip=gw_action.get("chip"),
+        )
+        total_xpts += gw_xpts
+        gw_action["xpts"] = round(gw_xpts, 1)
+        
+        # Update FT for next week (if rolled)
+        if gw_action["action"] == "roll":
+            plan_ft = min(plan_ft + 1, TransferPlannerConfig.MAX_FT)
+        
+        gw_action["ft_after"] = plan_ft
+        gw_action["bank_after"] = round(plan_bank, 1)
+        
+        gw_actions[gw] = gw_action
+    
+    # Build headline
+    if plan_transfers == 0:
+        headline = f"Roll all transfers - bank FT for later flexibility"
+    elif plan_hits == 0:
+        headline = f"{plan_transfers} transfer{'s' if plan_transfers > 1 else ''} using free transfers"
+    else:
+        headline = f"{plan_transfers} transfer{'s' if plan_transfers > 1 else ''} ({plan_hits} hit{'s' if plan_hits > 1 else ''})"
+    
+    # Adjust total xPts for hits
+    net_xpts = total_xpts - (plan_hits * 4)
+    
+    return StrategyPlan(
+        name=strategy,
+        description=config["description"],
+        gw_actions=gw_actions,
+        total_xpts=round(net_xpts, 1),
+        hit_cost=plan_hits * 4,
+        transfers_made=plan_transfers,
+        chip_recommendations=[c for c in chip_recommendations if c.chip in 
+                             [k for k, v in available_chips.items() if v]],
+        risk_score=config["risk_score"],
+        headline=headline
+    )
+
+
+class BookedTransfer(BaseModel):
+    """Pydantic model for booked transfer input."""
+    out_id: int
+    in_id: int
+    gw: int
+    reason: Optional[str] = ""
+
+
+class TransferPlannerRequest(BaseModel):
+    """Request body for transfer planner."""
+    booked_transfers: Optional[List[BookedTransfer]] = []
+
+
+@app.post("/api/transfer-planner/{manager_id}")
+async def get_transfer_planner(
+    manager_id: int,
+    request: TransferPlannerRequest = None,
+    horizon: int = Query(8, ge=1, le=8)
+):
+    """
+    Comprehensive transfer planner with multi-GW optimization.
+    
+    Returns three strategy plans (Safe, Balanced, Risky) with:
+    - Squad health analysis
+    - Fixture swing detection
+    - Transfer recommendations per GW
+    - Chip timing suggestions
+    - Total expected points
+    
+    Accepts booked transfers in request body.
+    """
+    await refresh_fdr_data()
+    
+    # Fetch all required data
+    data = await fetch_fpl_data()
+    fixtures = await fetch_fixtures()
+    
+    elements = data["elements"]
+    elements_dict = {e["id"]: e for e in elements}
+    teams_dict = {t["id"]: t for t in data["teams"]}
+    events = data["events"]
+    current_gw = get_current_gameweek(events)
+    next_gw = get_next_gameweek(events)
+    planning_gw = next_gw if next_gw else min(current_gw + 1, 38)
+    
+    # Fetch manager data
+    try:
+        team_data = await fetch_manager_team(manager_id, current_gw)
+        history = await fetch_manager_history(manager_id)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Failed to fetch manager data: {str(e)}")
+    
+    picks = team_data["picks"]["picks"]
+    entry_history = team_data["picks"].get("entry_history", {})
+    manager = team_data["manager"]
+    bank = entry_history.get("bank", 0) / 10
+    
+    # Determine free transfers
+    # FPL API doesn't directly give FT count, but we can infer from event_transfers
+    # After using transfers, FT resets to 1 unless you rolled (then 2)
+    event_transfers = entry_history.get("event_transfers", 0)
+    event_transfers_cost = entry_history.get("event_transfers_cost", 0)
+    
+    # If transfers were made this GW, FT is 1 (unless hit was taken, still 1)
+    # If no transfers made, FT could be 1-5 (rolled from previous)
+    # This is a simplification - ideally we'd track FT across GWs
+    if event_transfers > 0:
+        free_transfers = 1
+    else:
+        # Assume 2 FT if no transfer was made (common case)
+        free_transfers = 2
+    
+    # Build squad with xPts
+    squad = []
+    player_histories = {}
+    
+    # Fetch player histories
+    async def fetch_hist(pid):
+        try:
+            return pid, await fetch_player_history(pid)
+        except:
+            return pid, {"history": []}
+    
+    hist_tasks = [fetch_hist(p["element"]) for p in picks]
+    hist_results = await asyncio.gather(*hist_tasks)
+    player_histories = {pid: hist for pid, hist in hist_results}
+    
+    for pick in picks:
+        player = elements_dict.get(pick["element"])
+        if not player:
+            continue
+        
+        position_id = player["element_type"]
+        player_hist = player_histories.get(player["id"])
+        
+        upcoming = get_player_upcoming_fixtures(
+            player["team"], fixtures, planning_gw, planning_gw + horizon, teams_dict, position_id
+        )
+        stats = calculate_expected_points(
+            player, position_id, current_gw, upcoming, teams_dict, fixtures, events,
+            player_history=player_hist, all_players=elements
+        )
+        
+        squad.append({
+            "id": player["id"],
+            "name": player["web_name"],
+            "team": teams_dict.get(player["team"], {}).get("short_name", "???"),
+            "team_id": player["team"],
+            "position": POSITION_MAP.get(position_id, "???"),
+            "position_id": position_id,
+            "price": player["now_cost"] / 10,
+            "selling_price": pick.get("selling_price", player["now_cost"]) / 10,
+            "is_captain": pick["is_captain"],
+            "is_vice_captain": pick["is_vice_captain"],
+            "squad_position": pick["position"],
+            "xpts": stats["xpts"],
+            "xpts_ceiling": stats.get("xpts_ceiling", stats["xpts"] * 1.2),
+            "xpts_floor": stats.get("xpts_floor", stats["xpts"] * 0.7),
+            "expected_minutes": stats["expected_minutes"],
+            "minutes_reason": stats["minutes_reason"],
+            "form": float(player.get("form", 0) or 0),
+            "ownership": float(player.get("selected_by_percent", 0) or 0),
+            "status": player.get("status", "a"),
+            "news": player.get("news", ""),
+            "fixtures": upcoming[:5],
+        })
+    
+    squad.sort(key=lambda x: x["squad_position"])
+    
+    # Get available chips
+    available_chips = get_available_chips(history, current_gw)
+    
+    # Analyze squad health
+    squad_health = analyze_squad_health(
+        squad=squad,
+        fixtures=fixtures,
+        events=events,
+        teams_dict=teams_dict,
+        elements_dict=elements_dict,
+        current_gw=planning_gw,
+        horizon=horizon
+    )
+    
+    # Calculate fixture swings
+    fixture_swings = calculate_fixture_swings(
+        fixtures=fixtures,
+        teams_dict=teams_dict,
+        current_gw=planning_gw,
+        horizon=horizon
+    )
+    
+    # Get chip recommendations
+    chip_recommendations = get_chip_recommendations(
+        squad=squad,
+        available_chips=available_chips,
+        fixtures=fixtures,
+        events=events,
+        teams_dict=teams_dict,
+        elements_dict=elements_dict,
+        current_gw=planning_gw,
+        horizon=horizon,
+        squad_health=squad_health
+    )
+    
+    # Parse booked transfers
+    booked_transfers = []
+    if request and request.booked_transfers:
+        for bt in request.booked_transfers:
+            booked_transfers.append({
+                "out_id": bt.out_id,
+                "in_id": bt.in_id,
+                "gw": bt.gw,
+                "reason": bt.reason or "",
+            })
+    
+    # Build strategy plans
+    strategies = {}
+    for strategy_name in ["safe", "balanced", "risky"]:
+        plan = build_strategy_plan(
+            squad=squad,
+            bank=bank,
+            free_transfers=free_transfers,
+            fixtures=fixtures,
+            events=events,
+            teams_dict=teams_dict,
+            elements=elements,
+            current_gw=planning_gw,
+            horizon=horizon,
+            strategy=strategy_name,
+            available_chips=available_chips,
+            squad_health=squad_health,
+            fixture_swings=fixture_swings,
+            chip_recommendations=chip_recommendations,
+            booked_transfers=booked_transfers
+        )
+        strategies[strategy_name] = {
+            "name": plan.name.title(),
+            "description": plan.description,
+            "headline": plan.headline,
+            "total_xpts": plan.total_xpts,
+            "hit_cost": plan.hit_cost,
+            "transfers_made": plan.transfers_made,
+            "risk_score": plan.risk_score,
+            "gw_actions": plan.gw_actions,
+            "chip_recommendations": [
+                {
+                    "chip": CHIP_DISPLAY.get(c.chip, c.chip.upper()),
+                    "chip_id": c.chip,
+                    "recommended_gw": c.recommended_gw,
+                    "confidence": c.confidence,
+                    "reason": c.reason,
+                    "expected_value": round(c.expected_value, 1),
+                }
+                for c in plan.chip_recommendations
+            ],
+        }
+    
+    # Build fixture heatmap data for all teams
+    fixture_heatmap = []
+    for swing in fixture_swings:
+        team_fixtures = []
+        for fix in fixtures:
+            gw = fix.get("event")
+            if not gw or gw < planning_gw or gw > planning_gw + horizon:
+                continue
+            
+            is_home = fix["team_h"] == swing.team_id
+            is_away = fix["team_a"] == swing.team_id
+            
+            if is_home:
+                opponent_id = fix["team_a"]
+                fdr = get_fixture_fdr(opponent_id, True, 4, fpl_difficulty=fix.get("team_h_difficulty", 3))
+            elif is_away:
+                opponent_id = fix["team_h"]
+                fdr = get_fixture_fdr(opponent_id, False, 4, fpl_difficulty=fix.get("team_a_difficulty", 3))
+            else:
+                continue
+            
+            team_fixtures.append({
+                "gw": gw,
+                "opponent": teams_dict.get(opponent_id, {}).get("short_name", "???"),
+                "is_home": is_home,
+                "fdr": fdr,
+            })
+        
+        team_fixtures.sort(key=lambda x: x["gw"])
+        
+        fixture_heatmap.append({
+            "team_id": swing.team_id,
+            "team_name": swing.team_name,
+            "team_short": swing.team_short,
+            "swing": swing.swing,
+            "rating": swing.rating,
+            "dgw_gws": swing.dgw_in_horizon,
+            "bgw_gws": swing.bgw_in_horizon,
+            "fixtures": team_fixtures,
+        })
+    
+    # Sort by swing (improving first)
+    fixture_heatmap.sort(key=lambda x: x["swing"])
+    
+    return {
+        "manager": {
+            "id": manager["id"],
+            "name": f"{manager['player_first_name']} {manager['player_last_name']}",
+            "team_name": manager["name"],
+        },
+        "planning_gw": planning_gw,
+        "horizon": horizon,
+        "horizon_range": f"GW{planning_gw}-GW{min(planning_gw + horizon - 1, 38)}",
+        "bank": round(bank, 1),
+        "free_transfers": free_transfers,
+        "available_chips": {
+            CHIP_DISPLAY.get(k, k.upper()): v 
+            for k, v in available_chips.items()
+        },
+        "squad": squad,
+        "squad_health": {
+            "issues": [
+                {
+                    "player_id": i.player_id,
+                    "player_name": i.player_name,
+                    "team": i.team,
+                    "position": i.position,
+                    "issue_type": i.issue_type,
+                    "severity": i.severity,
+                    "description": i.description,
+                    "affected_gws": i.affected_gws,
+                    "recommendation": i.recommendation,
+                }
+                for i in squad_health
+            ],
+            "critical_count": len([i for i in squad_health if i.severity == "critical"]),
+            "warning_count": len([i for i in squad_health if i.severity == "warning"]),
+            "minor_count": len([i for i in squad_health if i.severity == "minor"]),
+            "health_score": max(0, 100 - len([i for i in squad_health if i.severity == "critical"]) * 20 
+                               - len([i for i in squad_health if i.severity == "warning"]) * 10
+                               - len([i for i in squad_health if i.severity == "minor"]) * 3),
+        },
+        "fixture_swings": [
+            {
+                "team_id": s.team_id,
+                "team_name": s.team_name,
+                "team_short": s.team_short,
+                "current_fdr": s.current_fdr,
+                "upcoming_fdr": s.upcoming_fdr,
+                "swing": s.swing,
+                "rating": s.rating,
+                "dgw_gws": s.dgw_in_horizon,
+                "bgw_gws": s.bgw_in_horizon,
+            }
+            for s in fixture_swings[:10]  # Top 10 most improving
+        ],
+        "fixture_heatmap": fixture_heatmap,
+        "strategies": strategies,
+        "booked_transfers": booked_transfers,
+    }
+
+
 # ============ MODEL BACKTESTING ============
 
 @app.get("/api/backtest/gw/{gw}")

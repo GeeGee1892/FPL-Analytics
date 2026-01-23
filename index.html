@@ -2583,6 +2583,621 @@
             .wildcard-analysis { grid-template-columns: 1fr; text-align: center; }
             .wildcard-vs { display: none; }
         }
+
+        /* ===== PLANNER STYLES ===== */
+        .planner-input-section {
+            background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-tertiary) 100%);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 2.5rem;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .planner-select {
+            padding: 1rem 1.5rem;
+            background: var(--bg-primary);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        .planner-topbar {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .planner-info-row {
+            display: flex;
+            gap: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .planner-info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .planner-info-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .planner-info-value {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .planner-horizon {
+            color: var(--accent-primary) !important;
+        }
+
+        .planner-chips {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .planner-chip {
+            padding: 0.4rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .planner-chip.available {
+            background: rgba(0, 212, 170, 0.15);
+            color: var(--accent-primary);
+            border: 1px solid var(--accent-primary);
+        }
+
+        .planner-chip.used {
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+            text-decoration: line-through;
+            border: 1px solid var(--border-color);
+        }
+
+        .planner-grid {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 1100px) {
+            .planner-grid { grid-template-columns: 1fr; }
+        }
+
+        .planner-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .planner-main {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .planner-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1rem;
+        }
+
+        .planner-card-wide {
+            padding: 1.25rem;
+        }
+
+        .planner-card-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 1rem;
+        }
+
+        /* Health Score */
+        .health-score-container {
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        .health-score {
+            font-size: 3rem;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .health-score.good { color: var(--accent-primary); }
+        .health-score.warning { color: var(--accent-orange); }
+        .health-score.critical { color: var(--accent-red); }
+
+        .health-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .health-badges {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .health-badge {
+            padding: 0.3rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .health-badge.critical {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-red);
+        }
+
+        .health-badge.warning {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-orange);
+        }
+
+        .health-badge.minor {
+            background: rgba(144, 144, 160, 0.15);
+            color: var(--text-muted);
+        }
+
+        .issue-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .issue-item {
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            border-left: 3px solid var(--border-color);
+        }
+
+        .issue-item.critical { border-left-color: var(--accent-red); }
+        .issue-item.warning { border-left-color: var(--accent-orange); }
+        .issue-item.minor { border-left-color: var(--text-muted); }
+
+        .issue-player {
+            font-weight: 600;
+            font-size: 0.85rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .issue-desc {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .issue-rec {
+            font-size: 0.7rem;
+            color: var(--accent-primary);
+            margin-top: 0.25rem;
+        }
+
+        /* Chip Recommendations */
+        .chip-rec {
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            border-left: 3px solid var(--accent-blue);
+        }
+
+        .chip-rec.high { border-left-color: var(--accent-primary); }
+        .chip-rec.medium { border-left-color: var(--accent-orange); }
+
+        .chip-rec-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.25rem;
+        }
+
+        .chip-rec-chip {
+            font-weight: 700;
+            font-size: 0.85rem;
+        }
+
+        .chip-rec-gw {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .chip-rec-reason {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        /* Squad Mini */
+        .squad-mini {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.4rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .squad-mini-player {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.6rem;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            border-left: 2px solid transparent;
+        }
+
+        .squad-mini-player.starting { border-left-color: var(--accent-primary); }
+        .squad-mini-player.bench { opacity: 0.6; }
+        .squad-mini-player.issue { border-left-color: var(--accent-red); }
+
+        .player-pos {
+            font-weight: 600;
+            width: 28px;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+        }
+
+        .player-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .player-xpts {
+            font-weight: 600;
+            color: var(--accent-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+        }
+
+        /* Booked Transfers */
+        .booked-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr 70px 36px;
+            gap: 0.4rem;
+            margin-top: 0.75rem;
+        }
+
+        .booked-form input,
+        .booked-form select {
+            padding: 0.5rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.75rem;
+        }
+
+        .booked-form button {
+            background: var(--accent-primary);
+            border: none;
+            border-radius: 6px;
+            color: var(--bg-primary);
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .booked-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            margin-bottom: 0.4rem;
+            font-size: 0.75rem;
+        }
+
+        .booked-players {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .booked-out { color: var(--accent-red); }
+        .booked-in { color: var(--accent-primary); }
+
+        .remove-booked {
+            background: var(--accent-red);
+            border: none;
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 0.7rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Strategy Cards */
+        .strategy-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+        }
+
+        @media (max-width: 900px) {
+            .strategy-container { grid-template-columns: 1fr; }
+        }
+
+        .strategy-card {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.25rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .strategy-card:hover {
+            border-color: var(--accent-primary);
+            transform: translateY(-2px);
+        }
+
+        .strategy-card.selected {
+            border-color: var(--accent-primary);
+            background: linear-gradient(135deg, rgba(0, 212, 170, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
+        }
+
+        .strategy-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+
+        .strategy-name {
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+
+        .strategy-name.safe { color: var(--accent-primary); }
+        .strategy-name.balanced { color: var(--accent-blue); }
+        .strategy-name.risky { color: var(--accent-orange); }
+
+        .risk-meter {
+            display: flex;
+            gap: 2px;
+        }
+
+        .risk-bar {
+            width: 6px;
+            height: 14px;
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+        }
+
+        .risk-bar.filled { background: var(--accent-primary); }
+        .risk-bar.filled.high { background: var(--accent-orange); }
+        .risk-bar.filled.max { background: var(--accent-red); }
+
+        .strategy-headline {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            min-height: 40px;
+        }
+
+        .strategy-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.5rem;
+            text-align: center;
+        }
+
+        .strategy-stat-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .strategy-stat-label {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        /* Timeline */
+        .timeline {
+            overflow-x: auto;
+        }
+
+        .timeline-header {
+            display: grid;
+            grid-template-columns: 70px 1fr 80px 70px;
+            padding: 0.75rem 1rem;
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            border-radius: 8px 8px 0 0;
+        }
+
+        .timeline-row {
+            display: grid;
+            grid-template-columns: 70px 1fr 80px 70px;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            align-items: center;
+        }
+
+        .timeline-row:last-child { border-bottom: none; }
+
+        .timeline-row:hover { background: var(--bg-hover); }
+
+        .gw-badge {
+            font-weight: 700;
+            font-size: 0.9rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .action-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .action-badge.transfer {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--accent-blue);
+        }
+
+        .action-badge.roll {
+            background: rgba(144, 144, 160, 0.15);
+            color: var(--text-muted);
+        }
+
+        .action-badge.hit {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-red);
+        }
+
+        .action-badge.booked {
+            background: rgba(139, 92, 246, 0.15);
+            color: var(--accent-purple);
+        }
+
+        .transfer-detail {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            margin-bottom: 0.3rem;
+        }
+
+        .transfer-out { color: var(--accent-red); }
+        .transfer-in { color: var(--accent-primary); }
+        .xpts-gain {
+            font-weight: 600;
+            color: var(--accent-primary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .timeline-xpts {
+            font-weight: 600;
+            color: var(--accent-primary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .ft-badge {
+            font-size: 0.7rem;
+            padding: 0.2rem 0.5rem;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            color: var(--text-secondary);
+        }
+
+        /* Heatmap */
+        .heatmap-container {
+            overflow-x: auto;
+        }
+
+        .heatmap-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.75rem;
+        }
+
+        .heatmap-table th,
+        .heatmap-table td {
+            padding: 0.5rem 0.4rem;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+
+        .heatmap-table th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .heatmap-table th:first-child,
+        .heatmap-table td:first-child {
+            position: sticky;
+            left: 0;
+            background: var(--bg-card);
+            z-index: 2;
+            text-align: left;
+            padding-left: 0.75rem;
+            min-width: 80px;
+        }
+
+        .fixture-cell {
+            padding: 0.3rem 0.4rem;
+            border-radius: 4px;
+            font-weight: 500;
+            min-width: 48px;
+            font-size: 0.7rem;
+        }
+
+        .fixture-cell.away { opacity: 0.85; }
+
+        .team-swing {
+            font-size: 0.65rem;
+            padding: 0.15rem 0.4rem;
+            border-radius: 10px;
+            margin-left: 0.4rem;
+            font-weight: 700;
+        }
+
+        .team-swing.improving {
+            background: var(--accent-primary);
+            color: var(--bg-primary);
+        }
+
+        .team-swing.worsening {
+            background: var(--accent-red);
+            color: white;
+        }
+
+        /* FDR Colors for Heatmap */
+        .hm-fdr-1 { background: #14532d; color: white; }
+        .hm-fdr-2 { background: #166534; color: white; }
+        .hm-fdr-3 { background: #15803d; color: white; }
+        .hm-fdr-4 { background: #84cc16; color: #000; }
+        .hm-fdr-5 { background: #facc15; color: #000; }
+        .hm-fdr-6 { background: #fb923c; color: #000; }
+        .hm-fdr-7 { background: #f97316; color: #000; }
+        .hm-fdr-8 { background: #dc2626; color: white; }
+        .hm-fdr-9 { background: #b91c1c; color: white; }
+        .hm-fdr-10 { background: #7f1d1d; color: white; }
     </style>
 </head>
 <body>
@@ -2646,6 +3261,9 @@
         <div class="nav-tabs-inner">
             <button class="nav-tab active primary" data-section="my-team">
                 <span class="nav-icon">🎯</span> My Team
+            </button>
+            <button class="nav-tab" data-section="planner">
+                <span class="nav-icon">🧠</span> Planner
             </button>
             <button class="nav-tab" data-section="rankings">
                 <span class="nav-icon">📊</span> Rankings
@@ -3043,6 +3661,120 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
             </div>
         </section>
 
+        <!-- PLANNER SECTION -->
+        <section id="planner" class="section">
+            <!-- Planner Input -->
+            <div class="planner-input-section" id="plannerInputSection">
+                <div class="team-input-title">🧠 Transfer Planner</div>
+                <div class="team-input-subtitle">Multi-GW transfer optimization with 3 strategy modes</div>
+                <div class="team-input-row">
+                    <input type="number" id="plannerTeamIdInput" placeholder="Manager ID" onkeypress="if(event.key==='Enter') loadPlanner()">
+                    <select id="plannerHorizonSelect" class="planner-select">
+                        <option value="3">3 GWs</option>
+                        <option value="5">5 GWs</option>
+                        <option value="8" selected>8 GWs</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="loadPlanner()">⚡ Plan</button>
+                </div>
+            </div>
+
+            <!-- Planner Loading -->
+            <div id="plannerLoading" class="loading" style="display: none;">
+                <div class="loading-spinner"></div>
+                <div style="margin-top: 1rem;">Analyzing transfer options...</div>
+            </div>
+
+            <!-- Planner Content -->
+            <div id="plannerContent" style="display: none;">
+                <!-- Top Bar -->
+                <div class="planner-topbar">
+                    <div class="planner-info-row">
+                        <div class="planner-info-item">
+                            <span class="planner-info-label">Manager</span>
+                            <span class="planner-info-value" id="plannerManagerName">-</span>
+                        </div>
+                        <div class="planner-info-item">
+                            <span class="planner-info-label">Bank</span>
+                            <span class="planner-info-value" id="plannerBank">£0.0m</span>
+                        </div>
+                        <div class="planner-info-item">
+                            <span class="planner-info-label">Free Transfers</span>
+                            <span class="planner-info-value" id="plannerFT">1</span>
+                        </div>
+                        <div class="planner-info-item">
+                            <span class="planner-info-label">Planning</span>
+                            <span class="planner-info-value planner-horizon" id="plannerHorizon">GW1-GW8</span>
+                        </div>
+                    </div>
+                    <div class="planner-chips" id="plannerChips"></div>
+                </div>
+
+                <div class="planner-grid">
+                    <!-- Left Sidebar -->
+                    <div class="planner-sidebar">
+                        <!-- Squad Health -->
+                        <div class="planner-card">
+                            <div class="planner-card-title">Squad Health</div>
+                            <div class="health-score-container">
+                                <div class="health-score" id="healthScore">100</div>
+                                <div class="health-label">Health Score</div>
+                            </div>
+                            <div class="health-badges">
+                                <span class="health-badge critical"><span id="criticalCount">0</span> Critical</span>
+                                <span class="health-badge warning"><span id="warningCount">0</span> Warning</span>
+                                <span class="health-badge minor"><span id="minorCount">0</span> Minor</span>
+                            </div>
+                            <div class="issue-list" id="issueList"></div>
+                        </div>
+
+                        <!-- Chip Recommendations -->
+                        <div class="planner-card">
+                            <div class="planner-card-title">Chip Suggestions</div>
+                            <div id="chipRecommendations"></div>
+                        </div>
+
+                        <!-- Current Squad -->
+                        <div class="planner-card">
+                            <div class="planner-card-title">Current Squad</div>
+                            <div class="squad-mini" id="squadMini"></div>
+                        </div>
+
+                        <!-- Booked Transfers -->
+                        <div class="planner-card">
+                            <div class="planner-card-title">Booked Transfers</div>
+                            <div id="bookedTransfers"></div>
+                            <div class="booked-form">
+                                <input type="text" id="bookedOut" placeholder="Out player">
+                                <input type="text" id="bookedIn" placeholder="In player">
+                                <select id="bookedGw"></select>
+                                <button onclick="addBookedTransfer()">+</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Main Content -->
+                    <div class="planner-main">
+                        <!-- Strategy Cards -->
+                        <div class="strategy-container" id="strategyContainer"></div>
+
+                        <!-- Timeline -->
+                        <div class="planner-card planner-card-wide">
+                            <div class="planner-card-title">Transfer Timeline — <span id="selectedStrategyName">Balanced</span></div>
+                            <div class="timeline" id="timeline"></div>
+                        </div>
+
+                        <!-- Fixture Heatmap -->
+                        <div class="planner-card planner-card-wide">
+                            <div class="planner-card-title">Fixture Heatmap (Swing: ↑=improving, ↓=worsening)</div>
+                            <div class="heatmap-container">
+                                <table class="heatmap-table" id="heatmapTable"></table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
 
     </main>
 
@@ -3076,6 +3808,14 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                     if (tab.dataset.section === 'rankings' && !rankingsLoaded && bootstrapLoaded) {
                         loadRankings();
                         rankingsLoaded = true;
+                    }
+                    
+                    // Pre-fill planner team ID from saved or current loaded team
+                    if (tab.dataset.section === 'planner') {
+                        const plannerInput = document.getElementById('plannerTeamIdInput');
+                        if (!plannerInput.value && savedTeamId) {
+                            plannerInput.value = savedTeamId;
+                        }
                     }
                 });
             });
@@ -4453,6 +5193,388 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
             if (Math.abs(num) >= 1000000) return (num / 1000000).toFixed(1) + 'M';
             if (Math.abs(num) >= 1000) return (num / 1000).toFixed(0) + 'K';
             return num.toString();
+        }
+
+        // ===== PLANNER FUNCTIONALITY =====
+        let plannerData = null;
+        let selectedStrategy = 'balanced';
+        let bookedTransfers = [];
+        let plannerLoaded = false;
+        let allPlayersBootstrap = [];
+
+        async function loadPlanner() {
+            const teamIdInput = document.getElementById('plannerTeamIdInput');
+            const horizonSelect = document.getElementById('plannerHorizonSelect');
+            const managerId = teamIdInput.value.trim() || savedTeamId;
+            const horizon = horizonSelect.value;
+
+            if (!managerId) {
+                alert('Please enter a Manager ID');
+                return;
+            }
+
+            // Show loading
+            document.getElementById('plannerInputSection').style.display = 'none';
+            document.getElementById('plannerLoading').style.display = 'block';
+            document.getElementById('plannerContent').style.display = 'none';
+
+            try {
+                // Load bootstrap for player names if not loaded
+                if (allPlayersBootstrap.length === 0) {
+                    const bootstrapRes = await fetch(`${API_BASE}/api/bootstrap`);
+                    const bootstrapData = await bootstrapRes.json();
+                    allPlayersBootstrap = bootstrapData.elements || [];
+                }
+
+                // Load planner data
+                const res = await fetch(`${API_BASE}/api/transfer-planner/${managerId}?horizon=${horizon}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ booked_transfers: bookedTransfers })
+                });
+
+                if (!res.ok) {
+                    throw new Error('Failed to load planner');
+                }
+
+                plannerData = await res.json();
+                plannerLoaded = true;
+                renderPlanner();
+
+            } catch (err) {
+                console.error('Planner error:', err);
+                alert('Failed to load planner: ' + err.message);
+                document.getElementById('plannerInputSection').style.display = 'block';
+            } finally {
+                document.getElementById('plannerLoading').style.display = 'none';
+            }
+        }
+
+        function renderPlanner() {
+            if (!plannerData) return;
+
+            document.getElementById('plannerContent').style.display = 'block';
+
+            // Top bar info
+            document.getElementById('plannerManagerName').textContent = plannerData.manager.name;
+            document.getElementById('plannerBank').textContent = `£${plannerData.bank.toFixed(1)}m`;
+            document.getElementById('plannerFT').textContent = plannerData.free_transfers;
+            document.getElementById('plannerHorizon').textContent = plannerData.horizon_range;
+
+            // Update GW selector for booked transfers
+            const gwSelect = document.getElementById('bookedGw');
+            gwSelect.innerHTML = '';
+            for (let gw = plannerData.planning_gw; gw <= plannerData.planning_gw + plannerData.horizon; gw++) {
+                gwSelect.innerHTML += `<option value="${gw}">GW${gw}</option>`;
+            }
+
+            // Chips
+            const chipsDiv = document.getElementById('plannerChips');
+            chipsDiv.innerHTML = Object.entries(plannerData.available_chips).map(([chip, available]) => 
+                `<span class="planner-chip ${available ? 'available' : 'used'}">${chip}</span>`
+            ).join('');
+
+            // Squad health
+            const health = plannerData.squad_health;
+            const scoreEl = document.getElementById('healthScore');
+            scoreEl.textContent = health.health_score;
+            scoreEl.className = 'health-score ' + (
+                health.health_score >= 80 ? 'good' :
+                health.health_score >= 50 ? 'warning' : 'critical'
+            );
+
+            document.getElementById('criticalCount').textContent = health.critical_count;
+            document.getElementById('warningCount').textContent = health.warning_count;
+            document.getElementById('minorCount').textContent = health.minor_count;
+
+            // Issue list
+            const issueList = document.getElementById('issueList');
+            if (health.issues.length === 0) {
+                issueList.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1rem;">✓ No issues detected</div>';
+            } else {
+                issueList.innerHTML = health.issues.map(issue => `
+                    <div class="issue-item ${issue.severity}">
+                        <div class="issue-player">${issue.player_name} (${issue.team})</div>
+                        <div class="issue-desc">${issue.description}</div>
+                        <div class="issue-rec">${issue.recommendation}</div>
+                    </div>
+                `).join('');
+            }
+
+            // Chip recommendations
+            const chipRecs = document.getElementById('chipRecommendations');
+            const allChipRecs = [];
+            Object.values(plannerData.strategies).forEach(s => {
+                s.chip_recommendations.forEach(c => {
+                    if (!allChipRecs.find(r => r.chip === c.chip && r.recommended_gw === c.recommended_gw)) {
+                        allChipRecs.push(c);
+                    }
+                });
+            });
+
+            if (allChipRecs.length === 0) {
+                chipRecs.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem;">No chip recommendations in horizon</div>';
+            } else {
+                chipRecs.innerHTML = allChipRecs.slice(0, 3).map(rec => `
+                    <div class="chip-rec ${rec.confidence}">
+                        <div class="chip-rec-header">
+                            <span class="chip-rec-chip">${rec.chip}</span>
+                            <span class="chip-rec-gw">GW${rec.recommended_gw}</span>
+                        </div>
+                        <div class="chip-rec-reason">${rec.reason}</div>
+                    </div>
+                `).join('');
+            }
+
+            // Squad mini
+            const squadMini = document.getElementById('squadMini');
+            const issuePlayerIds = new Set(health.issues.filter(i => i.severity === 'critical').map(i => i.player_id));
+
+            squadMini.innerHTML = plannerData.squad.map(p => {
+                const isIssue = issuePlayerIds.has(p.id);
+                const isBench = p.squad_position > 11;
+                return `
+                    <div class="squad-mini-player ${isBench ? 'bench' : 'starting'} ${isIssue ? 'issue' : ''}">
+                        <span class="player-pos">${p.position}</span>
+                        <span class="player-name">${p.name}</span>
+                        <span class="player-xpts">${p.xpts.toFixed(1)}</span>
+                    </div>
+                `;
+            }).join('');
+
+            // Booked transfers
+            renderBookedTransfers();
+
+            // Strategies
+            renderStrategies();
+
+            // Timeline
+            renderTimeline();
+
+            // Heatmap
+            renderHeatmap();
+        }
+
+        function renderStrategies() {
+            const container = document.getElementById('strategyContainer');
+            container.innerHTML = Object.entries(plannerData.strategies).map(([key, strategy]) => {
+                const riskBars = Array(10).fill(0).map((_, i) => {
+                    const filled = i < strategy.risk_score;
+                    const level = i >= 7 ? 'max' : i >= 4 ? 'high' : '';
+                    return `<div class="risk-bar ${filled ? 'filled' : ''} ${level}"></div>`;
+                }).join('');
+
+                return `
+                    <div class="strategy-card ${key === selectedStrategy ? 'selected' : ''}" 
+                         onclick="selectStrategy('${key}')">
+                        <div class="strategy-header">
+                            <span class="strategy-name ${key}">${strategy.name}</span>
+                            <div class="risk-meter">${riskBars}</div>
+                        </div>
+                        <div class="strategy-headline">${strategy.headline}</div>
+                        <div class="strategy-stats">
+                            <div>
+                                <div class="strategy-stat-value">${strategy.total_xpts.toFixed(1)}</div>
+                                <div class="strategy-stat-label">xPts</div>
+                            </div>
+                            <div>
+                                <div class="strategy-stat-value">${strategy.transfers_made}</div>
+                                <div class="strategy-stat-label">Transfers</div>
+                            </div>
+                            <div>
+                                <div class="strategy-stat-value">${strategy.hit_cost > 0 ? '-' + strategy.hit_cost : '0'}</div>
+                                <div class="strategy-stat-label">Hits</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function selectStrategy(strategy) {
+            selectedStrategy = strategy;
+            renderStrategies();
+            renderTimeline();
+        }
+
+        function renderTimeline() {
+            const strategy = plannerData.strategies[selectedStrategy];
+            document.getElementById('selectedStrategyName').textContent = strategy.name;
+
+            const timeline = document.getElementById('timeline');
+            const gws = Object.values(strategy.gw_actions).sort((a, b) => a.gw - b.gw);
+
+            let html = `
+                <div class="timeline-header">
+                    <div>GW</div>
+                    <div>Action</div>
+                    <div>xPts</div>
+                    <div>FT</div>
+                </div>
+            `;
+
+            gws.forEach(gw => {
+                let actionHtml = '';
+
+                if (gw.action === 'roll') {
+                    actionHtml = `<span class="action-badge roll">🔄 Roll FT</span>`;
+                } else if (gw.transfers && gw.transfers.length > 0) {
+                    actionHtml = gw.transfers.map(t => {
+                        const badgeClass = t.is_hit ? 'hit' : t.is_booked ? 'booked' : 'transfer';
+                        const badgeText = t.is_hit ? '⚠️ HIT' : t.is_booked ? '📌 BOOKED' : '✅ FREE';
+                        return `
+                            <div class="transfer-detail">
+                                <span class="action-badge ${badgeClass}">${badgeText}</span>
+                                <span class="transfer-out">${t.out?.name || '?'}</span>
+                                →
+                                <span class="transfer-in">${t.in?.name || '?'}</span>
+                                <span class="xpts-gain">+${(t.xpts_gain || 0).toFixed(1)}</span>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    actionHtml = `<span class="action-badge roll">— Hold</span>`;
+                }
+
+                html += `
+                    <div class="timeline-row">
+                        <div class="gw-badge">GW${gw.gw}</div>
+                        <div>${actionHtml}</div>
+                        <div class="timeline-xpts">${gw.xpts?.toFixed(1) || '-'}</div>
+                        <div class="ft-badge">${gw.ft_before}→${gw.ft_after}</div>
+                    </div>
+                `;
+            });
+
+            timeline.innerHTML = html;
+        }
+
+        function renderHeatmap() {
+            const heatmap = plannerData.fixture_heatmap;
+            if (!heatmap || heatmap.length === 0) return;
+
+            // Get all GWs
+            const gws = new Set();
+            heatmap.forEach(team => {
+                team.fixtures.forEach(f => gws.add(f.gw));
+            });
+            const sortedGws = Array.from(gws).sort((a, b) => a - b);
+
+            let html = `
+                <thead>
+                    <tr>
+                        <th>Team</th>
+                        ${sortedGws.map(gw => `<th>GW${gw}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+            `;
+
+            heatmap.forEach(team => {
+                const swingBadge = team.rating === 'IMPROVING' 
+                    ? `<span class="team-swing improving">↑</span>`
+                    : team.rating === 'WORSENING'
+                    ? `<span class="team-swing worsening">↓</span>`
+                    : '';
+
+                html += `<tr><td>${team.team_short}${swingBadge}</td>`;
+
+                sortedGws.forEach(gw => {
+                    const fixture = team.fixtures.find(f => f.gw === gw);
+                    if (fixture) {
+                        const venue = fixture.is_home ? '' : '@';
+                        html += `
+                            <td>
+                                <div class="fixture-cell hm-fdr-${fixture.fdr} ${fixture.is_home ? '' : 'away'}">
+                                    ${venue}${fixture.opponent}
+                                </div>
+                            </td>
+                        `;
+                    } else {
+                        // Check for DGW or BGW
+                        const isBgw = team.bgw_gws?.includes(gw);
+                        html += `<td>${isBgw ? '<span style="color: var(--text-muted);">BGW</span>' : '-'}</td>`;
+                    }
+                });
+
+                html += '</tr>';
+            });
+
+            html += '</tbody>';
+            document.getElementById('heatmapTable').innerHTML = html;
+        }
+
+        function renderBookedTransfers() {
+            const container = document.getElementById('bookedTransfers');
+
+            if (bookedTransfers.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.75rem;">No booked transfers. Plan ahead by adding transfers for future GWs.</div>';
+                return;
+            }
+
+            container.innerHTML = bookedTransfers.map((bt, idx) => {
+                const outPlayer = allPlayersBootstrap.find(p => p.id === bt.out_id);
+                const inPlayer = allPlayersBootstrap.find(p => p.id === bt.in_id);
+
+                return `
+                    <div class="booked-item">
+                        <div class="booked-players">
+                            <span style="color: var(--text-muted);">GW${bt.gw}:</span>
+                            <span class="booked-out">${outPlayer?.web_name || bt.out_id}</span>
+                            →
+                            <span class="booked-in">${inPlayer?.web_name || bt.in_id}</span>
+                        </div>
+                        <button class="remove-booked" onclick="removeBookedTransfer(${idx})">×</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function addBookedTransfer() {
+            const outName = document.getElementById('bookedOut').value.trim();
+            const inName = document.getElementById('bookedIn').value.trim();
+            const gw = parseInt(document.getElementById('bookedGw').value);
+
+            if (!outName || !inName) {
+                alert('Please enter both player names');
+                return;
+            }
+
+            // Find players by name
+            const outPlayer = allPlayersBootstrap.find(p => 
+                p.web_name.toLowerCase().includes(outName.toLowerCase())
+            );
+            const inPlayer = allPlayersBootstrap.find(p => 
+                p.web_name.toLowerCase().includes(inName.toLowerCase())
+            );
+
+            if (!outPlayer) {
+                alert(`Could not find player: ${outName}`);
+                return;
+            }
+            if (!inPlayer) {
+                alert(`Could not find player: ${inName}`);
+                return;
+            }
+
+            bookedTransfers.push({
+                out_id: outPlayer.id,
+                in_id: inPlayer.id,
+                gw: gw,
+                reason: ''
+            });
+
+            // Clear inputs
+            document.getElementById('bookedOut').value = '';
+            document.getElementById('bookedIn').value = '';
+
+            // Reload planner with new booked transfers
+            loadPlanner();
+        }
+
+        function removeBookedTransfer(idx) {
+            bookedTransfers.splice(idx, 1);
+            loadPlanner();
         }
 
 
