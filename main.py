@@ -1293,16 +1293,39 @@ def xg_to_defence_fdr(xg: float) -> int:
         return 1   # Bottom tier (Sunderland, Burnley)
 
 
-# v4.3.3: Default team strength data for promoted teams and fallback
-# Used when Understat has no data (new season, promoted teams)
+# v4.3.4: Default team strength data for ALL teams
+# Used as baseline when no manual Analytic FPL data is available
+# Values from Analytic FPL 25/26 season data (your screenshot)
+# attack_fdr = how hard to score against them (based on their xGA)
+# defence_fdr = how hard to keep CS against them (based on their xG)
+DEFAULT_TEAM_STRENGTH = {
+    1:  {"name": "Arsenal", "xg": 1.84, "xga": 0.81},
+    12: {"name": "Liverpool", "xg": 1.78, "xga": 1.06},
+    13: {"name": "Man City", "xg": 1.98, "xga": 1.13},
+    15: {"name": "Newcastle", "xg": 1.48, "xga": 1.14},
+    2:  {"name": "Aston Villa", "xg": 1.41, "xga": 1.22},
+    14: {"name": "Man Utd", "xg": 1.48, "xga": 1.24},
+    8:  {"name": "Everton", "xg": 1.03, "xga": 1.33},
+    6:  {"name": "Chelsea", "xg": 1.54, "xga": 1.33},
+    5:  {"name": "Brighton", "xg": 1.37, "xga": 1.35},
+    9:  {"name": "Fulham", "xg": 1.24, "xga": 1.38},
+    10: {"name": "Leeds United", "xg": 1.15, "xga": 1.39},
+    4:  {"name": "Brentford", "xg": 1.41, "xga": 1.40},
+    17: {"name": "Tottenham", "xg": 1.44, "xga": 1.43},
+    20: {"name": "Wolves", "xg": 1.08, "xga": 1.43},
+    7:  {"name": "Crystal Palace", "xg": 1.41, "xga": 1.44},
+    19: {"name": "Sunderland", "xg": 0.82, "xga": 1.45},
+    3:  {"name": "Bournemouth", "xg": 1.24, "xga": 1.46},
+    16: {"name": "Nott'm Forest", "xg": 1.16, "xga": 1.48},
+    18: {"name": "West Ham", "xg": 1.22, "xga": 1.63},
+    11: {"name": "Burnley", "xg": 0.84, "xga": 1.82},
+}
+
+# Legacy alias for backwards compatibility
 PROMOTED_TEAM_DEFAULTS = {
-    # 25/26 Promoted teams - values from Analytic FPL data
-    # These are fallbacks if Understat data is unavailable
-    # attack_fdr = how hard to score against them (based on their xGA)
-    # defence_fdr = how hard to keep CS against them (based on their xG)
-    10: {"name": "Burnley", "xg": 0.84, "xga": 1.82, "attack_fdr": 2, "defence_fdr": 2},  # Weakest
-    11: {"name": "Leeds", "xg": 1.15, "xga": 1.39, "attack_fdr": 6, "defence_fdr": 4},    # Best of promoted
-    17: {"name": "Sunderland", "xg": 0.82, "xga": 1.45, "attack_fdr": 5, "defence_fdr": 1},  # Weak attack
+    10: {"name": "Leeds United", "xg": 1.15, "xga": 1.39, "attack_fdr": 6, "defence_fdr": 4},
+    11: {"name": "Burnley", "xg": 0.84, "xga": 1.82, "attack_fdr": 2, "defence_fdr": 2},
+    19: {"name": "Sunderland", "xg": 0.82, "xga": 1.45, "attack_fdr": 5, "defence_fdr": 1},
 }
 
 # Horizon regression from config
@@ -2577,78 +2600,23 @@ def get_next_gameweek(events: List[Dict]) -> int:
     return min(get_current_gameweek(events) + 1, 38)
 
 
-# ============ UNDERSTAT SCRAPER ============
-
-class UnderstatScraper:
-    """Scrape xG data from Understat (embedded JSON in HTML)."""
-    
-    BASE_URL = "https://understat.com"
-    
-    def __init__(self, rate_limit_seconds: float = 2.0):
-        self.rate_limit = rate_limit_seconds
-        self.last_request = 0
-    
-    async def _fetch_page(self, url: str) -> str:
-        now = asyncio.get_event_loop().time()
-        wait_time = self.last_request + self.rate_limit - now
-        if wait_time > 0:
-            await asyncio.sleep(wait_time)
-        
-        client = await get_http_client()
-        response = await client.get(url, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        })
-        response.raise_for_status()
-        self.last_request = asyncio.get_event_loop().time()
-        return response.text
-    
-    def _extract_json(self, html: str, var_name: str) -> Optional[list]:
-        pattern = rf"var {var_name}\s*=\s*JSON\.parse\('(.+?)'\)"
-        match = re.search(pattern, html, re.DOTALL)
-        if not match:
-            return None
-        
-        encoded = match.group(1)
-        try:
-            decoded = encoded.encode('utf-8').decode('unicode_escape')
-            return json.loads(decoded)
-        except Exception as e:
-            logger.error(f"Failed to parse Understat JSON: {e}")
-            return None
-    
-    async def fetch_league_matches(self, season: Optional[str] = None) -> List[dict]:
-        """Fetch league matches from Understat. Season derived automatically if not provided."""
-        if season is None:
-            season = get_current_season()
-        url = f"{self.BASE_URL}/league/EPL/{season}"
-        try:
-            html = await self._fetch_page(url)
-            matches = self._extract_json(html, "datesData")
-            return matches or []
-        except Exception as e:
-            logger.error(f"Failed to fetch Understat matches: {e}")
-            return []
-
-
-understat_scraper = UnderstatScraper()
-
-
-# ============ FDR SERVICE ============
+# ============ FDR SERVICE (v4.3.4 - No Understat) ============
 
 async def refresh_fdr_data(force: bool = False):
-    """Fetch Understat data and compute FDR scores for all teams."""
-    # Return cached data immediately if available and not forced refresh
+    """
+    v4.3.4: Completely rewritten to remove Understat dependency.
+    
+    Data sources (in priority order):
+    1. Manual Analytic FPL data (from admin interface)
+    2. DEFAULT_TEAM_STRENGTH constants (baseline for all 20 teams)
+    
+    This ensures FDR data is ALWAYS available, even on first load.
+    """
+    # Return cached data if available and not forced
     if not force and cache.fdr_data and not cache.fdr_is_stale():
         return cache.fdr_data
     
-    # If we have cached data and it's just a refresh attempt (not forced), return cache
-    # This prevents blocking requests while waiting for Understat
-    if cache.fdr_data and not force:
-        # Trigger background refresh if stale but don't wait for it
-        asyncio.create_task(_background_fdr_refresh())
-        return cache.fdr_data
-    
-    # No cached data - must wait for fetch
+    # Always compute fresh FDR data
     return await _do_fdr_refresh()
 
 
@@ -2661,365 +2629,132 @@ async def _background_fdr_refresh():
 
 
 async def _do_fdr_refresh():
-    """Actually perform the FDR data refresh."""
-    logger.info("Refreshing FDR data from Understat...")
+    """
+    v4.3.4: Compute FDR data from Analytic FPL or defaults.
     
-    # Fetch all matches with timeout (using dynamic season)
-    try:
-        matches = await asyncio.wait_for(
-            understat_scraper.fetch_league_matches(),  # Uses get_current_season() internally
-            timeout=10.0
-        )
-    except asyncio.TimeoutError:
-        logger.warning("Understat fetch timed out, using cached/fallback data")
-        return cache.fdr_data or {}
+    NEVER depends on Understat. ALWAYS returns valid FDR data.
+    """
+    logger.info("Refreshing FDR data (v4.3.4 - Analytic FPL only)...")
     
-    if not matches:
-        logger.warning("No Understat matches fetched, using FPL API fallback")
-        # Set a timestamp even on failure to prevent immediate retry
-        if not cache.fdr_data:
-            cache.fdr_last_update = datetime.now()
-        
-        # v4.3.4: FALLBACK TO MANUAL DATA ONLY
-        # If we have Analytic FPL manual data, use it at 100% weight
-        if cache.manual_team_strength:
-            logger.info(f"Using Analytic FPL manual data for {len(cache.manual_team_strength)} teams (Understat unavailable)")
-            fdr_data = {}
-            
-            for team_id, manual_data in cache.manual_team_strength.items():
-                # Use manual data at 100% weight (no Understat form blend)
-                manual_xg = manual_data.get('adjxg_for', 1.35)
-                manual_xga = manual_data.get('adjxg_ag', 1.35)
-                team_name = manual_data.get('team_name', f'Team {team_id}')
-                
-                # Get trend adjustments
-                attack_delta = manual_data.get('attack_delta') or 0
-                defence_delta = manual_data.get('defence_delta') or 0
-                attack_trend = manual_data.get('attack_trend') or 0
-                defence_trend = manual_data.get('defence_trend') or 0
-                
-                # Combine delta and trend into momentum
-                attack_momentum = attack_delta * 0.6 + attack_trend * 0.4
-                defence_momentum = defence_delta * 0.6 + defence_trend * 0.4
-                
-                # Apply trend as additive adjustment (capped ±0.15)
-                attack_adjustment = max(-0.15, min(0.15, attack_momentum * 0.3))
-                defence_adjustment = max(-0.15, min(0.15, defence_momentum * 0.3))
-                
-                blended_xg = manual_xg + attack_adjustment
-                blended_xga = manual_xga + defence_adjustment
-                
-                # Estimate home/away splits (typical 15% swing)
-                home_xga = blended_xga * 0.85  # Better defence at home
-                away_xga = blended_xga * 1.15  # Worse defence away
-                
-                # Calculate CS probability
-                cs_probability = math.exp(-blended_xga) if blended_xga > 0 else 0.25
-                cs_probability = min(0.52, max(0.08, cs_probability))
-                
-                # Calculate FDR scores
-                attack_fdr = xga_to_attack_fdr(blended_xga, is_opponent_home=None)
-                attack_fdr_home = xga_to_attack_fdr(home_xga, is_opponent_home=True)
-                attack_fdr_away = xga_to_attack_fdr(away_xga, is_opponent_home=False)
-                defence_fdr = xg_to_defence_fdr(blended_xg)
-                
-                fdr_data[team_id] = {
-                    'season_xg': 0,
-                    'season_xga': 0,
-                    'season_matches': 0,
-                    'form_xg': manual_xg,
-                    'form_xga': manual_xga,
-                    'form_ppg': 0,
-                    'season_xg_per_game': manual_xg,
-                    'season_xga_per_game': manual_xga,
-                    'blended_xg': round(blended_xg, 2),
-                    'blended_xga': round(blended_xga, 2),
-                    'home_xga_per_game': round(home_xga, 2),
-                    'away_xga_per_game': round(away_xga, 2),
-                    'cs_probability': round(cs_probability, 3),
-                    'xg_per_game': round(blended_xg, 2),
-                    'attack_fdr': max(1, min(10, attack_fdr)),
-                    'attack_fdr_home': max(1, min(10, attack_fdr_home)),
-                    'attack_fdr_away': max(1, min(10, attack_fdr_away)),
-                    'defence_fdr': max(1, min(10, defence_fdr)),
-                    'composite_fdr': round((attack_fdr + defence_fdr) / 2, 1),
-                    'data_source': 'analytic_fpl_only',
-                    'trend_info': {
-                        'attack_momentum': round(attack_momentum, 3),
-                        'defence_momentum': round(defence_momentum, 3),
-                        'attack_adjustment': round(attack_adjustment, 3),
-                        'defence_adjustment': round(defence_adjustment, 3),
-                    },
-                }
-            
-            # Add defaults for any missing promoted teams
-            for team_id, defaults in PROMOTED_TEAM_DEFAULTS.items():
-                if team_id not in fdr_data:
-                    logger.info(f"Adding default FDR for promoted team: {defaults['name']}")
-                    fdr_data[team_id] = {
-                        'season_xg': 0, 'season_xga': 0, 'season_matches': 0,
-                        'form_xg': defaults['xg'], 'form_xga': defaults['xga'], 'form_ppg': 0,
-                        'season_xg_per_game': defaults['xg'], 'season_xga_per_game': defaults['xga'],
-                        'blended_xg': defaults['xg'], 'blended_xga': defaults['xga'],
-                        'home_xga_per_game': defaults['xga'] * 0.85,
-                        'away_xga_per_game': defaults['xga'] * 1.15,
-                        'cs_probability': round(math.exp(-defaults['xga']), 3),
-                        'xg_per_game': defaults['xg'],
-                        'attack_fdr': defaults['attack_fdr'],
-                        'attack_fdr_home': min(10, defaults['attack_fdr'] + 1),
-                        'attack_fdr_away': max(1, defaults['attack_fdr'] - 1),
-                        'defence_fdr': defaults['defence_fdr'],
-                        'composite_fdr': round((defaults['attack_fdr'] + defaults['defence_fdr']) / 2, 1),
-                        'data_source': 'promoted_team_defaults',
-                        'trend_info': None,
-                    }
-            
-            cache.fdr_data = fdr_data
-            cache.fdr_last_update = datetime.now()
-            logger.info(f"FDR data populated from Analytic FPL manual data for {len(fdr_data)} teams")
-            return fdr_data
-        
-        return cache.fdr_data or {}
-    
-    # Aggregate by team - v4.3.2: Add home/away venue split
-    team_stats: Dict[int, Dict] = defaultdict(lambda: {
-        'matches': [], 'season_xg': 0, 'season_xga': 0,
-        'home_matches': [], 'away_matches': [],  # v4.3.2: Venue-specific tracking
-        'home_xg': 0, 'home_xga': 0,  # When playing at home
-        'away_xg': 0, 'away_xga': 0,  # When playing away
-    })
-    
-    for match in matches:
-        if not match.get('isResult'):
-            continue
-        
-        home_team = match['h']['title']
-        away_team = match['a']['title']
-        home_id = UNDERSTAT_TO_FPL_ID.get(home_team)
-        away_id = UNDERSTAT_TO_FPL_ID.get(away_team)
-        
-        if not home_id or not away_id:
-            continue
-        
-        home_xg = float(match['xG']['h'])
-        away_xg = float(match['xG']['a'])
-        home_goals = int(match['goals']['h'])
-        away_goals = int(match['goals']['a'])
-        match_date = match['datetime']
-        
-        # Home team - playing AT HOME
-        home_pts = 3 if home_goals > away_goals else (1 if home_goals == away_goals else 0)
-        team_stats[home_id]['matches'].append({
-            'xg': home_xg, 'xga': away_xg, 'pts': home_pts, 'date': match_date, 'venue': 'home'
-        })
-        team_stats[home_id]['home_matches'].append({
-            'xg': home_xg, 'xga': away_xg, 'pts': home_pts, 'date': match_date
-        })
-        team_stats[home_id]['season_xg'] += home_xg
-        team_stats[home_id]['season_xga'] += away_xg
-        team_stats[home_id]['home_xg'] += home_xg
-        team_stats[home_id]['home_xga'] += away_xg  # xGA when at home
-        
-        # Away team - playing AWAY
-        away_pts = 3 if away_goals > home_goals else (1 if away_goals == home_goals else 0)
-        team_stats[away_id]['matches'].append({
-            'xg': away_xg, 'xga': home_xg, 'pts': away_pts, 'date': match_date, 'venue': 'away'
-        })
-        team_stats[away_id]['away_matches'].append({
-            'xg': away_xg, 'xga': home_xg, 'pts': away_pts, 'date': match_date
-        })
-        team_stats[away_id]['season_xg'] += away_xg
-        team_stats[away_id]['season_xga'] += home_xg
-        team_stats[away_id]['away_xg'] += away_xg
-        team_stats[away_id]['away_xga'] += home_xg  # xGA when away
-    
-    # Compute form (last 6) and FDR
     fdr_data = {}
-    all_form_xg = []
-    all_form_xga = []
-    all_home_xga = []  # v4.3.2: Venue-specific tracking
-    all_away_xga = []
     
-    for team_id, data in team_stats.items():
-        matches_sorted = sorted(data['matches'], key=lambda x: x['date'])
-        last_6 = matches_sorted[-6:] if len(matches_sorted) >= 6 else matches_sorted
-        
-        if last_6:
-            form_xg = sum(m['xg'] for m in last_6) / len(last_6)
-            form_xga = sum(m['xga'] for m in last_6) / len(last_6)
-            form_ppg = sum(m['pts'] for m in last_6) / len(last_6)
-        else:
-            form_xg = form_xga = form_ppg = 0
-        
-        # Calculate season averages
-        season_matches = len(data['matches'])
-        season_xg_per_game = data['season_xg'] / max(1, season_matches)
-        season_xga_per_game = data['season_xga'] / max(1, season_matches)
-        
-        # Check if we have manual team strength data (from Analytic FPL)
-        manual_data = cache.manual_team_strength.get(team_id)
+    # Process all 20 teams
+    for team_id, defaults in DEFAULT_TEAM_STRENGTH.items():
+        # Check if we have manual Analytic FPL data for this team
+        manual_data = cache.manual_team_strength.get(team_id) if cache.manual_team_strength else None
         
         if manual_data:
-            # ==================== v4.3.2 FIX: PROPER WEIGHTED BLEND ====================
-            # OLD BUG: Weights were 0.55 + 0.30 = 0.85 (not 1.0!)
-            # OLD BUG: Trend adjustment was multiplicative, distorting baseline
-            #
-            # NEW: 70% Analytic FPL baseline + 30% Understat form = 100%
-            # Trend adjustment is ADDITIVE to xG/xGA, not multiplicative
+            # Use manual Analytic FPL data
+            base_xg = manual_data.get('adjxg_for', defaults['xg'])
+            base_xga = manual_data.get('adjxg_ag', defaults['xga'])
+            team_name = manual_data.get('team_name', defaults['name'])
             
-            manual_xg = manual_data.get('adjxg_for', form_xg)
-            manual_xga = manual_data.get('adjxg_ag', form_xga)
-            
-            # Get trend adjustments (default to 0 if not provided)
+            # Get trend adjustments
             attack_delta = manual_data.get('attack_delta') or 0
             defence_delta = manual_data.get('defence_delta') or 0
             attack_trend = manual_data.get('attack_trend') or 0
             defence_trend = manual_data.get('defence_trend') or 0
             
-            # Combine delta and trend into a momentum factor
-            # Delta = recent change (more weight), Trend = longer-term direction
+            # Combine delta and trend into momentum
             attack_momentum = attack_delta * 0.6 + attack_trend * 0.4
             defence_momentum = defence_delta * 0.6 + defence_trend * 0.4
             
-            # v4.3.2 FIX: Proper blend with weights summing to 1.0
-            # 70% Analytic FPL (stable baseline) + 30% Understat form (recent performance)
-            base_xg = 0.70 * manual_xg + 0.30 * form_xg
-            base_xga = 0.70 * manual_xga + 0.30 * form_xga
-            
-            # v4.3.2 FIX: Trend as ADDITIVE adjustment, capped at ±0.15 xG
-            # Positive attack_momentum = team is scoring MORE than baseline → ADD to xG
-            # Negative defence_momentum = team is conceding LESS than baseline → SUBTRACT from xGA
-            # NOTE: For FDR purposes, we want baseline + small trend adjustment
-            # The Analytic FPL baseline already captures true strength
+            # Apply trend as additive adjustment (capped ±0.15)
             attack_adjustment = max(-0.15, min(0.15, attack_momentum * 0.3))
             defence_adjustment = max(-0.15, min(0.15, defence_momentum * 0.3))
             
             blended_xg = base_xg + attack_adjustment
-            blended_xga = base_xga + defence_adjustment  # Negative delta = better defence = lower xGA
-            
-            data_source = "analytic_fpl+form+trend"
+            blended_xga = base_xga + defence_adjustment
+            data_source = 'analytic_fpl_manual'
             trend_info = {
-                "attack_momentum": round(attack_momentum, 3),
-                "defence_momentum": round(defence_momentum, 3),
-                "attack_adjustment": round(attack_adjustment, 3),
-                "defence_adjustment": round(defence_adjustment, 3),
+                'attack_momentum': round(attack_momentum, 3),
+                'defence_momentum': round(defence_momentum, 3),
+                'attack_adjustment': round(attack_adjustment, 3),
+                'defence_adjustment': round(defence_adjustment, 3),
             }
         else:
-            # Fallback to form + season blend (original behavior)
-            if season_matches >= 10:
-                blended_xga = 0.6 * form_xga + 0.4 * season_xga_per_game
-                blended_xg = 0.6 * form_xg + 0.4 * season_xg_per_game
-            else:
-                blended_xga = form_xga if form_xga > 0 else season_xga_per_game
-                blended_xg = form_xg if form_xg > 0 else season_xg_per_game
-            data_source = "understat_form+season"
+            # Use default team strength
+            blended_xg = defaults['xg']
+            blended_xga = defaults['xga']
+            team_name = defaults['name']
+            data_source = 'default_team_strength'
             trend_info = None
         
-        # Calculate clean sheet probability using Poisson: P(0 goals) = e^(-xGA)
+        # Estimate home/away splits (typical 15% swing)
+        home_xga = blended_xga * 0.85  # Better defence at home
+        away_xga = blended_xga * 1.15  # Worse defence away
+        
+        # Calculate CS probability using Poisson
         cs_probability = math.exp(-blended_xga) if blended_xga > 0 else 0.25
-        cs_probability = min(0.52, max(0.08, cs_probability))  # Bound 8%-52% (matches CleanSheetConfig.cs_prob_max)
+        cs_probability = min(0.52, max(0.08, cs_probability))
         
-        # v4.3.2: Calculate venue-specific xGA
-        home_matches = len(data.get('home_matches', []))
-        away_matches = len(data.get('away_matches', []))
-        
-        if home_matches >= 3:
-            home_xga_per_game = data['home_xga'] / home_matches
-        else:
-            home_xga_per_game = blended_xga  # Fallback to blended
-        
-        if away_matches >= 3:
-            away_xga_per_game = data['away_xga'] / away_matches
-        else:
-            away_xga_per_game = blended_xga  # Fallback to blended
+        # Calculate FDR scores using calibrated thresholds
+        attack_fdr = xga_to_attack_fdr(blended_xga, is_opponent_home=None)
+        attack_fdr_home = xga_to_attack_fdr(home_xga, is_opponent_home=True)
+        attack_fdr_away = xga_to_attack_fdr(away_xga, is_opponent_home=False)
+        defence_fdr = xg_to_defence_fdr(blended_xg)
         
         fdr_data[team_id] = {
-            'season_xg': data['season_xg'],
-            'season_xga': data['season_xga'],
-            'season_matches': season_matches,
-            'form_xg': round(form_xg, 2),
-            'form_xga': round(form_xga, 2),
-            'form_ppg': round(form_ppg, 2),
-            'season_xg_per_game': round(season_xg_per_game, 2),
-            'season_xga_per_game': round(season_xga_per_game, 2),
-            'blended_xg': round(blended_xg, 2),  # Final blended xG for predictions
-            'blended_xga': round(blended_xga, 2),  # Final blended xGA for predictions
-            'home_xga_per_game': round(home_xga_per_game, 2),  # v4.3.2: xGA when at home
-            'away_xga_per_game': round(away_xga_per_game, 2),  # v4.3.2: xGA when away
-            'cs_probability': round(cs_probability, 3),  # Team's expected CS rate
-            'xg_per_game': round(blended_xg, 2),  # Alias for backwards compatibility
+            'team_name': team_name,
+            'season_xg': 0,
+            'season_xga': 0,
+            'season_matches': 0,
+            'form_xg': round(blended_xg, 2),
+            'form_xga': round(blended_xga, 2),
+            'form_ppg': 0,
+            'season_xg_per_game': round(blended_xg, 2),
+            'season_xga_per_game': round(blended_xga, 2),
+            'blended_xg': round(blended_xg, 2),
+            'blended_xga': round(blended_xga, 2),
+            'home_xga_per_game': round(home_xga, 2),
+            'away_xga_per_game': round(away_xga, 2),
+            'cs_probability': round(cs_probability, 3),
+            'xg_per_game': round(blended_xg, 2),
+            'attack_fdr': max(1, min(10, attack_fdr)),
+            'attack_fdr_home': max(1, min(10, attack_fdr_home)),
+            'attack_fdr_away': max(1, min(10, attack_fdr_away)),
+            'defence_fdr': max(1, min(10, defence_fdr)),
+            'composite_fdr': round((attack_fdr + defence_fdr) / 2, 1),
             'data_source': data_source,
-            'trend_info': trend_info,  # Momentum adjustments if available
+            'trend_info': trend_info,
         }
-        all_form_xg.append(blended_xg)  # Use blended for FDR percentiles
-        all_form_xga.append(blended_xga)
-        # v4.3.2: Also track venue-specific xGA for normalization
-        all_home_xga.append(home_xga_per_game)
-        all_away_xga.append(away_xga_per_game)
-    
-    # v4.3.3: Compute FDR scores using ABSOLUTE thresholds instead of min/max normalization
-    # The old min/max approach was broken because:
-    # 1. With limited data (promoted teams), the range collapsed
-    # 2. All teams ended up with similar FDR values (mostly 8)
-    # 3. Promoted teams like Leeds got FDR 8 when they should be FDR 2-3
-    
-    for team_id, data in fdr_data.items():
-        # Attack FDR: How hard to attack this team (based on their xGA)
-        # Use absolute xGA thresholds - not relative to other teams
-        attack_fdr = xga_to_attack_fdr(data['blended_xga'], is_opponent_home=None)
-        
-        # v4.3.3c: Venue-specific attack FDR using VENUE-AWARE thresholds
-        # home_xga_per_game = xGA when THIS team plays at HOME (they defend better)
-        # away_xga_per_game = xGA when THIS team plays AWAY (they defend worse)
-        # When WE face this team:
-        #   - If they're HOME: use their home_xga with is_opponent_home=True (tougher)
-        #   - If they're AWAY: use their away_xga with is_opponent_home=False (easier)
-        attack_fdr_home = xga_to_attack_fdr(data['home_xga_per_game'], is_opponent_home=True)
-        attack_fdr_away = xga_to_attack_fdr(data['away_xga_per_game'], is_opponent_home=False)
-        
-        # Defence FDR: How hard to defend against this team (based on their xG)
-        defence_fdr = xg_to_defence_fdr(data['blended_xg'])
-        
-        data['attack_fdr'] = max(1, min(10, attack_fdr))
-        data['attack_fdr_home'] = max(1, min(10, attack_fdr_home))
-        data['attack_fdr_away'] = max(1, min(10, attack_fdr_away))
-        data['defence_fdr'] = max(1, min(10, defence_fdr))
-        data['composite_fdr'] = round((data['attack_fdr'] + data['defence_fdr']) / 2, 1)
-    
-    # v4.3.3: Add defaults for promoted teams if they're missing
-    # This ensures promoted teams get sensible FDR even if Understat has no data
-    for team_id, defaults in PROMOTED_TEAM_DEFAULTS.items():
-        if team_id not in fdr_data:
-            logger.info(f"Adding default FDR for promoted team: {defaults['name']}")
-            fdr_data[team_id] = {
-                'season_xg': 0,
-                'season_xga': 0,
-                'season_matches': 0,
-                'form_xg': defaults['xg'],
-                'form_xga': defaults['xga'],
-                'form_ppg': 0,
-                'season_xg_per_game': defaults['xg'],
-                'season_xga_per_game': defaults['xga'],
-                'blended_xg': defaults['xg'],
-                'blended_xga': defaults['xga'],
-                'home_xga_per_game': defaults['xga'] * 0.85,  # Better at home
-                'away_xga_per_game': defaults['xga'] * 1.15,  # Worse away
-                'cs_probability': round(math.exp(-defaults['xga']), 3),
-                'xg_per_game': defaults['xg'],
-                'attack_fdr': defaults['attack_fdr'],
-                'attack_fdr_home': min(10, defaults['attack_fdr'] + 1),  # Harder at home
-                'attack_fdr_away': max(1, defaults['attack_fdr'] - 1),  # Easier away
-                'defence_fdr': defaults['defence_fdr'],
-                'composite_fdr': round((defaults['attack_fdr'] + defaults['defence_fdr']) / 2, 1),
-                'data_source': 'promoted_team_defaults',
-                'trend_info': None,
-            }
     
     cache.fdr_data = fdr_data
     cache.fdr_last_update = datetime.now()
-    logger.info(f"FDR data refreshed for {len(fdr_data)} teams")
+    
+    manual_count = sum(1 for d in fdr_data.values() if d['data_source'] == 'analytic_fpl_manual')
+    logger.info(f"FDR data refreshed for {len(fdr_data)} teams ({manual_count} from Analytic FPL, {len(fdr_data) - manual_count} from defaults)")
     
     return fdr_data
+
+
+# ============ LEGACY UNDERSTAT CODE (Disabled in v4.3.4) ============
+# Kept for reference but not used
+
+class UnderstatScraper:
+    """DISABLED in v4.3.4 - Scrape xG data from Understat (embedded JSON in HTML)."""
+    
+    BASE_URL = "https://understat.com"
+    
+    def __init__(self, rate_limit_seconds: float = 2.0):
+        self.rate_limit = rate_limit_seconds
+        self.last_request = 0
+    
+    async def _fetch_page(self, url: str) -> str:
+        # DISABLED - return empty
+        return ""
+    
+    def _extract_json(self, html: str, var_name: str) -> Optional[list]:
+        # DISABLED - return None
+        return None
+    
+    async def fetch_league_matches(self, season: Optional[str] = None) -> List[dict]:
+        """DISABLED - Returns empty list."""
+        logger.debug("Understat scraper disabled in v4.3.4")
+        return []
+
+
+understat_scraper = UnderstatScraper()
 
 
 def get_fixture_fdr(opponent_id: int, is_home: bool, position_id: int, fpl_difficulty: int = None, team_id: int = None) -> int:
@@ -7279,7 +7014,7 @@ def build_player_fixture_map(
             opponent_short = opponent_data.get("short_name", "???")
             
             try:
-                upcoming = [{"gw": gw, "opponent": opponent_id, "is_home": is_home, "fdr": fdr, "team_name": opponent_data.get("name", "???")}]
+                upcoming = [{"gameweek": gw, "opponent_id": opponent_id, "is_home": is_home, "fdr": fdr, "opponent_name": opponent_data.get("name", "???")}]
                 player_data = elements.get(player.get("id"), player) if elements else player
                 stats = calculate_expected_points(player_data, position_id, gw, upcoming, teams_dict, fixtures, [])
                 xpts = stats.get("xpts", 0)
