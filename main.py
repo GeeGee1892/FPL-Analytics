@@ -382,12 +382,22 @@ class FDRConfig:
 
 @dataclass  
 class HomeAwayConfig:
-    """Home/Away performance adjustments from PL data analysis."""
+    """
+    Home/Away performance adjustments from PL data analysis.
     
-    home_attack_boost: float = 1.19      # Teams score ~19% more at home
-    away_attack_penalty: float = 0.87    # Teams score ~13% less away
-    home_defence_boost: float = 1.15     # Teams concede ~15% less at home
-    away_defence_penalty: float = 0.90   # Teams concede ~10% more away
+    v4.3.9 FIX: These values are for SINGLE application only.
+    Previous versions incorrectly applied venue adjustments to BOTH team AND opponent,
+    effectively doubling the effect (1.15 * 1.15 = 1.32, which is way too high).
+    
+    Real-world home advantage is worth ~0.15-0.2 xG, or about 8-10% boost.
+    Apply to ONE side of the calculation only (typically the final result).
+    """
+    
+    # Single-application multipliers (apply to RESULT, not both inputs)
+    home_attack_boost: float = 1.08      # 8% boost when attacking at home
+    away_attack_penalty: float = 0.93    # 7% penalty when attacking away
+    home_defence_boost: float = 0.93     # 7% fewer goals conceded at home (multiply xGA by this)
+    away_defence_penalty: float = 1.08   # 8% more goals conceded away (multiply xGA by this)
     
     # Player-level home/away variance
     min_games_for_split: int = 8         # Min games to trust split
@@ -1433,20 +1443,23 @@ def calculate_matchup_attack_multiplier(
     position: int
 ) -> float:
     """
-    v4.3.3c: Calculate attack multiplier based on BOTH teams' strengths.
+    v4.3.9: Calculate attack multiplier based on BOTH teams' strengths.
     
-    This replaces the one-sided approach that only looked at opponent's xGA.
-    Now we consider:
+    FIXED: Now uses single venue adjustment at end (was double-applying before).
+    
+    This considers:
     - Player's team attack strength (xG)
     - Opponent's defence weakness (xGA)
-    - Home/away adjustments for both
+    - Single home/away adjustment applied to final result
     
     Example:
-    - Wirtz @BOU: Liverpool (1.78 xG) vs BOU (1.46 xGA)
-      = (1.78/1.35) * (1.46/1.35) = 1.32 * 1.08 = 1.42 → BIG boost
+    - Salah vs Forest (A): Liverpool (1.76 xG) vs Forest (1.48 xGA)
+      Base = (1.76/1.35) * (1.48/1.35) = 1.30 * 1.10 = 1.43
+      Away penalty: 1.43 * 0.93 = 1.33 → Good fixture despite away
     
-    - DCL @BOU: Everton (1.03 xG) vs BOU (1.46 xGA)
-      = (1.03/1.35) * (1.46/1.35) = 0.76 * 1.08 = 0.82 → Small penalty
+    - Salah vs City (H): Liverpool (1.76 xG) vs City (1.13 xGA)
+      Base = (1.76/1.35) * (1.13/1.35) = 1.30 * 0.84 = 1.09
+      Home boost: 1.09 * 1.08 = 1.18 → Harder than Forest away!
     
     Args:
         team_id: Player's team ID
@@ -1458,47 +1471,35 @@ def calculate_matchup_attack_multiplier(
     Returns:
         Attack multiplier (1.0 = neutral, >1 = easier, <1 = harder)
     """
-    # Get team attack strength
+    # Get team attack strength (NO venue adjustment yet)
     team_attack = LEAGUE_AVG_XG  # Default to average
     if cache.fdr_data and team_id in cache.fdr_data:
         team_data = cache.fdr_data[team_id]
-        # Use venue-specific attack strength
-        if is_home:
-            # At home, we attack stronger
-            team_attack = team_data.get('blended_xg', LEAGUE_AVG_XG) * HOME_ATTACK_BOOST
-        else:
-            # Away, we attack weaker
-            team_attack = team_data.get('blended_xg', LEAGUE_AVG_XG) * AWAY_ATTACK_PENALTY
+        team_attack = team_data.get('blended_xg', LEAGUE_AVG_XG)
     
-    # Get opponent defence weakness (xGA)
+    # Get opponent defence weakness - use blended, NOT venue-specific
+    # v4.3.9: Don't use home_xga/away_xga here - that double-applies venue effect
     opp_defence = LEAGUE_AVG_XGA  # Default to average
     if cache.fdr_data and opponent_id in cache.fdr_data:
         opp_data = cache.fdr_data[opponent_id]
-        # Use venue-specific defence
-        if is_home:
-            # Opponent is AWAY → they defend worse
-            opp_defence = opp_data.get('away_xga_per_game', opp_data.get('blended_xga', LEAGUE_AVG_XGA))
-        else:
-            # Opponent is HOME → they defend better
-            opp_defence = opp_data.get('home_xga_per_game', opp_data.get('blended_xga', LEAGUE_AVG_XGA))
+        opp_defence = opp_data.get('blended_xga', LEAGUE_AVG_XGA)
     elif opponent_id in PROMOTED_TEAM_DEFAULTS:
         # Promoted team fallback
         defaults = PROMOTED_TEAM_DEFAULTS[opponent_id]
-        base_xga = defaults['xga']
-        if is_home:
-            opp_defence = base_xga * 1.15  # Opponent away = they leak more
-        else:
-            opp_defence = base_xga * 0.85  # Opponent home = they defend better
+        opp_defence = defaults['xga']
     
-    # Calculate matchup score
-    # Higher = easier to score
-    # Team attack above average + opponent defence below average = big multiplier
+    # Calculate base matchup score (NO venue adjustment)
     team_attack_factor = team_attack / LEAGUE_AVG_XG
     opp_defence_factor = opp_defence / LEAGUE_AVG_XGA
     
     # Raw matchup: product of both factors
-    # Liverpool (1.78) vs BOU (1.46): 1.32 * 1.08 = 1.42
     raw_matchup = team_attack_factor * opp_defence_factor
+    
+    # v4.3.9: Apply SINGLE venue adjustment at the end
+    if is_home:
+        raw_matchup *= HOME_ATTACK_BOOST  # 1.08
+    else:
+        raw_matchup *= AWAY_ATTACK_PENALTY  # 0.93
     
     # Apply price and position dampening (premiums less affected by fixtures)
     fdr_config = MODEL_CONFIG["fdr"]
@@ -1527,20 +1528,23 @@ def calculate_matchup_cs_probability(
     team_base_cs: float
 ) -> tuple:
     """
-    v4.3.3c: Calculate CS probability based on BOTH teams' strengths.
+    v4.3.9: Calculate CS probability based on BOTH teams' strengths.
     
-    Uses Poisson model but adjusts expected goals against based on:
+    FIXED: Now uses single venue adjustment at end (was double-applying before).
+    
+    Uses Poisson model with expected goals against based on:
     - Player's team defence strength (xGA)
     - Opponent's attack strength (xG)
+    - Single venue adjustment applied to final xGA
     
     Example:
-    - Gabriel vs MUN: Arsenal (0.81 xGA) vs Utd (1.48 xG)
-      Expected goals = (0.81/1.35) * (1.48/1.35) = 0.60 * 1.10 = 0.66
-      CS prob = e^(-0.66) = 52%
+    - Gabriel vs City (H): Arsenal (0.81 xGA) vs City (1.95 xG)
+      Base xGA = (0.81/1.35) * (1.95/1.35) * 1.35 = 0.87
+      Home bonus: 0.87 * 0.93 = 0.81 xGA → CS prob = 44%
     
-    - Thiaw vs AVL: Newcastle (1.14 xGA) vs Villa (1.41 xG)
-      Expected goals = (1.14/1.35) * (1.41/1.35) = 0.84 * 1.04 = 0.88
-      CS prob = e^(-0.88) = 41%
+    - Gabriel vs Forest (A): Arsenal (0.81 xGA) vs Forest (1.15 xG)
+      Base xGA = (0.81/1.35) * (1.15/1.35) * 1.35 = 0.51
+      Away penalty: 0.51 * 1.08 = 0.55 xGA → CS prob = 58%
     
     Args:
         team_id: Player's team ID
@@ -1553,46 +1557,36 @@ def calculate_matchup_cs_probability(
     """
     cs_config = MODEL_CONFIG["clean_sheet"]
     
-    # Get team defence strength (xGA - lower is better)
+    # Get team defence strength - use BLENDED, not venue-specific
+    # v4.3.9: Don't use home_xga/away_xga here - we apply venue once at the end
     team_defence = LEAGUE_AVG_XGA  # Default to average
     if cache.fdr_data and team_id in cache.fdr_data:
         team_data = cache.fdr_data[team_id]
-        # Use venue-specific defence
-        if is_home:
-            # At home, we defend stronger (lower xGA)
-            team_defence = team_data.get('home_xga_per_game', team_data.get('blended_xga', LEAGUE_AVG_XGA))
-        else:
-            # Away, we defend weaker (higher xGA)
-            team_defence = team_data.get('away_xga_per_game', team_data.get('blended_xga', LEAGUE_AVG_XGA))
+        team_defence = team_data.get('blended_xga', LEAGUE_AVG_XGA)
     
-    # Get opponent attack strength (xG)
+    # Get opponent attack strength (xG) - use BLENDED, not venue-adjusted
     opp_attack = LEAGUE_AVG_XG  # Default to average
     if cache.fdr_data and opponent_id in cache.fdr_data:
         opp_data = cache.fdr_data[opponent_id]
-        # Opponent venue-specific attack
-        if is_home:
-            # Opponent is AWAY → they attack weaker
-            opp_attack = opp_data.get('blended_xg', LEAGUE_AVG_XG) * AWAY_ATTACK_PENALTY
-        else:
-            # Opponent is HOME → they attack stronger
-            opp_attack = opp_data.get('blended_xg', LEAGUE_AVG_XG) * HOME_ATTACK_BOOST
+        opp_attack = opp_data.get('blended_xg', LEAGUE_AVG_XG)
     elif opponent_id in PROMOTED_TEAM_DEFAULTS:
         # Promoted team fallback
         defaults = PROMOTED_TEAM_DEFAULTS[opponent_id]
-        base_xg = defaults['xg']
-        if is_home:
-            opp_attack = base_xg * 0.85  # Opponent away = they score less
-        else:
-            opp_attack = base_xg * 1.15  # Opponent home = they score more
+        opp_attack = defaults['xg']
     
-    # Calculate expected goals against in this fixture
-    # This is the product of our defensive weakness and their attacking strength,
-    # normalized to league average
+    # Calculate base expected goals against (NO venue adjustment yet)
     team_defence_factor = team_defence / LEAGUE_AVG_XGA
     opp_attack_factor = opp_attack / LEAGUE_AVG_XG
     
-    # Expected xG against = league average * matchup factors
-    expected_xga = LEAGUE_AVG_XGA * team_defence_factor * opp_attack_factor
+    # Base xG against = league average * matchup factors
+    base_xga = LEAGUE_AVG_XGA * team_defence_factor * opp_attack_factor
+    
+    # v4.3.9: Apply SINGLE venue adjustment at the end
+    # At home, we concede less; away, we concede more
+    if is_home:
+        expected_xga = base_xga * HOME_DEFENCE_BOOST  # 0.93 (7% fewer goals at home)
+    else:
+        expected_xga = base_xga * AWAY_DEFENCE_PENALTY  # 1.08 (8% more goals away)
     
     # Bound to realistic range
     expected_xga = max(0.4, min(3.0, expected_xga))
@@ -1613,16 +1607,23 @@ def calculate_matchup_fdr(
     position: int
 ) -> int:
     """
-    v4.3.6: MATCHUP-BASED FDR considering BOTH teams' strengths.
+    v4.3.9: MATCHUP-BASED FDR with FIXED venue adjustment.
     
-    Calculates expected goals for the specific matchup, then converts to FDR.
+    CRITICAL FIX: Previous version double-applied venue adjustments to BOTH
+    team attack AND opponent defence, creating ~30% swings that made
+    Man City (H) look easier than Forest (A). This was wrong.
+    
+    NEW APPROACH: Calculate pure matchup first, then apply SINGLE venue adjustment.
+    This matches real-world data where home advantage is worth ~0.15-0.2 xG, not 30%.
     
     For MID/FWD (attacking FDR):
-        expected_goals = (our_xG / avg) × (opp_xGA / avg) × avg × venue
+        base_xg = (our_xG / avg) × (opp_xGA / avg) × avg
+        final_xg = base_xg × venue_multiplier (1.08 home, 0.93 away)
         Higher expected goals → Lower FDR (easier to score)
     
     For GKP/DEF (defensive FDR):
-        expected_goals_against = (opp_xG / avg) × (our_xGA / avg) × avg × venue
+        base_xga = (opp_xG / avg) × (our_xGA / avg) × avg
+        final_xga = base_xga × inverse_venue (0.93 home, 1.08 away)
         Lower expected goals against → Lower FDR (easier CS)
     
     Args:
@@ -1647,26 +1648,21 @@ def calculate_matchup_fdr(
     opp_xg = opp_data.get('blended_xg', LEAGUE_AVG_XG)
     opp_xga = opp_data.get('blended_xga', LEAGUE_AVG_XGA)
     
-    # Venue adjustments
-    if is_home:
-        # We're home: we attack better (+15%), they attack worse (-13%)
-        team_attack_adj = team_xg * 1.15
-        opp_attack_adj = opp_xg * 0.87
-        # We defend better (-10%), they defend worse (+15%)
-        team_defence_adj = team_xga * 0.90
-        opp_defence_adj = opp_xga * 1.15
-    else:
-        # We're away: we attack worse (-13%), they attack better (+15%)
-        team_attack_adj = team_xg * 0.87
-        opp_attack_adj = opp_xg * 1.15
-        # We defend worse (+15%), they defend better (-10%)
-        team_defence_adj = team_xga * 1.15
-        opp_defence_adj = opp_xga * 0.90
+    # v4.3.9: Single venue multiplier applied at END, not to both inputs
+    # Home advantage worth ~8% boost, away penalty ~7% drop
+    # This matches real-world data (~0.15-0.2 xG home advantage)
+    HOME_BOOST = 1.08
+    AWAY_PENALTY = 0.93
     
     if position in [3, 4]:  # MID, FWD - care about scoring
-        # Expected goals WE score = our attack vs their defence
-        # Formula: (our_xG / avg) × (their_xGA / avg) × avg
-        expected_goals = (team_attack_adj / LEAGUE_AVG_XG) * (opp_defence_adj / LEAGUE_AVG_XGA) * LEAGUE_AVG_XG
+        # Pure matchup: our attack vs their defence (NO venue adjustment yet)
+        base_xg = (team_xg / LEAGUE_AVG_XG) * (opp_xga / LEAGUE_AVG_XGA) * LEAGUE_AVG_XG
+        
+        # Apply single venue adjustment at the end
+        if is_home:
+            expected_goals = base_xg * HOME_BOOST
+        else:
+            expected_goals = base_xg * AWAY_PENALTY
         
         # Convert to FDR: more expected goals = easier = lower FDR
         if expected_goals >= 2.50:
@@ -1691,8 +1687,14 @@ def calculate_matchup_fdr(
             return 10  # Near impossible
     
     else:  # GKP, DEF - care about clean sheets
-        # Expected goals AGAINST us = their attack vs our defence
-        expected_goals_against = (opp_attack_adj / LEAGUE_AVG_XG) * (team_defence_adj / LEAGUE_AVG_XGA) * LEAGUE_AVG_XG
+        # Pure matchup: their attack vs our defence (NO venue adjustment yet)
+        base_xga = (opp_xg / LEAGUE_AVG_XG) * (team_xga / LEAGUE_AVG_XGA) * LEAGUE_AVG_XG
+        
+        # Apply single venue adjustment (inverted - we defend better at home)
+        if is_home:
+            expected_goals_against = base_xga * AWAY_PENALTY  # Opponent is away, weaker
+        else:
+            expected_goals_against = base_xga * HOME_BOOST    # Opponent is home, stronger
         
         # Convert to FDR: fewer expected goals against = easier CS = lower FDR
         if expected_goals_against <= 0.60:
@@ -5681,6 +5683,15 @@ async def get_fdr_grid():
     teams = {t["id"]: t for t in data["teams"]}
     events = data["events"]
     current_gw = get_current_gameweek(events)
+    next_gw = get_next_gameweek(events)
+    
+    # v4.3.8: Determine the first GW to show
+    # If current GW is finished (data_checked), start from next GW
+    current_event = next((e for e in events if e["id"] == current_gw), None)
+    if current_event and current_event.get("finished") and current_event.get("data_checked"):
+        start_gw = next_gw
+    else:
+        start_gw = current_gw
     
     # Build fixture lookup: team_id -> gw -> fixture info
     grid = {}
@@ -5694,6 +5705,14 @@ async def get_fdr_grid():
     for fix in fixtures:
         gw = fix.get("event")
         if not gw:
+            continue
+        
+        # v4.3.8: Skip finished fixtures - only show from start_gw onwards
+        if gw < start_gw:
+            continue
+        
+        # Also skip individual finished fixtures (handles mid-GW scenarios)
+        if fix.get("finished"):
             continue
         
         home_id = fix["team_h"]
@@ -5748,6 +5767,8 @@ async def get_fdr_grid():
     
     return {
         "current_gw": current_gw,
+        "next_gw": next_gw,
+        "start_gw": start_gw,
         "teams": team_list
     }
 
@@ -8475,6 +8496,129 @@ async def get_model_config():
             "defcon_threshold_def": MODEL_CONFIG["xpts"].defcon_threshold_def,
             "defcon_threshold_mid": MODEL_CONFIG["xpts"].defcon_threshold_mid,
         }
+    }
+
+
+# ============ DEBUG ENDPOINTS ============
+
+@app.get("/api/debug/team-strength")
+async def debug_team_strength():
+    """
+    Debug endpoint to verify team strength data is loaded correctly.
+    Shows data from import_data.json and calculated FDR values.
+    """
+    await refresh_fdr_data()
+    
+    data = await fetch_fpl_data()
+    teams = {t["id"]: t["name"] for t in data["teams"]}
+    
+    result = []
+    for team_id in sorted(teams.keys()):
+        team_name = teams[team_id]
+        
+        # Get manual data (from import_data.json)
+        manual = cache.manual_team_strength.get(team_id, {})
+        
+        # Get calculated FDR data
+        fdr = cache.fdr_data.get(team_id, {})
+        
+        result.append({
+            "team_id": team_id,
+            "team_name": team_name,
+            "manual_import": {
+                "adjxg_for": manual.get("adjxg_for"),
+                "adjxg_ag": manual.get("adjxg_ag"),
+                "attack_delta": manual.get("attack_delta"),
+                "defence_delta": manual.get("defence_delta"),
+            } if manual else None,
+            "calculated_fdr": {
+                "blended_xg": fdr.get("blended_xg"),
+                "blended_xga": fdr.get("blended_xga"),
+                "attack_fdr": fdr.get("attack_fdr"),
+                "attack_fdr_home": fdr.get("attack_fdr_home"),
+                "attack_fdr_away": fdr.get("attack_fdr_away"),
+                "defence_fdr": fdr.get("defence_fdr"),
+                "cs_probability": fdr.get("cs_probability"),
+                "data_source": fdr.get("data_source"),
+            } if fdr else None,
+        })
+    
+    return {
+        "manual_team_strength_count": len(cache.manual_team_strength),
+        "fdr_data_count": len(cache.fdr_data),
+        "last_update": cache.fdr_last_update.isoformat() if cache.fdr_last_update else None,
+        "teams": result
+    }
+
+
+@app.get("/api/debug/fixture-fdr/{team_id}")
+async def debug_fixture_fdr(team_id: int):
+    """
+    Debug endpoint to see FDR calculations for a specific team's upcoming fixtures.
+    """
+    await refresh_fdr_data()
+    
+    data = await fetch_fpl_data()
+    fixtures = await fetch_fixtures()
+    
+    teams = {t["id"]: t for t in data["teams"]}
+    events = data["events"]
+    next_gw = get_next_gameweek(events)
+    
+    team_info = teams.get(team_id)
+    if not team_info:
+        raise HTTPException(status_code=404, detail=f"Team {team_id} not found")
+    
+    # Get team's FDR data
+    team_fdr = cache.fdr_data.get(team_id, {})
+    
+    # Find upcoming fixtures
+    upcoming = []
+    for fix in fixtures:
+        gw = fix.get("event")
+        if not gw or gw < next_gw or fix.get("finished"):
+            continue
+        
+        if fix["team_h"] == team_id:
+            opp_id = fix["team_a"]
+            is_home = True
+        elif fix["team_a"] == team_id:
+            opp_id = fix["team_h"]
+            is_home = False
+        else:
+            continue
+        
+        opp_info = teams.get(opp_id, {})
+        opp_fdr = cache.fdr_data.get(opp_id, {})
+        
+        # Calculate FDR for this fixture
+        attack_fdr = get_fixture_fdr(opp_id, is_home, 4, team_id=team_id)
+        defence_fdr = get_fixture_fdr(opp_id, is_home, 2, team_id=team_id)
+        
+        upcoming.append({
+            "gw": gw,
+            "opponent": opp_info.get("short_name", "???"),
+            "opponent_id": opp_id,
+            "is_home": is_home,
+            "attack_fdr": attack_fdr,
+            "defence_fdr": defence_fdr,
+            "composite_fdr": round((attack_fdr + defence_fdr) / 2),
+            "opponent_xg": opp_fdr.get("blended_xg"),
+            "opponent_xga": opp_fdr.get("blended_xga"),
+        })
+        
+        if len(upcoming) >= 8:
+            break
+    
+    return {
+        "team_id": team_id,
+        "team_name": team_info["name"],
+        "team_data": {
+            "blended_xg": team_fdr.get("blended_xg"),
+            "blended_xga": team_fdr.get("blended_xga"),
+            "data_source": team_fdr.get("data_source"),
+        },
+        "upcoming_fixtures": upcoming
     }
 
 
