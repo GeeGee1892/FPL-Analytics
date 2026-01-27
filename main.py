@@ -1,5 +1,5 @@
 """
-FPL Assistant Backend - FastAPI v4.3.3
+FPL Assistant Backend - FastAPI v4.3.11
 Enhanced with:
 - Composite FDR model (1-10 scale) using Understat xG data
 - Position-specific FDR: attack_fdr for FWD/MID, defence_fdr for DEF/GKP
@@ -9,6 +9,61 @@ Enhanced with:
 - Shared HTTP client for connection pooling
 - Dynamic season detection
 - Rate limiting with exponential backoff
+
+v4.3.11 CHANGELOG - SEPARATED VENUE ADJUSTMENTS:
+===============================================
+PROBLEM: Previous versions conflated two different venue effects:
+1. "Does City's defence get worse when they travel?" (SMALL - ~5%)
+2. "Does Salah score more at Anfield?" (LARGE - ~30%)
+
+Baking a 30% venue swing into FDR made Brighton (A) look harder than City (H),
+which is wrong - City's elite defence matters more than venue.
+
+SOLUTION: Separate the two effects:
+
+1. FDR/Matchup calculations now use SMALL opponent venue adjustment (~5%):
+   - OPP_HOME_BOOST = 1.05 (you get slight advantage at home)
+   - OPP_AWAY_PENALTY = 0.95 (slight disadvantage away)
+   - FDR now primarily reflects OPPONENT QUALITY, not venue
+
+2. xPts calculations use player-specific venue effects:
+   - Players WITH sufficient home/away split data: Use their actual splits
+   - Players WITHOUT split data: Use fallback boost (~12%)
+   - PLAYER_HOME_BOOST = 1.12, PLAYER_AWAY_PENALTY = 0.88
+
+3. CS probability uses moderate venue adjustment (~8%):
+   - DEFENCE_HOME_BOOST = 0.92 (concede 8% less at home)
+   - DEFENCE_AWAY_PENALTY = 1.08 (concede 8% more away)
+
+RESULT:
+- City (H) FDR 5 > Brighton (A) FDR 4 (elite defence matters)
+- Liverpool's 40% home xG boost now comes from player splits, not FDR inflation
+- Consistent ~40% home/away swing for all players (with or without splits)
+
+v4.3.10 CHANGELOG - REALISTIC VENUE ADJUSTMENTS:
+=====================================================================================================
+Based on real PL data showing 30-40% home/away xG differences (e.g. Liverpool 2023-24:
+Home 2.94 xG/game vs Away 1.77 xG/game = 40% drop), venue adjustments updated:
+
+OLD VALUES (too small - only 15% swing):
+  HOME_ATTACK_BOOST = 1.08      # +8%
+  AWAY_ATTACK_PENALTY = 0.93    # -7%
+  HOME_DEFENCE_BOOST = 0.93
+  AWAY_DEFENCE_PENALTY = 1.08
+
+NEW VALUES (realistic - ~30% swing):
+  HOME_ATTACK_BOOST = 1.15      # +15%
+  AWAY_ATTACK_PENALTY = 0.85    # -15%
+  HOME_DEFENCE_BOOST = 0.88     # -12%
+  AWAY_DEFENCE_PENALTY = 1.12   # +12%
+
+RESULT: Brighton (A) now correctly harder than City (H) for Liverpool
+  - Brighton (H): FDR 3 - easy with home boost
+  - Brighton (A): FDR 5 - average with away penalty
+  - City (H):     FDR 4 - moderate despite elite defence
+  - City (A):     FDR 6 - hard with elite defence + away
+  
+This matches betting models and real-world expectations.
 
 v4.3.2 CHANGELOG - CRITICAL FDR Bug Fix + Venue-Specific FDR + Blending Fix + Set Piece Share + DEFCON:
 =====================================================================================================
@@ -383,25 +438,46 @@ class FDRConfig:
 @dataclass  
 class HomeAwayConfig:
     """
-    Home/Away performance adjustments from PL data analysis.
+    Home/Away performance adjustments - v4.3.11 SEPARATION OF CONCERNS.
     
-    v4.3.9 FIX: These values are for SINGLE application only.
-    Previous versions incorrectly applied venue adjustments to BOTH team AND opponent,
-    effectively doubling the effect (1.15 * 1.15 = 1.32, which is way too high).
+    We need TWO different venue adjustments:
     
-    Real-world home advantage is worth ~0.15-0.2 xG, or about 8-10% boost.
-    Apply to ONE side of the calculation only (typically the final result).
+    1. OPPONENT VENUE EFFECT (small, ~5%):
+       - Does City's defence get worse when they travel? Slightly.
+       - Used in FDR and matchup calculations
+       - opp_home_boost/opp_away_penalty
+    
+    2. PLAYER VENUE EFFECT (large, ~15%):
+       - Does Salah score more at Anfield? Significantly.
+       - Used in xPts for players WITHOUT sufficient split data
+       - player_home_boost/player_away_penalty
+       - Players WITH split data use their actual home/away xG90 instead
+    
+    This separation means:
+    - FDR shows OPPONENT quality (City = hard everywhere)
+    - xPts reflects YOUR performance (Salah better at home)
     """
     
-    # Single-application multipliers (apply to RESULT, not both inputs)
-    home_attack_boost: float = 1.08      # 8% boost when attacking at home
-    away_attack_penalty: float = 0.93    # 7% penalty when attacking away
-    home_defence_boost: float = 0.93     # 7% fewer goals conceded at home (multiply xGA by this)
-    away_defence_penalty: float = 1.08   # 8% more goals conceded away (multiply xGA by this)
+    # OPPONENT venue adjustments (for FDR/matchup calculations)
+    # Small because elite teams stay elite on the road
+    opp_home_boost: float = 1.05       # Opponent 5% better at home
+    opp_away_penalty: float = 0.95     # Opponent 5% worse away
+    
+    # PLAYER venue adjustments (fallback for xPts when no split data)
+    # These should give SIMILAR total swing as players WITH split data
+    # Players with splits get ~25% inherent swing, +10% from matchup = ~35-40% total
+    # So fallback should be ~12% (not 15%) to avoid overcounting with matchup
+    player_home_boost: float = 1.12    # You score 12% more at home
+    player_away_penalty: float = 0.88  # You score 12% less away
+    
+    # Defence venue adjustments (for CS probability)
+    # Moderate - teams concede more away but effect is smaller than attack
+    defence_home_boost: float = 0.92   # Concede 8% less at home
+    defence_away_penalty: float = 1.08 # Concede 8% more away
     
     # Player-level home/away variance
-    min_games_for_split: int = 8         # Min games to trust split
-    split_weight: float = 0.60           # 60% split-specific, 40% overall
+    min_games_for_split: int = 8       # Min games to trust split
+    split_weight: float = 0.60         # 60% split-specific, 40% overall
 
 
 @dataclass
@@ -1117,11 +1193,24 @@ STABLE_MANAGERS = {"Arsenal": 1.0, "Liverpool": 0.98, "Fulham": 1.0, "Bournemout
 LEAGUE_AVG_GOALS_PER_GAME = MODEL_CONFIG["clean_sheet"].league_avg_goals_per_game
 LEAGUE_AVG_CS_RATE = MODEL_CONFIG["clean_sheet"].league_avg_cs_rate
 
-# Home advantage factors from config
-HOME_ATTACK_BOOST = MODEL_CONFIG["home_away"].home_attack_boost
-HOME_DEFENCE_BOOST = MODEL_CONFIG["home_away"].home_defence_boost
-AWAY_ATTACK_PENALTY = MODEL_CONFIG["home_away"].away_attack_penalty
-AWAY_DEFENCE_PENALTY = MODEL_CONFIG["home_away"].away_defence_penalty
+# Home advantage factors from config - v4.3.11 SEPARATED
+# OPPONENT venue adjustments (for FDR/matchup - small effect)
+OPP_HOME_BOOST = MODEL_CONFIG["home_away"].opp_home_boost        # 1.05
+OPP_AWAY_PENALTY = MODEL_CONFIG["home_away"].opp_away_penalty    # 0.95
+
+# PLAYER venue adjustments (for xPts fallback - large effect)
+PLAYER_HOME_BOOST = MODEL_CONFIG["home_away"].player_home_boost      # 1.15
+PLAYER_AWAY_PENALTY = MODEL_CONFIG["home_away"].player_away_penalty  # 0.85
+
+# DEFENCE venue adjustments (for CS probability)
+DEFENCE_HOME_BOOST = MODEL_CONFIG["home_away"].defence_home_boost      # 0.92
+DEFENCE_AWAY_PENALTY = MODEL_CONFIG["home_away"].defence_away_penalty  # 1.08
+
+# Legacy aliases for backwards compatibility (use OPP_ versions for FDR)
+HOME_ATTACK_BOOST = OPP_HOME_BOOST
+AWAY_ATTACK_PENALTY = OPP_AWAY_PENALTY
+HOME_DEFENCE_BOOST = DEFENCE_HOME_BOOST
+AWAY_DEFENCE_PENALTY = DEFENCE_AWAY_PENALTY
 
 # Yellow/Red card expected points deduction per 90
 YELLOW_CARD_RATE_PENALTY = -0.15  # Avg ~0.15 yellows/90 for most players
@@ -1495,11 +1584,13 @@ def calculate_matchup_attack_multiplier(
     # Raw matchup: product of both factors
     raw_matchup = team_attack_factor * opp_defence_factor
     
-    # v4.3.9: Apply SINGLE venue adjustment at the end
+    # v4.3.11: Apply SMALL opponent venue adjustment (~5%)
+    # This reflects opponent quality change, not your big home/away swing
+    # Your personal venue effect comes from player splits OR fallback boost below
     if is_home:
-        raw_matchup *= HOME_ATTACK_BOOST  # 1.08
+        raw_matchup *= OPP_HOME_BOOST   # 1.05 - slight home advantage
     else:
-        raw_matchup *= AWAY_ATTACK_PENALTY  # 0.93
+        raw_matchup *= OPP_AWAY_PENALTY  # 0.95 - slight away penalty
     
     # Apply price and position dampening (premiums less affected by fixtures)
     fdr_config = MODEL_CONFIG["fdr"]
@@ -1581,12 +1672,13 @@ def calculate_matchup_cs_probability(
     # Base xG against = league average * matchup factors
     base_xga = LEAGUE_AVG_XGA * team_defence_factor * opp_attack_factor
     
-    # v4.3.9: Apply SINGLE venue adjustment at the end
-    # At home, we concede less; away, we concede more
+    # v4.3.11: Apply venue adjustment for CS probability (~8%)
+    # At home, we defend better and opponent attacks worse → concede less
+    # Away, we defend worse and opponent attacks better → concede more
     if is_home:
-        expected_xga = base_xga * HOME_DEFENCE_BOOST  # 0.93 (7% fewer goals at home)
+        expected_xga = base_xga * DEFENCE_HOME_BOOST    # 0.92 (8% fewer goals at home)
     else:
-        expected_xga = base_xga * AWAY_DEFENCE_PENALTY  # 1.08 (8% more goals away)
+        expected_xga = base_xga * DEFENCE_AWAY_PENALTY  # 1.08 (8% more goals away)
     
     # Bound to realistic range
     expected_xga = max(0.4, min(3.0, expected_xga))
@@ -1648,21 +1740,22 @@ def calculate_matchup_fdr(
     opp_xg = opp_data.get('blended_xg', LEAGUE_AVG_XG)
     opp_xga = opp_data.get('blended_xga', LEAGUE_AVG_XGA)
     
-    # v4.3.9: Single venue multiplier applied at END, not to both inputs
-    # Home advantage worth ~8% boost, away penalty ~7% drop
-    # This matches real-world data (~0.15-0.2 xG home advantage)
-    HOME_BOOST = 1.08
-    AWAY_PENALTY = 0.93
+    # v4.3.11: Use small OPPONENT venue adjustments (~5%)
+    # FDR represents OPPONENT quality, not your big home/away performance swing
+    # City's defence doesn't get 30% worse when they travel - only ~5%
+    # Your big home/away swing is handled in xPts via player splits
     
     if position in [3, 4]:  # MID, FWD - care about scoring
         # Pure matchup: our attack vs their defence (NO venue adjustment yet)
         base_xg = (team_xg / LEAGUE_AVG_XG) * (opp_xga / LEAGUE_AVG_XGA) * LEAGUE_AVG_XG
         
-        # Apply single venue adjustment at the end
+        # Apply small venue adjustment for opponent quality difference
+        # When HOME: opponent away, their defence slightly worse → you score ~5% more
+        # When AWAY: opponent home, their defence slightly better → you score ~5% less
         if is_home:
-            expected_goals = base_xg * HOME_BOOST
+            expected_goals = base_xg * OPP_HOME_BOOST     # 1.05 - slight home advantage
         else:
-            expected_goals = base_xg * AWAY_PENALTY
+            expected_goals = base_xg * OPP_AWAY_PENALTY   # 0.95 - slight away penalty
         
         # Convert to FDR: more expected goals = easier = lower FDR
         if expected_goals >= 2.50:
@@ -1690,11 +1783,13 @@ def calculate_matchup_fdr(
         # Pure matchup: their attack vs our defence (NO venue adjustment yet)
         base_xga = (opp_xg / LEAGUE_AVG_XG) * (team_xga / LEAGUE_AVG_XGA) * LEAGUE_AVG_XG
         
-        # Apply single venue adjustment (inverted - we defend better at home)
+        # Apply venue adjustment for CS probability
+        # When HOME: we defend better, opponent attacks worse → concede ~8% less
+        # When AWAY: we defend worse, opponent attacks better → concede ~8% more
         if is_home:
-            expected_goals_against = base_xga * AWAY_PENALTY  # Opponent is away, weaker
+            expected_goals_against = base_xga * DEFENCE_HOME_BOOST    # 0.92 - concede less at home
         else:
-            expected_goals_against = base_xga * HOME_BOOST    # Opponent is home, stronger
+            expected_goals_against = base_xga * DEFENCE_AWAY_PENALTY  # 1.08 - concede more away
         
         # Convert to FDR: fewer expected goals against = easier CS = lower FDR
         if expected_goals_against <= 0.60:
@@ -3991,14 +4086,18 @@ def calculate_expected_points(
         attack_multiplier = apply_set_piece_share_to_multiplier(attack_multiplier, player_name)
         
         # ==================== HOME/AWAY SPLIT FOR xGI ====================
+        # v4.3.11: Separated venue effects:
+        # - attack_multiplier has SMALL opponent venue effect (~5%)
+        # - Player splits OR fallback boost handles BIG player venue effect (~15%)
+        # 
         # If player has sufficient home/away history, use split-specific rates
-        # v4.3.2: Home/away boost is now ALWAYS applied to attack_multiplier (for FDR effect)
-        # So we only use split data to adjust the BASE xG90, not apply additional ha_factor
+        # If NOT, apply fallback venue boost to capture their typical home/away swing
         # v5.0: Start with form-adjusted rates instead of raw season rates
         fixture_xG90_base = xG90_effective
         fixture_xA90_base = xA90_effective
         
         if home_away_split.has_sufficient_data:
+            # USE PLAYER'S ACTUAL HOME/AWAY SPLITS
             ha_config = MODEL_CONFIG["home_away"]
             if is_home:
                 split_xG90 = home_away_split.home_xG90
@@ -4011,9 +4110,20 @@ def calculate_expected_points(
             # v5.0: Use form-adjusted rates as the baseline for blending
             fixture_xG90_base = ha_config.split_weight * split_xG90 + (1 - ha_config.split_weight) * xG90_effective
             fixture_xA90_base = ha_config.split_weight * split_xA90 + (1 - ha_config.split_weight) * xA90_effective
+        else:
+            # NO SPLIT DATA: Apply fallback venue boost (~15%)
+            # This captures the typical player home/away variance
+            # Players generally score 15-20% more at home than away
+            if is_home:
+                fixture_xG90_base = xG90_effective * PLAYER_HOME_BOOST    # 1.15
+                fixture_xA90_base = xA90_effective * PLAYER_HOME_BOOST
+            else:
+                fixture_xG90_base = xG90_effective * PLAYER_AWAY_PENALTY  # 0.85
+                fixture_xA90_base = xA90_effective * PLAYER_AWAY_PENALTY
         
         # Apply penalty boost to xG and calculate fixture xGI
-        # v4.3.2: attack_multiplier already includes home/away boost from FDR calculation
+        # v4.3.11: attack_multiplier has SMALL (~5%) opponent venue effect
+        # Player's BIG venue effect (~15%) is now in fixture_xG90_base (from splits or fallback)
         fixture_xG90 = (fixture_xG90_base + penalty_boost) * attack_multiplier
         fixture_xA90 = fixture_xA90_base * attack_multiplier
         
