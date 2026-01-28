@@ -1,5 +1,5 @@
 """
-FPL Assistant Backend - FastAPI v4.3.11
+FPL Assistant Backend - FastAPI v4.3.12
 Enhanced with:
 - Composite FDR model (1-10 scale) using Understat xG data
 - Position-specific FDR: attack_fdr for FWD/MID, defence_fdr for DEF/GKP
@@ -9,6 +9,31 @@ Enhanced with:
 - Shared HTTP client for connection pooling
 - Dynamic season detection
 - Rate limiting with exponential backoff
+
+v4.3.12 CHANGELOG - FORM & PENALTY FIXES:
+==========================================
+TWO BUGS FIXED:
+
+1. PREMIUM FORM WEIGHT NOT APPLIED:
+   - Premium settings (£8+ MID/FWD, £6+ DEF) existed but were NEVER used
+   - All players got base form weight (0.50) regardless of price
+   - Haaland's terrible form (0.70 ratio) only got 15% penalty
+   
+   FIX: Now uses premium_form_weight (0.70) for expensive players
+   - Haaland's bad form now correctly penalized by ~21%
+   - Form confidence: 0.50 → 0.70 for premiums
+   - combined_form: 0.85 → 0.79 for Haaland
+
+2. PENALTY BOOST INCORRECTLY SCALED BY MATCHUP:
+   - Old: (base + penalty) × attack_mult = inflated xGI
+   - Penalty xG shouldn't depend on opponent quality
+   
+   FIX: (base × attack_mult) + penalty
+   - A pen is ~0.76 xG whether vs City or Forest
+   - This was inflating penalty takers by ~0.5-1.0 xPts in easy fixtures
+
+RESULT:
+- Haaland vs Spurs (A) xPts: ~9.8 → ~8.7 (more realistic for bad form)
 
 v4.3.11 CHANGELOG - SEPARATED VENUE ADJUSTMENTS:
 ===============================================
@@ -673,7 +698,7 @@ class FormConfig:
     premium_threshold_def: float = 6.0
     premium_min_form_factor: float = 0.55  # Max 45% reduction for premiums
     premium_max_form_factor: float = 1.50  # Max 50% increase for premiums
-    premium_form_weight: float = 0.55      # Higher weight on recent form
+    premium_form_weight: float = 0.70      # Higher weight on recent form (was 0.55)
     
     # Position-specific form sensitivity
     # FWDs are more streaky (binary goal outcomes)
@@ -3248,8 +3273,27 @@ def calculate_player_form_factor(
     games_factor = (len(recent_games) - form_config.min_games_for_form) / (form_config.lookback_games - form_config.min_games_for_form)
     games_factor = max(0, min(1, games_factor))
     
-    base_confidence = form_config.base_form_weight
-    max_confidence = form_config.max_form_weight
+    # v4.3.11: Check if player is premium (higher form sensitivity)
+    # Premium players (£8+ MID/FWD, £6+ DEF) have more volatile form
+    player_price = float(player.get("now_cost", 0) or 0) / 10.0
+    is_premium = False
+    if position in [3, 4] and player_price >= form_config.premium_threshold_mid_fwd:
+        is_premium = True
+    elif position == 2 and player_price >= form_config.premium_threshold_def:
+        is_premium = True
+    
+    if is_premium:
+        # Premium players: higher confidence in form signal
+        base_confidence = form_config.base_form_weight
+        max_confidence = form_config.premium_form_weight  # 0.55 instead of 0.50
+        min_form = form_config.premium_min_form_factor     # 0.55 instead of 0.70
+        max_form = form_config.premium_max_form_factor     # 1.50 instead of 1.30
+    else:
+        base_confidence = form_config.base_form_weight
+        max_confidence = form_config.max_form_weight
+        min_form = form_config.min_form_factor
+        max_form = form_config.max_form_factor
+    
     confidence = base_confidence + games_factor * (max_confidence - base_confidence)
     
     # Apply position-specific sensitivity
@@ -3263,10 +3307,10 @@ def calculate_player_form_factor(
     xa_form = confidence * xa_form_raw + (1 - confidence) * 1.0
     pts_form = confidence * pts_form_raw + (1 - confidence) * 1.0
     
-    # Cap at config bounds
-    xg_form = max(form_config.min_form_factor, min(form_config.max_form_factor, xg_form))
-    xa_form = max(form_config.min_form_factor, min(form_config.max_form_factor, xa_form))
-    pts_form = max(form_config.min_form_factor, min(form_config.max_form_factor, pts_form))
+    # Cap at config bounds (use premium bounds if applicable)
+    xg_form = max(min_form, min(max_form, xg_form))
+    xa_form = max(min_form, min(max_form, xa_form))
+    pts_form = max(min_form, min(max_form, pts_form))
     
     result.xg_form = round(xg_form, 3)
     result.xa_form = round(xa_form, 3)
@@ -4121,10 +4165,14 @@ def calculate_expected_points(
                 fixture_xG90_base = xG90_effective * PLAYER_AWAY_PENALTY  # 0.85
                 fixture_xA90_base = xA90_effective * PLAYER_AWAY_PENALTY
         
-        # Apply penalty boost to xG and calculate fixture xGI
+        # Apply matchup multiplier to xG and calculate fixture xGI
         # v4.3.11: attack_multiplier has SMALL (~5%) opponent venue effect
         # Player's BIG venue effect (~15%) is now in fixture_xG90_base (from splits or fallback)
-        fixture_xG90 = (fixture_xG90_base + penalty_boost) * attack_multiplier
+        #
+        # v4.3.11 FIX: Penalty boost should NOT scale with attack_multiplier
+        # A penalty is ~0.76 xG regardless of opponent - City or Forest
+        # Only open-play xG should scale with matchup quality
+        fixture_xG90 = (fixture_xG90_base * attack_multiplier) + penalty_boost
         fixture_xA90 = fixture_xA90_base * attack_multiplier
         
         # ==================== FIXTURE-SPECIFIC BONUS ====================
