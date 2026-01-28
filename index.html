@@ -3676,6 +3676,7 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                             <tr>
                                 <th>#</th>
                                 <th data-sort="name">Player</th>
+                                <th data-sort="price">Price <span class="sort-icon">▼</span></th>
                                 <th data-sort="xpts" class="sorted">xPts <span class="sort-icon">▼</span></th>
                                 <th data-sort="expected_minutes">ExpMins <span class="sort-icon">▼</span></th>
                                 <th data-sort="xgi_per_90">xGI/90 <span class="sort-icon">▼</span></th>
@@ -3684,7 +3685,6 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                                 <th data-sort="saves_per_90" class="pos-col gkp-col">Saves/90 <span class="sort-icon">▼</span></th>
                                 <th data-sort="form">Form <span class="sort-icon">▼</span></th>
                                 <th data-sort="total_points">Pts <span class="sort-icon">▼</span></th>
-                                <th data-sort="price">Price <span class="sort-icon">▼</span></th>
                                 <th data-sort="ownership">Own% <span class="sort-icon">▼</span></th>
                                 <th>Fixtures</th>
                             </tr>
@@ -4949,6 +4949,7 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                     <tr>
                         <td>${i + 1}</td>
                         <td><div class="player-info"><span class="player-name">${p.name}</span><span class="player-team">${p.team}</span></div></td>
+                        <td class="stat-value">£${p.price.toFixed(1)}</td>
                         <td class="stat-value stat-highlight" title="Range: ${(p.xpts_floor || p.xpts * 0.7).toFixed(1)} - ${(p.xpts_ceiling || p.xpts * 1.2).toFixed(1)}">
                             ${p.xpts.toFixed(1)}
                             <span class="xpts-range">${(p.xpts_floor || p.xpts * 0.7).toFixed(1)}-${(p.xpts_ceiling || p.xpts * 1.2).toFixed(1)}</span>
@@ -4970,7 +4971,6 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                         ${savesHtml}
                         <td class="stat-value">${(p.form || 0).toFixed(1)}</td>
                         <td class="stat-value">${p.total_points}</td>
-                        <td class="stat-value">£${p.price.toFixed(1)}</td>
                         <td class="stat-value">
                             <span class="ownership-cell">
                                 ${p.ownership.toFixed(1)}%
