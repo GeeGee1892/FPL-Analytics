@@ -110,10 +110,13 @@ async function loadBootstrap() {
         
         // Populate team filter dropdown
         populateTeamFilter(data.teams);
-        
+
+        // Populate planner GW dropdowns dynamically
+        populatePlannerGwSelects(rankingsGw);
+
         // Store players for search
         allPlayers = data.elements || [];
-        
+
         bootstrapLoaded = true;
     } catch (error) {
         console.error('Failed to load bootstrap:', error);
@@ -179,6 +182,28 @@ function populateTeamFilter(teams) {
         option.textContent = team.name || team.short_name;
         teamSelect.appendChild(option);
     });
+}
+
+function populatePlannerGwSelects(startGw) {
+    const start = Math.max(1, startGw);
+    const selectIds = [
+        'preBookedGw',
+        'chipGw_wildcard',
+        'chipGw_freehit',
+        'chipGw_bboost',
+        'chipGw_3xc',
+    ];
+    for (const id of selectIds) {
+        const sel = document.getElementById(id);
+        if (!sel) continue;
+        sel.innerHTML = '';
+        for (let gw = start; gw <= 38; gw++) {
+            const opt = document.createElement('option');
+            opt.value = gw;
+            opt.textContent = `GW${gw}`;
+            sel.appendChild(opt);
+        }
+    }
 }
 
 // Player search functionality
