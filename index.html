@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FPL Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="static/styles.css">
+    <script src="static/app.js" defer></script>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">
+                <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="100" cy="100" r="95" fill="#f5f5f5"/>
+                    <path d="M100 55 L120 70 L115 95 L85 95 L80 70 Z" fill="#1a1a25"/>
+                    <path d="M100 5 L115 20 L108 35 L92 35 L85 20 Z" fill="#1a1a25"/>
+                    <path d="M160 35 L175 55 L165 75 L145 70 L145 50 Z" fill="#1a1a25"/>
+                    <path d="M40 35 L55 50 L55 70 L35 75 L25 55 Z" fill="#1a1a25"/>
+                    <path d="M165 125 L175 145 L160 165 L140 160 L140 140 Z" fill="#1a1a25"/>
+                    <path d="M35 125 L60 140 L60 160 L40 165 L25 145 Z" fill="#1a1a25"/>
+                    <path d="M85 165 L92 180 L100 195 L108 180 L115 165 Z" fill="#1a1a25"/>
+                    <path d="M60 200 L70 130 L100 120 L130 130 L140 200" fill="#1e1e2a"/>
+                    <path d="M65 140 L75 125 L100 118 L125 125 L135 140 L130 180 L70 180 Z" fill="#2d2d3a"/>
+                    <path d="M85 125 L100 118 L100 145 L90 140 Z" fill="#1a1a25"/>
+                    <path d="M115 125 L100 118 L100 145 L110 140 Z" fill="#1a1a25"/>
+                    <path d="M92 118 L100 115 L108 118 L105 145 L95 145 Z" fill="#ffffff"/>
+                    <path d="M97 120 L103 120 L104 128 L100 145 L96 128 Z" fill="#00d4aa"/>
+                    <ellipse cx="100" cy="115" rx="12" ry="8" fill="#f5d0c5"/>
+                    <ellipse cx="100" cy="75" rx="35" ry="40" fill="#f5d0c5"/>
+                    <path d="M65 65 Q65 35, 100 35 Q135 35, 135 65 Q130 50, 100 50 Q70 50, 65 65" fill="#3d3d4a"/>
+                    <path d="M68 70 Q70 55, 85 52" stroke="#3d3d4a" stroke-width="8" stroke-linecap="round"/>
+                    <path d="M132 70 Q130 55, 115 52" stroke="#3d3d4a" stroke-width="8" stroke-linecap="round"/>
+                    <ellipse cx="65" cy="78" rx="6" ry="10" fill="#f5d0c5"/>
+                    <ellipse cx="135" cy="78" rx="6" ry="10" fill="#f5d0c5"/>
+                    <rect x="73" y="65" width="22" height="18" rx="4" fill="none" stroke="#3d3d4a" stroke-width="3"/>
+                    <rect x="105" y="65" width="22" height="18" rx="4" fill="none" stroke="#3d3d4a" stroke-width="3"/>
+                    <path d="M95 73 L105 73" stroke="#3d3d4a" stroke-width="2.5"/>
+                    <circle cx="84" cy="74" r="4" fill="#2d2d3a"/>
+                    <circle cx="116" cy="74" r="4" fill="#2d2d3a"/>
+                    <circle cx="85" cy="73" r="1.5" fill="#fff"/>
+                    <circle cx="117" cy="73" r="1.5" fill="#fff"/>
+                    <path d="M92 95 Q100 100, 108 95" stroke="#c9a090" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+                    <rect x="138" y="135" width="25" height="35" rx="2" fill="#f0f0f0"/>
+                    <line x1="142" y1="143" x2="158" y2="143" stroke="#00d4aa" stroke-width="3"/>
+                    <line x1="142" y1="150" x2="155" y2="150" stroke="#ccc" stroke-width="1.5"/>
+                    <line x1="142" y1="156" x2="158" y2="156" stroke="#ccc" stroke-width="1.5"/>
+                    <ellipse cx="145" cy="145" rx="8" ry="6" fill="#f5d0c5"/>
+                    <circle cx="100" cy="100" r="95" fill="none" stroke="#00d4aa" stroke-width="5"/>
+                </svg>
+            </div>
+                <div class="logo-text-container">
+                    <div class="logo-text">FPL Assistant</div>
+                    <div class="logo-subtitle">AI-Powered FPL Advisor</div>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="current-gw">
+                    <div class="gw-dot"></div>
+                    <span id="currentGwDisplay">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <nav class="nav-tabs">
+        <div class="nav-tabs-inner">
+            <button class="nav-tab active primary" data-section="my-team">
+                <span class="nav-icon">🎯</span> My Team
+            </button>
+            <button class="nav-tab" data-section="planner">
+                <span class="nav-icon">🧠</span> Planner
+            </button>
+            <button class="nav-tab" data-section="rankings">
+                <span class="nav-icon">📊</span> Rankings
+            </button>
+            <button class="nav-tab" data-section="fixtures">
+                <span class="nav-icon">📅</span> Fixtures
+            </button>
+            <button class="nav-tab" data-section="backtest">
+                <span class="nav-icon">🔬</span> Backtest
+            </button>
+
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <!-- MY TEAM SECTION -->
+        <section id="my-team" class="section active">
+            <!-- Full input section (shown initially or when changing team) -->
+            <div class="team-input-section" id="teamInputSection">
+                <div class="team-input-title">🚀 Enter Your FPL Team ID</div>
+                <div class="team-input-subtitle">Get AI-powered stats, transfer suggestions, optimal captain picks, and season analysis</div>
+                <div class="team-input-row">
+                    <input type="number" id="teamIdInput" placeholder="e.g. 1234567" onkeypress="if(event.key==='Enter') loadMyTeam()">
+                    <button class="btn btn-primary" onclick="loadMyTeam()">⚡ Analyze</button>
+                </div>
+                <div class="team-input-help">
+                    Find your ID: <a href="https://fantasy.premierleague.com" target="_blank">fantasy.premierleague.com</a> → Points → Check URL
+                </div>
+            </div>
+
+            <div id="myTeamContent" style="display: none;">
+                <!-- Compact Team Banner -->
+                <div class="team-banner" id="teamBanner">
+                    <div class="team-banner-left">
+                        <div class="team-banner-name">
+                            <span class="team" id="bannerTeamName">Team Name</span>
+                            <span class="manager" id="bannerManagerName">Manager Name</span>
+                        </div>
+                        <div class="team-banner-stats">
+                            <div class="team-banner-stat">
+                                <div class="value" id="bannerTotalPts">-</div>
+                                <div class="label">Points</div>
+                            </div>
+                            <div class="team-banner-stat">
+                                <div class="value" id="bannerOR">-</div>
+                                <div class="label">Rank</div>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn btn-sm" onclick="showTeamInput()">✏️ Change</button>
+                </div>
+
+                <div class="rec-tabs">
+                    <button class="rec-tab active" data-panel="squad">⚡ GW Optimizer</button>
+                    <button class="rec-tab" data-panel="stats">📊 Season Analysis</button>
+                </div>
+
+                <div id="squadPanel" class="rec-panel active">
+                    <div class="optimizer-grid">
+                        <div class="pitch-container">
+                            <div class="pitch-header">
+                                <div class="pitch-header-left">
+                                    <span class="gw-badge" id="optimizerGwBadge">GW --</span>
+                                    <span class="pitch-xpts">xPts: <strong id="optimizerTotalXpts">--</strong></span>
+                                </div>
+                                <div class="pitch-header-right" id="teamValueHeader">
+                                    <div class="team-stat">
+                                        <span class="label">Squad</span>
+                                        <span class="value" id="squadValueDisplay">--</span>
+                                    </div>
+                                    <div class="team-stat">
+                                        <span class="label">Bank</span>
+                                        <span class="value" id="bankDisplay">--</span>
+                                    </div>
+                                    <div class="team-stat">
+                                        <span class="label">FT</span>
+                                        <span class="value" id="ftDisplay">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="pitch-visual" id="squadPitch"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="statsPanel" class="rec-panel">
+                    <div class="stats-loading" id="statsLoading">
+                        <div class="loading-spinner"></div>
+                        <span class="stats-loading-text">Loading season stats...</span>
+                        <span class="stats-loading-sub">Analyzing transfers, bench points, and chip usage</span>
+                    </div>
+                    
+                    <div id="statsContent" style="display: none;">
+                        <!-- Chip Analysis Buttons -->
+                        <div class="chip-analysis-section">
+                            <h3>🎫 Chip Performance</h3>
+                            <div class="chip-buttons-grid-8" id="chipButtonsGrid">
+                                <div class="chip-btn unused" id="chipBtnWC1" data-chip="wildcard1">
+                                    <div class="chip-btn-header"><span class="chip-badge wc">WC1</span><span class="chip-status">Not Used</span></div>
+                                    <div class="chip-btn-value">-</div>
+                                    <div class="chip-btn-label">net pts (5 GW)</div>
+                                </div>
+                                <div class="chip-btn unused" id="chipBtnWC2" data-chip="wildcard2">
+                                    <div class="chip-btn-header"><span class="chip-badge wc">WC2</span><span class="chip-status">Not Used</span></div>
+                                    <div class="chip-btn-value">-</div>
+                                    <div class="chip-btn-label">net pts (5 GW)</div>
+                                </div>
+                                <div class="chip-btn unused" id="chipBtnFH1" data-chip="freehit1">
+                                    <div class="chip-btn-header"><span class="chip-badge fh">FH1</span><span class="chip-status">Not Used</span></div>
+                                    <div class="chip-btn-value">-</div>
+                                    <div class="chip-btn-label">vs prev team</div>
+                                </div>
+                                <div class="chip-btn unused" id="chipBtnFH2" data-chip="freehit2">
+                                    <div class="chip-btn-header"><span class="chip-badge fh">FH2</span><span class="chip-status">Not Used</span></div>
+                                    <div class="chip-btn-value">-</div>
+                                    <div class="chip-btn-label">vs prev team</div>
+                                </div>
+                                <div class="chip-btn unused" id="chipBtnTC1" data-chip="tc1">
+                                    <div class="chip-btn-header"><span class="chip-badge tc">TC1</span><span class="chip-status">Not Used</span></div>
+                                    <div class="chip-btn-value">-</div>
+                                    <div class="chip-btn-label">extra pts</div>
+                                </div>
+                                <div class="chip-btn unused" id="chipBtnTC2" data-chip="tc2">
+                                    <div class="chip-btn-header"><span class="chip-badge tc">TC2</span><span class="chip-status">Not Used</span></div>
+                                    <div class="chip-btn-value">-</div>
+                                    <div class="chip-btn-label">extra pts</div>
+                                </div>
+                                <div class="chip-btn unused" id="chipBtnBB1" data-chip="bb1">
+                                    <div class="chip-btn-header"><span class="chip-badge bb">BB1</span><span class="chip-status">Not Used</span></div>
+                                    <div class="chip-btn-value">-</div>
+                                    <div class="chip-btn-label">bench pts</div>
+                                </div>
+                                <div class="chip-btn unused" id="chipBtnBB2" data-chip="bb2">
+                                    <div class="chip-btn-header"><span class="chip-badge bb">BB2</span><span class="chip-status">Not Used</span></div>
+                                    <div class="chip-btn-value">-</div>
+                                    <div class="chip-btn-label">bench pts</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Summary Cards - 5 cards including differential -->
+                        <div class="stats-summary-grid-5">
+                            <div class="stat-summary-card best">
+                                <div class="stat-summary-icon">🏆</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Best GW</div>
+                                    <div class="stat-summary-value" id="bestGwPoints">-</div>
+                                    <div class="stat-summary-sub" id="bestGwRank">GW - · Rank -</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card good">
+                                <div class="stat-summary-icon">✅</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Best Transfer</div>
+                                    <div class="stat-summary-value" id="bestTransferPts">-</div>
+                                    <div class="stat-summary-sub" id="bestTransferDetail">-</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card bad">
+                                <div class="stat-summary-icon">❌</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Worst Transfer</div>
+                                    <div class="stat-summary-value" id="worstTransferPts">-</div>
+                                    <div class="stat-summary-sub" id="worstTransferDetail">-</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card bench">
+                                <div class="stat-summary-icon">🪑</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Highest Bench</div>
+                                    <div class="stat-summary-value" id="highestBenchPts">-</div>
+                                    <div class="stat-summary-sub" id="highestBenchGw">GW -</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card differential">
+                                <div class="stat-summary-icon">💎</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Best Differential</div>
+                                    <div class="stat-summary-value" id="bestDiffPts">-</div>
+                                    <div class="stat-summary-sub" id="bestDiffDetail">-</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Second row of fun stats -->
+                        <div class="stats-summary-grid-5" style="margin-top: 0;">
+                            <div class="stat-summary-card green-arrow">
+                                <div class="stat-summary-icon">🟢</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Biggest Green</div>
+                                    <div class="stat-summary-value" id="biggestGreenValue">-</div>
+                                    <div class="stat-summary-sub" id="biggestGreenDetail">GW -</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card red-arrow">
+                                <div class="stat-summary-icon">🔴</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Biggest Red</div>
+                                    <div class="stat-summary-value" id="biggestRedValue">-</div>
+                                    <div class="stat-summary-sub" id="biggestRedDetail">GW -</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card hits">
+                                <div class="stat-summary-icon">🔻</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Total Hits</div>
+                                    <div class="stat-summary-value" id="totalHitsValue">-</div>
+                                    <div class="stat-summary-sub" id="totalHitsCost">-</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card average">
+                                <div class="stat-summary-icon">📊</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">Avg GW Points</div>
+                                    <div class="stat-summary-value" id="avgGwPoints">-</div>
+                                    <div class="stat-summary-sub" id="totalPointsSub">- total</div>
+                                </div>
+                            </div>
+                            <div class="stat-summary-card gws-played">
+                                <div class="stat-summary-icon">📅</div>
+                                <div class="stat-summary-info">
+                                    <div class="stat-summary-label">GWs Played</div>
+                                    <div class="stat-summary-value" id="gwsPlayedValue">-</div>
+                                    <div class="stat-summary-sub" id="gwsPlayedSub">gameweeks</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- OR Graph -->
+                        <div class="stats-section">
+                            <h3>📈 Overall Rank Progression</h3>
+                            <div class="chart-legend">
+                                <span class="legend-item"><span class="legend-marker" style="background: #f59e0b;">★</span> Wildcard</span>
+                                <span class="legend-item"><span class="legend-marker" style="background: #ec4899;">★</span> Triple Captain</span>
+                                <span class="legend-item"><span class="legend-marker" style="background: #3b82f6;">★</span> Bench Boost</span>
+                                <span class="legend-item"><span class="legend-marker" style="background: #8b5cf6;">★</span> Free Hit</span>
+                                <span class="legend-item"><span class="legend-marker triangle" style="border-bottom-color: #ef4444;"></span> Hit</span>
+                            </div>
+                            <div class="or-chart-container">
+                                <canvas id="orChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- RANKINGS SECTION -->
+        <section id="rankings" class="section">
+            <div class="controls-panel">
+                <div class="control-group">
+                    <label>Search Player</label>
+                    <div class="search-container" id="playerSearchContainer">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" class="search-input" id="playerSearch" placeholder="Type 3+ chars..." autocomplete="off">
+                        <button class="search-clear" id="searchClear" onclick="clearPlayerSearch()">×</button>
+                        <div class="search-dropdown" id="searchDropdown"></div>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>GW Range</label>
+                    <div class="control-row">
+                        <input type="number" id="gwStart" value="22" min="1" max="38">
+                        <span style="color: var(--text-muted)">to</span>
+                        <input type="number" id="gwEnd" value="27" min="1" max="38">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Max Price</label>
+                    <select class="filter-select" id="maxPriceFilter">
+                        <option value="7.0">All Prices</option>
+                        <option value="6.0">Under £6.0m</option>
+                        <option value="5.5">Under £5.5m</option>
+                        <option value="5.0">Under £5.0m</option>
+                        <option value="4.5">Under £4.5m</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Team</label>
+                    <select class="filter-select" id="teamFilter">
+                        <option value="">All Teams</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Max Own%</label>
+                    <select class="filter-select" id="maxOwnership">
+                        <option value="100">All</option>
+                        <option value="50">Under 50%</option>
+                        <option value="30">Under 30%</option>
+                        <option value="20">Under 20%</option>
+                        <option value="10">Under 10%</option>
+                        <option value="5">Under 5%</option>
+                        <option value="2">Under 2%</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Min Minutes</label>
+                    <select class="filter-select" id="minMinutes">
+                        <option value="0">Any</option>
+                        <option value="200">200+</option>
+                        <option value="400" selected>400+</option>
+                        <option value="600">600+</option>
+                        <option value="800">800+</option>
+                        <option value="1000">1000+</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-primary" onclick="loadRankings()">🔄 Update</button>
+                </div>
+            </div>
+
+            <!-- Admin Panel (only visible for admin manager ID) -->
+            <div class="admin-panel" id="adminPanel">
+                <div class="admin-panel-header">
+                    🔐 Admin: Team Strength Data (Analytic FPL)
+                </div>
+                <div class="admin-panel-content">
+                    <div>
+                        <textarea class="admin-textarea" id="teamStrengthInput" placeholder="Paste team data from Analytic FPL. Format (one per line):
+Arsenal,1.79,0.62
+Liverpool,1.49,0.96
+Man City,1.73,1.03
+...
+
+Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></textarea>
+                        <div class="admin-status" id="teamStrengthStatus"></div>
+                    </div>
+                    <div class="admin-actions">
+                        <button class="admin-btn" onclick="submitTeamStrength()">📊 Update Strengths</button>
+                        <button class="admin-btn secondary" onclick="viewTeamStrength()">👁️ View Current</button>
+                        <button class="admin-btn secondary" onclick="clearTeamStrength()">🗑️ Clear</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="position-tabs">
+                <button class="position-tab active" data-position="GKP">GKP</button>
+                <button class="position-tab" data-position="DEF">DEF</button>
+                <button class="position-tab" data-position="MID">MID</button>
+                <button class="position-tab" data-position="FWD">FWD</button>
+            </div>
+
+            <div class="table-container">
+                <div class="table-header">
+                    <div class="table-title">
+                        <span id="rankingsTitle">Player Rankings</span>
+                        <span class="table-count" id="rankingsCount">0 players</span>
+                    </div>
+                </div>
+                <div class="table-scroll">
+                    <table class="data-table" id="rankingsTable">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th data-sort="name">Player</th>
+                                <th data-sort="price">Price <span class="sort-icon">▼</span></th>
+                                <th data-sort="xpts" class="sorted">xPts <span class="sort-icon">▼</span></th>
+                                <th data-sort="expected_minutes">ExpMins <span class="sort-icon">▼</span></th>
+                                <th data-sort="xgi_per_90">xGI/90 <span class="sort-icon">▼</span></th>
+                                <th data-sort="bonus_per_90">Bonus/90 <span class="sort-icon">▼</span></th>
+                                <th data-sort="defcon_per_90" class="pos-col def-col mid-col">DEFCON/90 <span class="sort-icon">▼</span></th>
+                                <th data-sort="saves_per_90" class="pos-col gkp-col">Saves/90 <span class="sort-icon">▼</span></th>
+                                <th data-sort="form">Form <span class="sort-icon">▼</span></th>
+                                <th data-sort="total_points">Pts <span class="sort-icon">▼</span></th>
+                                <th data-sort="ownership">Own% <span class="sort-icon">▼</span></th>
+                                <th>Fixtures</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rankingsBody">
+                            <tr><td colspan="13" class="loading"><div class="loading-spinner"></div>Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- FIXTURES SECTION -->
+        <section id="fixtures" class="section">
+            <div class="fdr-grid-container">
+                <div class="fdr-legend">
+                    <span class="fdr-legend-label">FDR:</span>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#14532d"></div>1</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#166534"></div>2</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#15803d"></div>3</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#84cc16"></div>4</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#facc15"></div>5</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#fb923c"></div>6</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#f97316"></div>7</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#dc2626"></div>8</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#b91c1c"></div>9</div>
+                    <div class="fdr-legend-item"><div class="fdr-legend-color" style="background:#7f1d1d"></div>10</div>
+                    <span style="margin-left: 1rem; color: var(--text-muted);">| Home = no prefix, Away = @</span>
+                </div>
+                <div id="fdrGrid" class="fdr-grid">
+                    <div class="loading" style="grid-column: 1 / -1; padding: 2rem;"><div class="loading-spinner"></div></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PLANNER SECTION -->
+        <section id="planner" class="section">
+            <!-- Planner Input Row -->
+            <div class="planner-input-section" id="plannerInputSection">
+                <div class="team-input-title">🧠 Transfer Planner</div>
+                <div class="team-input-subtitle">Multi-GW transfer optimization with 3 strategy modes</div>
+                <div class="team-input-row">
+                    <input type="number" id="plannerTeamIdInput" placeholder="Manager ID" onkeypress="if(event.key==='Enter') loadPlanner()">
+                    <select id="plannerHorizonSelect" class="planner-select">
+                        <option value="3">3 GWs</option>
+                        <option value="5">5 GWs</option>
+                        <option value="8" selected>8 GWs</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="loadPlanner()">⚡ Plan</button>
+                </div>
+                
+                <!-- Pre-load Booked Transfers -->
+                <div class="planner-prebook" style="margin-top: 2rem; max-width: 500px; margin-left: auto; margin-right: auto;">
+                    <div class="planner-card-title" style="text-align: left;">📌 Pre-book Transfers (Optional)</div>
+                    <div class="prebook-help" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                        Plan transfers for specific GWs before loading. Type 3+ characters to search players.
+                    </div>
+                    <div id="preBookedList"></div>
+                    <div class="booked-form" style="grid-template-columns: 1fr 1fr 70px 36px;">
+                        <div class="autocomplete-wrapper">
+                            <input type="text" id="preBookedOut" placeholder="Out player" autocomplete="off" oninput="showAutocomplete(this, 'preBookedOutDropdown')">
+                            <div class="autocomplete-dropdown" id="preBookedOutDropdown" style="display: none;"></div>
+                        </div>
+                        <div class="autocomplete-wrapper">
+                            <input type="text" id="preBookedIn" placeholder="In player" autocomplete="off" oninput="showAutocomplete(this, 'preBookedInDropdown')">
+                            <div class="autocomplete-dropdown" id="preBookedInDropdown" style="display: none;"></div>
+                        </div>
+                        <select id="preBookedGw">
+                            <option value="23">GW23</option>
+                            <option value="24">GW24</option>
+                            <option value="25">GW25</option>
+                            <option value="26">GW26</option>
+                            <option value="27">GW27</option>
+                            <option value="28">GW28</option>
+                            <option value="29">GW29</option>
+                            <option value="30">GW30</option>
+                        </select>
+                        <button onclick="addPreBookedTransfer()">+</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Planner Loading -->
+            <div id="plannerLoading" class="loading" style="display: none;">
+                <div class="loading-spinner"></div>
+                <div style="margin-top: 1rem;">Analyzing transfer options...</div>
+            </div>
+
+            <!-- Planner Content -->
+            <div id="plannerContent" style="display: none;">
+                <!-- Top Bar -->
+                <div class="planner-topbar">
+                    <div class="planner-info-row">
+                        <button class="btn-sm" onclick="showPlannerInput()" style="margin-right: 1rem;">← Edit</button>
+                        <div class="planner-info-item">
+                            <span class="planner-info-label">Manager</span>
+                            <span class="planner-info-value" id="plannerManagerName">-</span>
+                        </div>
+                        <div class="planner-info-item">
+                            <span class="planner-info-label">Bank</span>
+                            <span class="planner-info-value" id="plannerBank">£0.0m</span>
+                        </div>
+                        <div class="planner-info-item">
+                            <span class="planner-info-label">Free Transfers</span>
+                            <span class="planner-info-value" id="plannerFT">1</span>
+                        </div>
+                        <div class="planner-info-item">
+                            <span class="planner-info-label">Planning</span>
+                            <span class="planner-info-value planner-horizon" id="plannerHorizon">GW1-GW8</span>
+                        </div>
+                    </div>
+                    <div class="planner-chips" id="plannerChips"></div>
+                </div>
+
+                <div class="planner-grid">
+                    <!-- Left Sidebar -->
+                    <div class="planner-sidebar">
+                        <!-- Squad Health -->
+                        <div class="planner-card">
+                            <div class="planner-card-title">Squad Health</div>
+                            <div class="health-score-container">
+                                <div class="health-score" id="healthScore">100</div>
+                                <div class="health-label">Health Score</div>
+                            </div>
+                            <div class="health-badges">
+                                <span class="health-badge critical"><span id="criticalCount">0</span> Critical</span>
+                                <span class="health-badge warning"><span id="warningCount">0</span> Warning</span>
+                                <span class="health-badge minor"><span id="minorCount">0</span> Minor</span>
+                            </div>
+                            <div class="issue-list" id="issueList"></div>
+                        </div>
+
+                        <!-- Chip Recommendations -->
+                        <div class="planner-card">
+                            <div class="planner-card-title">Chip Suggestions</div>
+                            <div id="chipRecommendations"></div>
+                        </div>
+
+                        <!-- Current Squad -->
+                        <div class="planner-card">
+                            <div class="planner-card-title">Current Squad</div>
+                            <div class="squad-mini" id="squadMini"></div>
+                        </div>
+
+                        <!-- Booked Transfers -->
+                        <div class="planner-card">
+                            <div class="planner-card-title">Booked Transfers</div>
+                            <div id="bookedTransfers"></div>
+                            <div class="booked-form">
+                                <input type="text" id="bookedOut" placeholder="Out player">
+                                <input type="text" id="bookedIn" placeholder="In player">
+                                <select id="bookedGw"></select>
+                                <button onclick="addBookedTransfer()">+</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Main Content -->
+                    <div class="planner-main">
+                        <!-- Strategy Cards -->
+                        <div class="strategy-container" id="strategyContainer"></div>
+
+                        <!-- Timeline -->
+                        <div class="planner-card planner-card-wide">
+                            <div class="planner-card-title">Transfer Timeline — <span id="selectedStrategyName">Balanced</span></div>
+                            <div class="timeline" id="timeline"></div>
+                        </div>
+
+                        <!-- Fixture Heatmap -->
+                        <div class="planner-card planner-card-wide">
+                            <div class="planner-card-title">Fixture Heatmap (Swing: ↑=improving, ↓=worsening)</div>
+                            <div class="heatmap-container">
+                                <table class="heatmap-table" id="heatmapTable"></table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- BACKTEST SECTION -->
+        <section id="backtest" class="section">
+            <div class="backtest-controls">
+                <div class="team-input-title">Model Accuracy Dashboard</div>
+                <div class="team-input-subtitle">
+                    Validate xPts predictions against actual results
+                    <span class="backtest-caveat">(uses current stats — look-ahead bias caveat)</span>
+                </div>
+                <div class="backtest-input-row">
+                    <label>GW Range:</label>
+                    <input type="number" id="backtestGwStart" value="1" min="1" max="38" class="gw-input">
+                    <span>to</span>
+                    <input type="number" id="backtestGwEnd" value="10" min="1" max="38" class="gw-input">
+                    <select id="backtestPosition" class="backtest-select">
+                        <option value="">All Positions</option>
+                        <option value="GKP">GKP</option>
+                        <option value="DEF">DEF</option>
+                        <option value="MID">MID</option>
+                        <option value="FWD">FWD</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="runBacktest()">Run Backtest</button>
+                </div>
+            </div>
+
+            <div id="backtestLoading" class="loading" style="display: none;">
+                <div class="loading-spinner"></div>
+                <div style="margin-top: 1rem;">Running backtest... (this may take a minute)</div>
+            </div>
+
+            <div id="backtestContent" style="display: none;">
+                <!-- Overall Metrics -->
+                <div class="backtest-metrics-row" id="backtestMetrics"></div>
+
+                <!-- Charts Grid -->
+                <div class="backtest-charts-grid">
+                    <div class="backtest-card">
+                        <div class="backtest-card-title">MAE by Position</div>
+                        <canvas id="backtestPositionChart"></canvas>
+                    </div>
+                    <div class="backtest-card">
+                        <div class="backtest-card-title">MAE by Price Tier</div>
+                        <canvas id="backtestPriceChart"></canvas>
+                    </div>
+                    <div class="backtest-card">
+                        <div class="backtest-card-title">MAE by Fixture Difficulty</div>
+                        <canvas id="backtestFdrChart"></canvas>
+                    </div>
+                    <div class="backtest-card">
+                        <div class="backtest-card-title">Component Rates (Actual)</div>
+                        <canvas id="backtestComponentChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- GW Trend -->
+                <div class="backtest-card backtest-card-wide">
+                    <div class="backtest-card-title">MAE by Gameweek</div>
+                    <canvas id="backtestGwTrendChart"></canvas>
+                </div>
+
+                <!-- Worst/Best Tables -->
+                <div class="backtest-tables-grid">
+                    <div class="backtest-card">
+                        <div class="backtest-card-title">Biggest Misses</div>
+                        <div id="backtestWorstTable"></div>
+                    </div>
+                    <div class="backtest-card">
+                        <div class="backtest-card-title">Most Accurate</div>
+                        <div id="backtestBestTable"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+    </main>
+
+</body>
+</html>

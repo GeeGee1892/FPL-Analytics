@@ -1,0 +1,43 @@
+{
+  "team_strength_import": {
+    "manager_id": 616495,
+    "teams": [
+      {"team": "Arsenal", "adjxg_for": 1.78, "adjxg_ag": 0.82, "attack_delta": -0.07, "defence_delta": 0.01, "attack_trend": -0.04, "defence_trend": 0.01},
+      {"team": "Manchester City", "adjxg_for": 1.88, "adjxg_ag": 1.17, "attack_delta": -0.07, "defence_delta": 0.04, "attack_trend": -0.04, "defence_trend": 0.02},
+      {"team": "Liverpool", "adjxg_for": 1.76, "adjxg_ag": 1.13, "attack_delta": 0.00, "defence_delta": 0.05, "attack_trend": 0.00, "defence_trend": 0.03},
+      {"team": "Chelsea", "adjxg_for": 1.65, "adjxg_ag": 1.31, "attack_delta": 0.12, "defence_delta": -0.04, "attack_trend": 0.06, "defence_trend": -0.02},
+      {"team": "Newcastle Utd", "adjxg_for": 1.50, "adjxg_ag": 1.23, "attack_delta": 0.01, "defence_delta": 0.08, "attack_trend": 0.01, "defence_trend": 0.04},
+      {"team": "Manchester Utd", "adjxg_for": 1.43, "adjxg_ag": 1.27, "attack_delta": -0.06, "defence_delta": 0.04, "attack_trend": -0.03, "defence_trend": 0.02},
+      {"team": "Aston Villa", "adjxg_for": 1.45, "adjxg_ag": 1.29, "attack_delta": 0.03, "defence_delta": 0.05, "attack_trend": 0.02, "defence_trend": 0.03},
+      {"team": "Brighton", "adjxg_for": 1.45, "adjxg_ag": 1.41, "attack_delta": 0.07, "defence_delta": 0.06, "attack_trend": 0.04, "defence_trend": 0.03},
+      {"team": "Tottenham", "adjxg_for": 1.46, "adjxg_ag": 1.41, "attack_delta": 0.02, "defence_delta": -0.02, "attack_trend": 0.01, "defence_trend": -0.01},
+      {"team": "Crystal Palace", "adjxg_for": 1.37, "adjxg_ag": 1.34, "attack_delta": -0.03, "defence_delta": -0.10, "attack_trend": -0.02, "defence_trend": -0.05},
+      {"team": "Brentford", "adjxg_for": 1.45, "adjxg_ag": 1.46, "attack_delta": 0.03, "defence_delta": 0.07, "attack_trend": 0.02, "defence_trend": 0.04},
+      {"team": "Bournemouth", "adjxg_for": 1.38, "adjxg_ag": 1.44, "attack_delta": 0.13, "defence_delta": 0.01, "attack_trend": 0.07, "defence_trend": 0.01},
+      {"team": "Fulham", "adjxg_for": 1.30, "adjxg_ag": 1.40, "attack_delta": 0.06, "defence_delta": 0.01, "attack_trend": 0.03, "defence_trend": 0.01},
+      {"team": "Everton", "adjxg_for": 1.14, "adjxg_ag": 1.36, "attack_delta": 0.11, "defence_delta": 0.01, "attack_trend": 0.06, "defence_trend": 0.01},
+      {"team": "Nott'ham Forest", "adjxg_for": 1.17, "adjxg_ag": 1.46, "attack_delta": 0.02, "defence_delta": -0.02, "attack_trend": 0.01, "defence_trend": -0.01},
+      {"team": "Leeds United", "adjxg_for": 1.14, "adjxg_ag": 1.47, "attack_delta": -0.02, "defence_delta": 0.09, "attack_trend": -0.01, "defence_trend": 0.05},
+      {"team": "West Ham", "adjxg_for": 1.21, "adjxg_ag": 1.61, "attack_delta": -0.01, "defence_delta": -0.01, "attack_trend": -0.01, "defence_trend": -0.01},
+      {"team": "Wolves", "adjxg_for": 1.11, "adjxg_ag": 1.53, "attack_delta": 0.03, "defence_delta": 0.12, "attack_trend": 0.02, "defence_trend": 0.06},
+      {"team": "Sunderland", "adjxg_for": 0.90, "adjxg_ag": 1.46, "attack_delta": 0.08, "defence_delta": 0.01, "attack_trend": 0.04, "defence_trend": 0.01},
+      {"team": "Burnley", "adjxg_for": 0.85, "adjxg_ag": 1.82, "attack_delta": 0.01, "defence_delta": 0.00, "attack_trend": 0.01, "defence_trend": 0.00}
+    ]
+  },
+  "fixture_xg_import": {
+    "manager_id": 616495,
+    "source": "analytic_fpl",
+    "fixtures": [
+      {"home_team": "Brighton", "away_team": "Everton", "gameweek": 24, "home_xg": 1.54, "away_xg": 0.95},
+      {"home_team": "Chelsea", "away_team": "West Ham", "gameweek": 24, "home_xg": 2.10, "away_xg": 1.11},
+      {"home_team": "Leeds United", "away_team": "Arsenal", "gameweek": 24, "home_xg": 0.78, "away_xg": 1.74},
+      {"home_team": "Liverpool", "away_team": "Newcastle Utd", "gameweek": 24, "home_xg": 1.71, "away_xg": 1.06},
+      {"home_team": "Wolves", "away_team": "Bournemouth", "gameweek": 24, "home_xg": 1.32, "away_xg": 1.20},
+      {"home_team": "Aston Villa", "away_team": "Brentford", "gameweek": 24, "home_xg": 1.66, "away_xg": 1.17},
+      {"home_team": "Manchester Utd", "away_team": "Fulham", "gameweek": 24, "home_xg": 1.71, "away_xg": 1.04},
+      {"home_team": "Nott'ham Forest", "away_team": "Crystal Palace", "gameweek": 24, "home_xg": 1.40, "away_xg": 1.41},
+      {"home_team": "Tottenham", "away_team": "Manchester City", "gameweek": 24, "home_xg": 1.36, "away_xg": 1.91},
+      {"home_team": "Sunderland", "away_team": "Burnley", "gameweek": 24, "home_xg": 1.25, "away_xg": 0.83}
+    ]
+  }
+}
