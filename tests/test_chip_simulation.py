@@ -581,5 +581,11 @@ class TestChipOverrides:
         assert 25 in gw_actions
         assert gw_actions[25]["action"] == "wildcard"
         assert "wildcard_squad" in gw_actions[25]
-        assert len(gw_actions[25]["wildcard_squad"]) == 2
-        assert gw_actions[25]["wildcard_squad"][0]["name"] == "Player1"
+        wc_data = gw_actions[25]["wildcard_squad"]
+        # v5.3: wildcard_squad is now a dict with players, formation, captain info
+        assert "players" in wc_data
+        assert len(wc_data["players"]) == 2
+        assert wc_data["players"][0]["name"] == "Player1" or wc_data["players"][1]["name"] == "Player1"
+        assert "formation" in wc_data
+        assert "captain_name" in wc_data
+        assert wc_data["captain_name"] is not None

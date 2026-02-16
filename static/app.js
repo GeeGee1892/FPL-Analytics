@@ -9,6 +9,14 @@ let fixturesLoaded = false;
 let rankingsLoaded = false;
 let bootstrapLoaded = false;
 
+// v5.3: Reusable error display for all sections
+function showSectionError(containerId, message, retryFnName) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const retryBtn = retryFnName ? `<button class="error-retry-btn" onclick="${retryFnName}()">Retry</button>` : '';
+    container.innerHTML = `<div class="section-error"><div class="section-error-icon">⚠️</div><p class="section-error-msg">${message}</p>${retryBtn}</div>`;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll('.nav-tab').forEach(tab => {
         tab.addEventListener('click', async () => {
@@ -1327,6 +1335,7 @@ async function loadRankings() {
         document.getElementById('rankingsBody').innerHTML = html || '<tr><td colspan="13" class="empty-state">No players found</td></tr>';
     } catch (error) {
         console.error('Failed to load rankings:', error);
+        document.getElementById('rankingsBody').innerHTML = `<tr><td colspan="13"><div class="section-error"><div class="section-error-icon">⚠️</div><p class="section-error-msg">Failed to load rankings: ${error.message}</p><button class="error-retry-btn" onclick="loadRankings()">Retry</button></div></td></tr>`;
     }
 }
 
@@ -1864,8 +1873,9 @@ async function loadPlanner() {
 
     } catch (err) {
         console.error('Planner error:', err);
-        alert('Failed to load planner: ' + err.message);
         document.getElementById('plannerContent').style.display = 'none';
+        showSectionError('plannerContent', `Failed to load planner: ${err.message}`, 'loadPlanner');
+        document.getElementById('plannerContent').style.display = 'block';
         plannerData = null;
         plannerLoaded = false;
         document.getElementById('plannerInputSection').style.display = 'block';
@@ -2091,28 +2101,36 @@ function renderTimeline() {
         }
 
         if (gw.action === 'wildcard') {
-            const wcSquad = gw.wildcard_squad;
-            if (wcSquad && wcSquad.length > 0) {
+            const wcData = gw.wildcard_squad;
+            if (wcData && wcData.players && wcData.players.length > 0) {
+                const formStr = wcData.formation || '?';
+                const capName = wcData.captain_name || '?';
                 actionHtml += `<button class="wc-squad-toggle" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.textContent = this.nextElementSibling.style.display === 'none' ? 'View WC Squad ▼' : 'Hide WC Squad ▲'">View WC Squad ▼</button>`;
                 actionHtml += `<div class="wc-squad-panel" style="display:none;">`;
+                actionHtml += `<div class="wc-squad-meta"><span class="wc-formation">${formStr}</span> <span class="wc-captain">C: ${capName}</span> <span class="wc-cost">£${wcData.total_cost.toFixed(1)}m</span></div>`;
                 const posOrder = {'GKP':1,'DEF':2,'MID':3,'FWD':4};
-                const sorted = [...wcSquad].sort((a,b) => (posOrder[a.position]||9) - (posOrder[b.position]||9));
+                const sorted = [...wcData.players].sort((a,b) => (posOrder[a.position]||9) - (posOrder[b.position]||9));
                 sorted.forEach(p => {
-                    actionHtml += `<div class="wc-squad-player"><span class="wc-pos">${p.position}</span> <span class="wc-name">${p.name}</span> <span class="wc-team">${p.team}</span> <span class="wc-price">£${p.price.toFixed(1)}m</span></div>`;
+                    const capBadge = p.is_captain ? ' <span class="captain-badge">C</span>' : '';
+                    actionHtml += `<div class="wc-squad-player"><span class="wc-pos">${p.position}</span> <span class="wc-name">${p.name}${capBadge}</span> <span class="wc-team">${p.team}</span> <span class="wc-xpts">${p.xpts} xPts</span> <span class="wc-price">£${p.price.toFixed(1)}m</span></div>`;
                 });
                 actionHtml += `</div>`;
             } else {
                 actionHtml += '<span class="action-badge roll">Squad rebuilt</span>';
             }
         } else if (gw.action === 'freehit') {
-            const fhSquad = gw.freehit_squad;
-            if (fhSquad && fhSquad.length > 0) {
+            const fhData = gw.freehit_squad;
+            if (fhData && fhData.players && fhData.players.length > 0) {
+                const formStr = fhData.formation || '?';
+                const capName = fhData.captain_name || '?';
                 actionHtml += `<button class="wc-squad-toggle" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.textContent = this.nextElementSibling.style.display === 'none' ? 'View FH Squad ▼' : 'Hide FH Squad ▲'">View FH Squad ▼</button>`;
                 actionHtml += `<div class="wc-squad-panel" style="display:none;">`;
+                actionHtml += `<div class="wc-squad-meta"><span class="wc-formation">${formStr}</span> <span class="wc-captain">C: ${capName}</span> <span class="wc-cost">£${fhData.total_cost.toFixed(1)}m</span></div>`;
                 const posOrder = {'GKP':1,'DEF':2,'MID':3,'FWD':4};
-                const sorted = [...fhSquad].sort((a,b) => (posOrder[a.position]||9) - (posOrder[b.position]||9));
+                const sorted = [...fhData.players].sort((a,b) => (posOrder[a.position]||9) - (posOrder[b.position]||9));
                 sorted.forEach(p => {
-                    actionHtml += `<div class="wc-squad-player"><span class="wc-pos">${p.position}</span> <span class="wc-name">${p.name}</span> <span class="wc-team">${p.team}</span> <span class="wc-price">£${p.price.toFixed(1)}m</span></div>`;
+                    const capBadge = p.is_captain ? ' <span class="captain-badge">C</span>' : '';
+                    actionHtml += `<div class="wc-squad-player"><span class="wc-pos">${p.position}</span> <span class="wc-name">${p.name}${capBadge}</span> <span class="wc-team">${p.team}</span> <span class="wc-xpts">${p.xpts} xPts</span> <span class="wc-price">£${p.price.toFixed(1)}m</span></div>`;
                 });
                 actionHtml += `</div>`;
             } else {

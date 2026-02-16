@@ -417,9 +417,19 @@ def detect_backup_status(player: Dict, all_players: List[Dict], current_gw: int)
         if starter_start_rate > 0.70 and player_start_rate < 0.15:
             return True, 0.75, f"low_start_rate"
 
+        # v5.3: Catch rotation players — starter has 2x+ minutes and high start rate
+        # Players like Chukwueze/Nmecha who get 300-500 mins but a starter has 1000+
+        if starter_mins > 500 and total_minutes < starter_mins * 0.50:
+            if starter_start_rate > 0.55 and player_start_rate < 0.35:
+                return True, 0.55, f"rotation_behind_{starter.get('web_name', '?')}"
+
         # If ownership is <1% and a teammate has >10%
         if ownership < 1 and starter_ownership > 10:
             return True, 0.70, f"ownership_suggests_backup"
+
+        # v5.3: Low ownership + low start rate = fringe player
+        if ownership < 3 and player_start_rate < 0.25 and current_gw > 10:
+            return True, 0.50, f"fringe_low_ownership"
 
         # Very low minutes with decent GWs played
         if current_gw > 10 and total_minutes < 100 and starts <= 1:
@@ -972,11 +982,11 @@ def calculate_expected_minutes(
             # v5.2: Lowered from 0.75 — catch more rotation players
             if position == 1:  # GKP backups get almost nothing
                 return 0, f"backup_{backup_reason}"
-            else:  # Outfield backups might get cameos
-                return 10, f"backup_{backup_reason}"
+            else:  # v5.3: Outfield backups — 5 mins (was 10)
+                return 5, f"backup_{backup_reason}"
         elif is_backup and confidence >= 0.40:
-            # v5.2: Lowered from 0.50 — flag borderline rotation risks
-            return 15, f"likely_backup_{backup_reason}"
+            # v5.3: Likely backups — 10 mins (was 15)
+            return 10, f"likely_backup_{backup_reason}"
 
     # ==================== LAYER 4: INSUFFICIENT DATA ====================
     if starts == 0:
@@ -1024,13 +1034,16 @@ def calculate_expected_minutes(
             confidence = 0.95
 
         # Pattern 2: ROTATION RISK (inconsistent starts)
+        # v5.3: Tightened cap from 45 to 35 — rotation players shouldn't get half-game assumption
         elif last_4_starts <= 1 and (last_4_subs >= 2 or last_4_zeros >= 2):
-            base_mins = min(45, last_4_avg * 1.1)  # Slightly optimistic but capped
+            base_mins = min(35, last_4_avg * 0.9)  # Conservative: 90% of recent avg, cap 35
             reason = "rotation_risk"
             confidence = 0.6
 
         # Pattern 3: REGULAR STARTER (plays most games, sometimes subbed)
-        elif last_4_starts >= 2 and mins_per_start >= 75:
+        # v5.3: Also require season start_rate >= 0.40 to avoid classifying
+        # rotation players with a lucky run of 2 starts as "regular starters"
+        elif last_4_starts >= 2 and mins_per_start >= 75 and start_rate >= 0.40:
             base_mins = last_4_avg * 0.4 + mins_per_start * 0.6  # Blend recent and season
             reason = "regular_starter"
             confidence = 0.85
@@ -1331,6 +1344,26 @@ def calculate_expected_points(
         yellow_per_90 = 0.50 * historical_yellow_rate + 0.50 * position_yellow_baseline
     else:
         yellow_per_90 = position_yellow_baseline
+
+    # ==================== v5.3: RED CARD MODEL ====================
+    # Red cards are rare (~0.03 per 90 league average) but cost -3 pts each
+    # Plus the player gets auto-suspended for the next GW
+    historical_red_rate = red_cards / mins90 if mins90 > 1 else 0
+
+    # Position-based red card baseline (from PL averages)
+    position_red_baseline = {
+        1: 0.005,   # GKP - extremely rare
+        2: 0.035,   # DEF - last-man challenges, professional fouls
+        3: 0.025,   # MID - mixed
+        4: 0.020,   # FWD - occasional violent conduct
+    }.get(position, 0.025)
+
+    if mins90 >= 15:
+        red_per_90 = 0.60 * historical_red_rate + 0.40 * position_red_baseline
+    elif mins90 >= 5:
+        red_per_90 = 0.40 * historical_red_rate + 0.60 * position_red_baseline
+    else:
+        red_per_90 = position_red_baseline
 
     # Get team's defensive data for CS rate and DEFCON workload dampening
     # v4.3.3b: Moved up before DEFCON call so we can pass team_xga
@@ -1835,6 +1868,11 @@ def calculate_expected_points(
         # Yellow cards: -1 per yellow
         fixture_yellow_deduction = yellow_per_90 * 1.0
 
+        # v5.3: Red cards: -3 per red card (FPL rule)
+        # Red cards also mean early exit (~reduced to ~45 min avg when sent off)
+        # but that's captured in the appearance point probability
+        fixture_red_deduction = red_per_90 * 3.0
+
         # Own goals: -2 per OG (GKP/DEF only, but can happen to anyone technically)
         fixture_og_deduction = (og_per_90 * 2.0) if position in [1, 2] else (og_per_90 * 2.0 * 0.2)
 
@@ -1855,6 +1893,7 @@ def calculate_expected_points(
             fixture_save_pts +
             fixture_defcon_pts -
             fixture_yellow_deduction -
+            fixture_red_deduction -
             fixture_og_deduction -
             fixture_goals_conceded_deduction
         )
@@ -1960,6 +1999,7 @@ def calculate_expected_points(
 
     # Deductions (continuous - exposure-based)
     yellow_deduction_per_fix = yellow_per_90 * minutes_factor
+    red_deduction_per_fix = red_per_90 * 3.0 * minutes_factor  # v5.3: -3 per red card
     og_deduction_per_fix = (og_per_90 * 2.0 * minutes_factor) if position in [1, 2] else (og_per_90 * 2.0 * 0.2 * minutes_factor)
 
     # Goals conceded deduction (uses Poisson model)
@@ -1979,6 +2019,7 @@ def calculate_expected_points(
         save_xpts_per_fix +
         defcon_xpts_per_fix -
         yellow_deduction_per_fix -
+        red_deduction_per_fix -
         og_deduction_per_fix -
         gc_deduction_per_fix
     )

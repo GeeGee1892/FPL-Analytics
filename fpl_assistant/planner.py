@@ -1081,11 +1081,32 @@ def analyze_squad_health(
             ))
 
         # 4. FORM CONCERNS
+        # Compare form (pts/game last 30 days) against per-fixture xPts rate
+        # Both are now on the same scale: points per game
         form = float(player.get("form", 0) or 0)
         xpts = player.get("xpts", 0)
+        num_fixtures = max(1, len([gw for gw in range(current_gw, horizon_end + 1)
+                                   if team_gw_fixtures[team_id][gw] > 0]))
+        xpts_per_match = xpts / num_fixtures if num_fixtures > 0 else 0
 
-        # If form significantly underperforms xPts projection, flag it
-        if form < 3.0 and xpts > 4.0:
+        # Flag if form is significantly below per-match xPts projection
+        # Both are now pts/game so the comparison is meaningful
+        if form < 3.0 and xpts_per_match > 3.5:
+            gap = xpts_per_match - form
+            severity = "warning" if gap > 2.5 else "minor"
+            issues.append(SquadHealthIssue(
+                player_id=player_id,
+                player_name=name,
+                team=team,
+                position=position,
+                issue_type="form_concern",
+                severity=severity,
+                description=f"Form ({form:.1f} pts/gm) below model ({xpts_per_match:.1f} xPts/gm)",
+                affected_gws=[],
+                recommendation="Underlying stats suggest better output - likely variance, monitor"
+            ))
+        # Also flag players with very low expected output who are starters
+        elif xpts_per_match < 2.5 and expected_mins >= 60:
             issues.append(SquadHealthIssue(
                 player_id=player_id,
                 player_name=name,
@@ -1093,9 +1114,9 @@ def analyze_squad_health(
                 position=position,
                 issue_type="form_concern",
                 severity="minor",
-                description=f"Form ({form:.1f}) below expected ({xpts:.1f} xPts)",
+                description=f"Low projected output ({xpts_per_match:.1f} xPts/gm) despite regular starts",
                 affected_gws=[],
-                recommendation="May be due to bad luck (xG > G) - monitor but don't panic"
+                recommendation="Consider upgrade to higher-ceiling player"
             ))
 
     # Sort by severity: critical > warning > minor
@@ -1720,7 +1741,13 @@ def beam_search_strategy(
 
         for path in beam:
             # Cache candidate generation by squad state
-            cache_key = (path.squad_key(), frozenset(path.transferred_out_ids))
+            # v5.3: Include excluded_in_ids in cache key — different paths may have
+            # different players already transferred in, affecting available candidates
+            cache_key = (
+                path.squad_key(),
+                frozenset(path.transferred_out_ids),
+                frozenset(path.transferred_in_ids),
+            )
             if cache_key in candidate_cache:
                 candidates = candidate_cache[cache_key]
             else:
@@ -1855,6 +1882,78 @@ def beam_search_strategy(
     return beam[0] if beam else TransferPath(initial_squad, initial_bank, initial_ft)
 
 
+def _build_chip_squad_display(squad: List[Dict]) -> Dict:
+    """Build squad display data with captain and formation for WC/FH squads."""
+    # Captain = highest xPts player in the squad
+    captain = max(squad, key=lambda p: float(p.get("xpts", 0) or 0)) if squad else None
+
+    # Count positions for formation (DEF-MID-FWD for starting XI)
+    pos_map = {"GKP": 0, "DEF": 0, "MID": 0, "FWD": 0}
+    for p in squad:
+        pos = p.get("position", "?")
+        if pos in pos_map:
+            pos_map[pos] += 1
+
+    # Formation for best XI: 1 GKP, then pick best 10 outfield by xPts
+    # Constraints: min 3 DEF, min 2 MID, min 1 FWD
+    players = sorted(squad, key=lambda p: float(p.get("xpts", 0) or 0), reverse=True)
+    xi_gkp = [p for p in players if p.get("position") == "GKP"][:1]
+    outfield = [p for p in players if p.get("position") != "GKP"]
+
+    # Greedy XI selection respecting FPL constraints
+    xi_def = sorted([p for p in outfield if p.get("position") == "DEF"],
+                    key=lambda p: float(p.get("xpts", 0) or 0), reverse=True)
+    xi_mid = sorted([p for p in outfield if p.get("position") == "MID"],
+                    key=lambda p: float(p.get("xpts", 0) or 0), reverse=True)
+    xi_fwd = sorted([p for p in outfield if p.get("position") == "FWD"],
+                    key=lambda p: float(p.get("xpts", 0) or 0), reverse=True)
+
+    # Start with minimums: 3 DEF, 2 MID, 1 FWD = 6 outfield, need 4 more
+    selected_def = xi_def[:3]
+    selected_mid = xi_mid[:2]
+    selected_fwd = xi_fwd[:1]
+    remaining = xi_def[3:] + xi_mid[2:] + xi_fwd[1:]
+    remaining.sort(key=lambda p: float(p.get("xpts", 0) or 0), reverse=True)
+    # Max constraints: 5 DEF, 5 MID, 3 FWD
+    slots = 4
+    for p in remaining:
+        if slots <= 0:
+            break
+        pos = p.get("position")
+        if pos == "DEF" and len(selected_def) < 5:
+            selected_def.append(p)
+            slots -= 1
+        elif pos == "MID" and len(selected_mid) < 5:
+            selected_mid.append(p)
+            slots -= 1
+        elif pos == "FWD" and len(selected_fwd) < 3:
+            selected_fwd.append(p)
+            slots -= 1
+
+    formation = f"{len(selected_def)}-{len(selected_mid)}-{len(selected_fwd)}"
+
+    squad_data = [
+        {
+            "id": p.get("id"),
+            "name": p.get("name", p.get("web_name", "?")),
+            "team": p.get("team", p.get("team_short", "?")),
+            "position": p.get("position", "?"),
+            "price": p.get("price", 0),
+            "xpts": round(float(p.get("xpts", 0) or 0), 1),
+            "is_captain": captain and p.get("id") == captain.get("id"),
+        }
+        for p in squad
+    ]
+
+    return {
+        "players": squad_data,
+        "formation": formation,
+        "captain_id": captain.get("id") if captain else None,
+        "captain_name": captain.get("name", captain.get("web_name", "?")) if captain else None,
+        "total_cost": round(sum(p.get("price", 0) for p in squad), 1),
+    }
+
+
 def convert_path_to_gw_actions(
     path: TransferPath,
     current_gw: int,
@@ -1897,35 +1996,17 @@ def convert_path_to_gw_actions(
             gw_action["action"] = "wildcard"
             gw_action["reasoning"] = "Wildcard active — squad rebuilt"
             ft = 1
-            # Include the new squad for display
+            # v5.3: Include WC squad with captain and formation
             wc_act = next((a for a in gw_acts if a["type"] == "wildcard"), None)
             if wc_act and wc_act.get("new_squad"):
-                gw_action["wildcard_squad"] = [
-                    {
-                        "id": p.get("id"),
-                        "name": p.get("name", p.get("web_name", "?")),
-                        "team": p.get("team", p.get("team_short", "?")),
-                        "position": p.get("position", "?"),
-                        "price": p.get("price", 0),
-                    }
-                    for p in wc_act["new_squad"]
-                ]
+                gw_action["wildcard_squad"] = _build_chip_squad_display(wc_act["new_squad"])
         elif is_fh:
             gw_action["action"] = "freehit"
             gw_action["reasoning"] = "Free Hit — temporary optimal squad"
-            # Include the FH squad for display
+            # v5.3: Include FH squad with captain and formation
             fh_act = next((a for a in gw_acts if a["type"] == "freehit"), None)
             if fh_act and fh_act.get("new_squad"):
-                gw_action["freehit_squad"] = [
-                    {
-                        "id": p.get("id"),
-                        "name": p.get("name", p.get("web_name", "?")),
-                        "team": p.get("team", p.get("team_short", "?")),
-                        "position": p.get("position", "?"),
-                        "price": p.get("price", 0),
-                    }
-                    for p in fh_act["new_squad"]
-                ]
+                gw_action["freehit_squad"] = _build_chip_squad_display(fh_act["new_squad"])
             # FT unchanged after FH
         elif transfers:
             gw_action["action"] = "transfer"

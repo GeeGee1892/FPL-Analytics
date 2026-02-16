@@ -1,5 +1,12 @@
+import json
+import os
+import logging
 from datetime import datetime
 from typing import Optional, Dict, Tuple, List
+
+logger = logging.getLogger("fpl_assistant")
+
+PLAYER_HISTORY_CACHE_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "player_history_cache.json")
 
 
 class DataCache:
@@ -93,6 +100,52 @@ class DataCache:
         for pid in stale_ids:
             self.player_histories.pop(pid, None)
             self.player_histories_last_update.pop(pid, None)
+
+    # v5.3: Disk persistence for player history cache
+    def save_player_histories_to_disk(self):
+        """Persist player history cache to disk for faster startup."""
+        try:
+            os.makedirs(os.path.dirname(PLAYER_HISTORY_CACHE_FILE), exist_ok=True)
+            data = {
+                "histories": {str(k): v for k, v in self.player_histories.items()},
+                "timestamps": {str(k): v.isoformat() for k, v in self.player_histories_last_update.items()},
+                "saved_at": datetime.now().isoformat(),
+            }
+            with open(PLAYER_HISTORY_CACHE_FILE, "w") as f:
+                json.dump(data, f)
+            logger.info(f"Saved {len(self.player_histories)} player histories to disk")
+        except Exception as e:
+            logger.warning(f"Failed to save player history cache: {e}")
+
+    def load_player_histories_from_disk(self):
+        """Load player history cache from disk if available and fresh."""
+        try:
+            if not os.path.exists(PLAYER_HISTORY_CACHE_FILE):
+                return False
+            with open(PLAYER_HISTORY_CACHE_FILE, "r") as f:
+                data = json.load(f)
+
+            saved_at = datetime.fromisoformat(data.get("saved_at", "2000-01-01"))
+            # Only use if saved within last 6 hours
+            if (datetime.now() - saved_at).total_seconds() > 21600:
+                logger.info("Disk cache too old, ignoring")
+                return False
+
+            histories = data.get("histories", {})
+            timestamps = data.get("timestamps", {})
+
+            for pid_str, hist in histories.items():
+                pid = int(pid_str)
+                self.player_histories[pid] = hist
+                ts_str = timestamps.get(pid_str)
+                if ts_str:
+                    self.player_histories_last_update[pid] = datetime.fromisoformat(ts_str)
+
+            logger.info(f"Loaded {len(histories)} player histories from disk cache")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to load player history cache from disk: {e}")
+            return False
 
 
 cache = DataCache()

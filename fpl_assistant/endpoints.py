@@ -296,12 +296,33 @@ async def lifespan(app: FastAPI):
         headers={"User-Agent": "FPL-Assistant/4.2"}
     )
 
+    # v5.3: Load player history cache from disk for faster startup
+    try:
+        cache.load_player_histories_from_disk()
+    except Exception as e:
+        logger.warning(f"Failed to load disk cache: {e}")
+
     # Auto-load import data from file (team strength + fixture xG)
     try:
         await load_import_data_from_file()
         logger.info("Import data auto-load completed")
     except Exception as e:
         logger.error(f"Import data auto-load failed: {e}")
+
+    # v5.3: Populate team mappings from bootstrap API (removes reliance on hardcoded IDs)
+    try:
+        bootstrap = await fetch_fpl_data()
+        if bootstrap and "teams" in bootstrap:
+            from fpl_assistant.constants import TEAM_NAME_MAPPING
+            for team in bootstrap["teams"]:
+                short = team.get("short_name", "")
+                tid = team.get("id", 0)
+                name = team.get("name", "")
+                if short and tid:
+                    TEAM_NAME_MAPPING[short] = (tid, name)
+            logger.info(f"Team mappings updated from bootstrap: {len(bootstrap['teams'])} teams")
+    except Exception as e:
+        logger.warning(f"Bootstrap team mapping failed (using hardcoded fallback): {e}")
 
     # Initialize FDR data (will incorporate any loaded team strength)
     try:
@@ -312,7 +333,12 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown - close HTTP client
+    # Shutdown - save caches and close HTTP client
+    try:
+        cache.save_player_histories_to_disk()
+    except Exception as e:
+        logger.warning(f"Failed to save disk cache on shutdown: {e}")
+
     if services_module.http_client:
         await services_module.http_client.aclose()
         services_module.http_client = None
@@ -1590,15 +1616,23 @@ async def get_manager_stats(manager_id: int):
             highest_bench = {"gw": gw_data["event"], "points": bench_pts}
 
     # Process transfers with ACTUAL points difference (next GW)
-    # Fetch player histories for all transferred players
+    # v5.3: Collect ALL player IDs needed across the entire function and batch-fetch
     transfer_player_ids = set()
     for t in transfers:
         transfer_player_ids.add(t.get("element_in"))
         transfer_player_ids.add(t.get("element_out"))
 
-    # Fetch histories in parallel (limit to avoid too many requests)
+    # Also pre-collect Haaland ID for captain comparison
+    haaland_id = None
+    for pid, el in elements.items():
+        if el.get("web_name", "").lower() == "haaland":
+            haaland_id = pid
+            transfer_player_ids.add(pid)
+            break
+
+    # Fetch ALL histories in parallel (removed [:40] limit)
     player_histories = {}
-    player_ids_to_fetch = [pid for pid in list(transfer_player_ids)[:40] if pid]
+    player_ids_to_fetch = [pid for pid in transfer_player_ids if pid]
 
     # Fetch histories concurrently
     async def fetch_history_safe(pid):
@@ -1948,20 +1982,11 @@ async def get_manager_stats(manager_id: int):
         logger.error(f"Failed to calculate captain performance: {e}")
 
     # Haaland comparison - what if you captained Haaland every GW?
+    # v5.3: haaland_id already found and pre-fetched in batch above
     haaland_total_pts = 0
-    haaland_id = None
     try:
-        # Find Haaland by web_name
-        for pid, el in elements.items():
-            if el.get("web_name", "").lower() == "haaland":
-                haaland_id = pid
-                break
-
         if haaland_id:
-            haaland_hist = player_histories.get(haaland_id)
-            if not haaland_hist:
-                haaland_hist = await fetch_player_history(haaland_id)
-                player_histories[haaland_id] = haaland_hist
+            haaland_hist = player_histories.get(haaland_id, {"history": []})
 
             # Sum Haaland's captain pts (2x) for each GW the manager played
             for cap in captain_data:
@@ -2185,20 +2210,32 @@ async def get_transfer_planner(
     manager = team_data["manager"]
     bank = entry_history.get("bank", 0) / 10
 
-    # Determine free transfers
-    # FPL API doesn't directly give FT count, but we can infer from event_transfers
-    # After using transfers, FT resets to 1 unless you rolled (then 2)
-    event_transfers = entry_history.get("event_transfers", 0)
-    event_transfers_cost = entry_history.get("event_transfers_cost", 0)
+    # Determine free transfers by walking GW history
+    # v5.3: Replaced crude heuristic with exact FT tracking from GW-by-GW history
+    # FPL rules: Start with 1 FT. If you don't use it, gain 1 (max 5). If you use N, get max(1, ft-N) next GW.
+    # Wildcards/free hits reset FT to 1.
+    gw_history = sorted(history.get("current", []), key=lambda x: x.get("event", 0))
+    chips_used = {c["event"]: c["name"] for c in history.get("chips", []) if c.get("event")}
 
-    # If transfers were made this GW, FT is 1 (unless hit was taken, still 1)
-    # If no transfers made, FT could be 1-5 (rolled from previous)
-    # This is a simplification - ideally we'd track FT across GWs
-    if event_transfers > 0:
-        free_transfers = 1
-    else:
-        # Assume 2 FT if no transfer was made (common case)
-        free_transfers = 2
+    free_transfers = 1  # GW1 starts with 1 FT
+    for gw_entry in gw_history:
+        gw_num = gw_entry.get("event", 0)
+        if gw_num >= planning_gw:
+            break  # Stop at the planning GW — we want FT available for this GW
+        transfers_made = gw_entry.get("event_transfers", 0)
+        chip_this_gw = chips_used.get(gw_num, "")
+
+        if chip_this_gw in ("wildcard", "freehit"):
+            # WC/FH resets FT to 1 for next GW
+            free_transfers = 1
+        elif transfers_made == 0:
+            # Rolled — gain 1 FT (max 5)
+            free_transfers = min(free_transfers + 1, 5)
+        else:
+            # Used transfers: remaining = max(0, ft - transfers), then +1 accrual for new GW
+            # Always at least 1 FT next GW, capped at 5
+            free_transfers = min(5, max(0, free_transfers - transfers_made) + 1)
+    free_transfers = min(free_transfers, 5)  # Safety cap
 
     # Build squad with xPts
     squad = []
@@ -2313,27 +2350,46 @@ async def get_transfer_planner(
                 "gw": co.gw,
             })
 
-    # Build strategy plans
+    # Build strategy plans with timeout
+    # v5.3: 30-second timeout prevents runaway beam search
+    import asyncio
+    import concurrent.futures
+
     strategies = {}
-    for strategy_name in ["safe", "balanced", "risky"]:
-        plan = build_strategy_plan(
-            squad=squad,
-            bank=bank,
-            free_transfers=free_transfers,
-            fixtures=fixtures,
-            events=events,
-            teams_dict=teams_dict,
-            elements=elements,
-            current_gw=planning_gw,
-            horizon=horizon,
-            strategy=strategy_name,
-            available_chips=available_chips,
-            squad_health=squad_health,
-            fixture_swings=fixture_swings,
-            chip_recommendations=chip_recommendations,
-            booked_transfers=booked_transfers,
-            chip_overrides=chip_overrides,
+    loop = asyncio.get_event_loop()
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+
+    async def build_strategy_async(strategy_name):
+        return await asyncio.wait_for(
+            loop.run_in_executor(executor, lambda: build_strategy_plan(
+                squad=squad,
+                bank=bank,
+                free_transfers=free_transfers,
+                fixtures=fixtures,
+                events=events,
+                teams_dict=teams_dict,
+                elements=elements,
+                current_gw=planning_gw,
+                horizon=horizon,
+                strategy=strategy_name,
+                available_chips=available_chips,
+                squad_health=squad_health,
+                fixture_swings=fixture_swings,
+                chip_recommendations=chip_recommendations,
+                booked_transfers=booked_transfers,
+                chip_overrides=chip_overrides,
+            )),
+            timeout=30.0,
         )
+
+    for strategy_name in ["safe", "balanced", "risky"]:
+        try:
+            plan = await build_strategy_async(strategy_name)
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail=f"Planner timed out on {strategy_name} strategy. Try reducing horizon."
+            )
         strategies[strategy_name] = {
             "name": plan.name.title(),
             "description": plan.description,
