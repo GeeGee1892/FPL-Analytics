@@ -1957,17 +1957,27 @@ async def get_manager_stats(manager_id: int):
         "picks": captain_data,
     }
 
-    # Transfer P/L - cumulative impact of all transfers
+    # Transfer P/L - group by GW for clean chart
+    from collections import OrderedDict
+    gw_transfers = OrderedDict()
+    for ta in transfer_analysis:
+        gw = ta["gw"]
+        if gw not in gw_transfers:
+            gw_transfers[gw] = {"gw": gw, "pts_diff": 0, "transfers": []}
+        gw_transfers[gw]["pts_diff"] += ta["pts_diff"]
+        gw_transfers[gw]["transfers"].append(
+            f"{ta['out']['name']} → {ta['in']['name']} ({'+' if ta['pts_diff'] >= 0 else ''}{ta['pts_diff']})"
+        )
+
     transfer_pl = []
     cumulative = 0
-    for ta in transfer_analysis:
-        cumulative += ta["pts_diff"]
+    for gw_data in sorted(gw_transfers.values(), key=lambda x: x["gw"]):
+        cumulative += gw_data["pts_diff"]
         transfer_pl.append({
-            "gw": ta["gw"],
-            "in_name": ta["in"]["name"],
-            "out_name": ta["out"]["name"],
-            "pts_diff": ta["pts_diff"],
+            "gw": gw_data["gw"],
+            "pts_diff": gw_data["pts_diff"],
             "cumulative": cumulative,
+            "details": gw_data["transfers"],
         })
 
     # Total bench points across all GWs

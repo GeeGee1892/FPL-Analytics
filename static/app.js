@@ -962,26 +962,26 @@ function renderTransferPlChart(transferPl) {
         return;
     }
 
+    // Data is already grouped by GW from backend
     const finalPl = transferPl[transferPl.length - 1].cumulative;
-    const totalTransfers = transferPl.length;
-    const profitable = transferPl.filter(t => t.pts_diff > 0).length;
+    const totalGws = transferPl.length;
+    const totalTransfers = transferPl.reduce((sum, t) => sum + t.details.length, 0);
+    const profitableGws = transferPl.filter(t => t.pts_diff > 0).length;
 
     if (summaryEl) {
         const plClass = finalPl >= 0 ? 'positive' : 'negative';
         const plSign = finalPl >= 0 ? '+' : '';
         summaryEl.innerHTML = `
             <span class="transfer-pl-stat"><strong class="${plClass}">${plSign}${finalPl}</strong> net pts</span>
-            <span class="transfer-pl-stat">${totalTransfers} transfers</span>
-            <span class="transfer-pl-stat">${profitable}/${totalTransfers} profitable</span>
+            <span class="transfer-pl-stat">${totalTransfers} transfers across ${totalGws} GWs</span>
+            <span class="transfer-pl-stat">${profitableGws}/${totalGws} GWs profitable</span>
         `;
     }
 
     const labels = transferPl.map(t => `GW${t.gw}`);
     const cumulativeData = transferPl.map(t => t.cumulative);
-    const perTransferData = transferPl.map(t => t.pts_diff);
-
-    // Color bars green/red based on individual transfer P/L
-    const barColors = perTransferData.map(v => v >= 0 ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)');
+    const perGwData = transferPl.map(t => t.pts_diff);
+    const barColors = perGwData.map(v => v >= 0 ? 'rgba(16, 185, 129, 0.8)' : 'rgba(239, 68, 68, 0.8)');
 
     transferPlChart = new Chart(ctx, {
         type: 'bar',
@@ -992,18 +992,19 @@ function renderTransferPlChart(transferPl) {
                 label: 'Cumulative P/L',
                 data: cumulativeData,
                 borderColor: '#00d4aa',
-                backgroundColor: 'transparent',
+                backgroundColor: 'rgba(0, 212, 170, 0.1)',
+                fill: true,
                 tension: 0.3,
-                pointRadius: 3,
+                pointRadius: 4,
                 pointBackgroundColor: '#00d4aa',
-                yAxisID: 'y',
+                yAxisID: 'y1',
                 order: 0,
             }, {
                 type: 'bar',
-                label: 'Per Transfer',
-                data: perTransferData,
+                label: 'GW Transfer P/L',
+                data: perGwData,
                 backgroundColor: barColors,
-                borderRadius: 3,
+                borderRadius: 4,
                 yAxisID: 'y',
                 order: 1,
             }]
@@ -1019,20 +1020,27 @@ function renderTransferPlChart(transferPl) {
                         afterBody: function(context) {
                             const idx = context[0].dataIndex;
                             const t = transferPl[idx];
-                            return [`${t.out_name} → ${t.in_name}`];
+                            return t.details || [];
                         }
                     }
                 }
             },
             scales: {
                 x: {
-                    ticks: { color: '#606070' },
+                    ticks: { color: '#606070', maxRotation: 45 },
                     grid: { color: 'rgba(255,255,255,0.05)' }
                 },
                 y: {
+                    position: 'left',
                     ticks: { color: '#9090a0' },
                     grid: { color: 'rgba(255,255,255,0.05)' },
-                    title: { display: true, text: 'Points', color: '#9090a0' }
+                    title: { display: true, text: 'GW P/L', color: '#9090a0' }
+                },
+                y1: {
+                    position: 'right',
+                    ticks: { color: '#00d4aa' },
+                    grid: { drawOnChartArea: false },
+                    title: { display: true, text: 'Cumulative', color: '#00d4aa' }
                 }
             }
         }
