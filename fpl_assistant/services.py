@@ -659,7 +659,7 @@ def calculate_player_form_factor(
 
     # Get season rates
     total_minutes = int(player.get("minutes", 0) or 0)
-    if total_minutes < 270:  # Less than 3 full games
+    if total_minutes < 450:  # Less than 5 full games — need reliable season baseline
         return result  # Not enough data for season baseline
 
     mins90 = total_minutes / 90.0
@@ -968,15 +968,15 @@ def calculate_expected_minutes(
     # ==================== LAYER 3: BACKUP DETECTION ====================
     if all_players:
         is_backup, confidence, backup_reason = detect_backup_status(player, all_players, current_gw)
-        if is_backup and confidence >= 0.75:
-            # High confidence backup - very low minutes
+        if is_backup and confidence >= 0.60:
+            # v5.2: Lowered from 0.75 — catch more rotation players
             if position == 1:  # GKP backups get almost nothing
                 return 0, f"backup_{backup_reason}"
             else:  # Outfield backups might get cameos
                 return 10, f"backup_{backup_reason}"
-        elif is_backup and confidence >= 0.5:
-            # Medium confidence - some minutes possible
-            return 25, f"likely_backup_{backup_reason}"
+        elif is_backup and confidence >= 0.40:
+            # v5.2: Lowered from 0.50 — flag borderline rotation risks
+            return 15, f"likely_backup_{backup_reason}"
 
     # ==================== LAYER 4: INSUFFICIENT DATA ====================
     if starts == 0:
@@ -1036,9 +1036,10 @@ def calculate_expected_minutes(
             confidence = 0.85
 
         # Pattern 4: IMPACT SUB (regularly comes off bench)
+        # v5.2: Steeper discount — subs have inconsistent opportunities
         elif last_4_subs >= 3:
             avg_sub_mins = sum(m for m in last_4 if 0 < m < 60) / max(1, last_4_subs)
-            base_mins = avg_sub_mins * 0.8  # Slight discount
+            base_mins = min(25, avg_sub_mins * 0.5)  # Halved + capped at 25 min
             reason = "impact_sub"
             confidence = 0.7
 
@@ -1578,8 +1579,16 @@ def calculate_expected_points(
         # If player has sufficient home/away history, use split-specific rates
         # If NOT, apply fallback venue boost to capture their typical home/away swing
         # v5.0: Start with form-adjusted rates instead of raw season rates
-        fixture_xG90_base = xG90_effective
-        fixture_xA90_base = xA90_effective
+        # v5.2: Decay form toward baseline for later fixtures — hot streaks don't persist flat
+        # Fixture 0: full form effect, Fixture 7: ~30% form effect
+        form_decay = max(0.3, 1.0 - i * 0.1)
+        decayed_form = 1.0 + (player_form.combined_form - 1.0) * form_decay
+        # Recompute effective rates with decayed form (instead of flat xG90_effective)
+        fixture_xG90_decayed = xG90 * decayed_form * team_form.attack_form
+        fixture_xA90_decayed = xA90 * decayed_form * team_form.attack_form
+
+        fixture_xG90_base = fixture_xG90_decayed
+        fixture_xA90_base = fixture_xA90_decayed
 
         if home_away_split.has_sufficient_data:
             # USE PLAYER'S ACTUAL HOME/AWAY SPLITS
@@ -1591,20 +1600,17 @@ def calculate_expected_points(
                 split_xG90 = home_away_split.away_xG90
                 split_xA90 = home_away_split.away_xA90
 
-            # Blend split with form-adjusted overall (60% split, 40% overall)
-            # v5.0: Use form-adjusted rates as the baseline for blending
-            fixture_xG90_base = ha_config.split_weight * split_xG90 + (1 - ha_config.split_weight) * xG90_effective
-            fixture_xA90_base = ha_config.split_weight * split_xA90 + (1 - ha_config.split_weight) * xA90_effective
+            # Blend split with form-decayed overall (60% split, 40% overall)
+            fixture_xG90_base = ha_config.split_weight * split_xG90 + (1 - ha_config.split_weight) * fixture_xG90_decayed
+            fixture_xA90_base = ha_config.split_weight * split_xA90 + (1 - ha_config.split_weight) * fixture_xA90_decayed
         else:
             # NO SPLIT DATA: Apply fallback venue boost (~15%)
-            # This captures the typical player home/away variance
-            # Players generally score 15-20% more at home than away
             if is_home:
-                fixture_xG90_base = xG90_effective * PLAYER_HOME_BOOST    # 1.15
-                fixture_xA90_base = xA90_effective * PLAYER_HOME_BOOST
+                fixture_xG90_base = fixture_xG90_decayed * PLAYER_HOME_BOOST    # 1.15
+                fixture_xA90_base = fixture_xA90_decayed * PLAYER_HOME_BOOST
             else:
-                fixture_xG90_base = xG90_effective * PLAYER_AWAY_PENALTY  # 0.85
-                fixture_xA90_base = xA90_effective * PLAYER_AWAY_PENALTY
+                fixture_xG90_base = fixture_xG90_decayed * PLAYER_AWAY_PENALTY  # 0.85
+                fixture_xA90_base = fixture_xA90_decayed * PLAYER_AWAY_PENALTY
 
         # Apply matchup multiplier to xG and calculate fixture xGI
         # v4.3.11: attack_multiplier has SMALL (~5%) opponent venue effect

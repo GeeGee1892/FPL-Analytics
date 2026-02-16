@@ -281,7 +281,7 @@ class FormConfig:
     # Lookback period for recent form
     lookback_games: int = 6
     min_games_for_form: int = 3
-    min_minutes_for_form: int = 180
+    min_minutes_for_form: int = 360  # v5.2: Raised from 180 — prevents tiny-sample form inflation
 
     # Form weight (how much to trust recent vs season)
     # Higher = more reactive to form changes
