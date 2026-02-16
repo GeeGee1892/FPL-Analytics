@@ -548,10 +548,13 @@ def determine_chip_placements(
     horizon_end: int,
     strategy_config: Dict,
     player_gw_cache: Dict,
+    chip_overrides: List[Dict] = None,
 ) -> Dict[int, str]:
     """
     Determine which chips to place on which GWs.
     Evaluates in priority order: WC → FH → BB → TC.
+    Supports user overrides: "lock" forces a chip to a specific GW,
+    "block" prevents a chip from being placed at all.
     Returns {gw: chip_name}.
     """
     min_marginal = strategy_config.get("min_chip_marginal_xpts", 2.5)
@@ -559,6 +562,19 @@ def determine_chip_placements(
     placement_details = []  # List[ChipPlacement]
     working_squad = [p.copy() for p in squad]
     working_bank = bank
+
+    # Parse chip overrides
+    locked = {}   # chip -> gw (force placement)
+    blocked = set()  # chips to skip entirely
+    if chip_overrides:
+        for ov in chip_overrides:
+            chip_id = ov.get("chip", "") if isinstance(ov, dict) else getattr(ov, "chip", "")
+            action = ov.get("action", "") if isinstance(ov, dict) else getattr(ov, "action", "")
+            gw = ov.get("gw") if isinstance(ov, dict) else getattr(ov, "gw", None)
+            if action == "block":
+                blocked.add(chip_id)
+            elif action == "lock" and gw is not None:
+                locked[chip_id] = gw
 
     # Build recommendation lookup: chip -> [recommended GWs]
     rec_gws = defaultdict(list)
@@ -570,7 +586,41 @@ def determine_chip_placements(
         if not available_chips.get(chip, False):
             continue
 
-        # Candidate GWs: from recommendations, or fall back to all horizon GWs
+        # Skip blocked chips
+        if chip in blocked:
+            continue
+
+        # Handle locked chips: force to specific GW
+        if chip in locked:
+            lock_gw = locked[chip]
+            if lock_gw in placements:
+                continue  # GW already taken by higher-priority chip
+            if lock_gw < current_gw or lock_gw > horizon_end:
+                continue  # Out of horizon
+
+            marginal, new_squad = calculate_chip_marginal_value(
+                chip, lock_gw, working_squad, working_bank,
+                fixtures, teams_dict, elements, elements_dict,
+                events, horizon_end, player_gw_cache,
+            )
+            # Lock always places (skip threshold check)
+            placements[lock_gw] = chip
+            rec = next((r for r in chip_recommendations if r.chip == chip and r.recommended_gw == lock_gw), None)
+            reason = rec.reason if rec else (f"+{marginal:.1f} xPts (locked)" if marginal > 0 else "Locked by user")
+            placement_details.append(ChipPlacement(
+                chip=chip, gw=lock_gw, marginal_xpts=marginal, reason=reason,
+            ))
+
+            if chip == "wildcard" and new_squad:
+                total_cost = sum(p.get("price", 0) for p in new_squad)
+                total_budget = working_bank + sum(
+                    p.get("selling_price", p.get("price", 0)) for p in working_squad
+                )
+                working_squad = new_squad
+                working_bank = total_budget - total_cost
+            continue
+
+        # Auto placement: evaluate candidates
         candidate_gws = rec_gws.get(chip, [])
         if not candidate_gws:
             candidate_gws = list(range(current_gw, horizon_end + 1))
@@ -1583,7 +1633,10 @@ def beam_search_strategy(
                         path.squad = new_squad
                         path.bank = total_budget - total_cost
                     path.ft = 1
-                    path.actions.append({"type": "wildcard", "gw": gw})
+                    path.actions.append({
+                        "type": "wildcard", "gw": gw,
+                        "new_squad": [p.copy() for p in path.squad],
+                    })
                 elif active_chip == "freehit":
                     path.pre_fh_squad = [p.copy() for p in path.squad]
                     path.pre_fh_bank = path.bank
@@ -1597,7 +1650,10 @@ def beam_search_strategy(
                     )
                     if fh_squad:
                         path.squad = fh_squad
-                    path.actions.append({"type": "freehit", "gw": gw})
+                    path.actions.append({
+                        "type": "freehit", "gw": gw,
+                        "new_squad": [p.copy() for p in path.squad],
+                    })
 
                 gw_xpts = evaluate_squad_xpts(
                     path.squad, gw, fixtures, teams_dict, elements_dict, events,
@@ -1841,9 +1897,35 @@ def convert_path_to_gw_actions(
             gw_action["action"] = "wildcard"
             gw_action["reasoning"] = "Wildcard active — squad rebuilt"
             ft = 1
+            # Include the new squad for display
+            wc_act = next((a for a in gw_acts if a["type"] == "wildcard"), None)
+            if wc_act and wc_act.get("new_squad"):
+                gw_action["wildcard_squad"] = [
+                    {
+                        "id": p.get("id"),
+                        "name": p.get("name", p.get("web_name", "?")),
+                        "team": p.get("team", p.get("team_short", "?")),
+                        "position": p.get("position", "?"),
+                        "price": p.get("price", 0),
+                    }
+                    for p in wc_act["new_squad"]
+                ]
         elif is_fh:
             gw_action["action"] = "freehit"
             gw_action["reasoning"] = "Free Hit — temporary optimal squad"
+            # Include the FH squad for display
+            fh_act = next((a for a in gw_acts if a["type"] == "freehit"), None)
+            if fh_act and fh_act.get("new_squad"):
+                gw_action["freehit_squad"] = [
+                    {
+                        "id": p.get("id"),
+                        "name": p.get("name", p.get("web_name", "?")),
+                        "team": p.get("team", p.get("team_short", "?")),
+                        "position": p.get("position", "?"),
+                        "price": p.get("price", 0),
+                    }
+                    for p in fh_act["new_squad"]
+                ]
             # FT unchanged after FH
         elif transfers:
             gw_action["action"] = "transfer"
@@ -1887,7 +1969,8 @@ def build_strategy_plan(
     squad_health: List[SquadHealthIssue],
     fixture_swings: List[FixtureSwing],
     chip_recommendations: List[ChipRecommendation],
-    booked_transfers: List[Dict] = None
+    booked_transfers: List[Dict] = None,
+    chip_overrides: List[Dict] = None,
 ) -> StrategyPlan:
     """
     Build a complete strategy plan with proper multi-GW branching tree logic.
@@ -1933,6 +2016,7 @@ def build_strategy_plan(
         horizon_end=horizon_end,
         strategy_config=config,
         player_gw_cache=player_gw_cache,
+        chip_overrides=chip_overrides,
     )
 
     # Phase 2: Beam search over transfer decisions

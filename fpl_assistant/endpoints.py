@@ -34,9 +34,8 @@ from fpl_assistant.constants import (
 )
 from fpl_assistant.models import (
     Position, MinutesOverride,
-    TransferPlannerRequest, BacktestRequest,
+    TransferPlannerRequest,
 )
-from fpl_assistant.backtest import run_backtest_async, backtest_result_to_dict
 from fpl_assistant.cache import cache
 from fpl_assistant.calculators import (
     home_away_calculator, variance_model,
@@ -1752,7 +1751,7 @@ async def get_manager_stats(manager_id: int):
                             "gw": tc_gw,
                             "player": captain.get("web_name", "Unknown"),
                             "captain_pts": captain_pts,
-                            "extra_pts": captain_pts * 2,  # TC gives 3x, captain gives 2x, so extra = pts * 2
+                            "extra_pts": captain_pts,  # TC gives 3x, captain gives 2x, so extra = 1x base pts
                         }
 
                         if is_tc2:
@@ -1890,6 +1889,90 @@ async def get_manager_stats(manager_id: int):
     except Exception as e:
         logger.error(f"Failed to calculate best differential: {e}")
 
+    # Captain Performance - track every captain pick and their points
+    captain_data = []
+    total_captain_pts = 0
+    captain_hits = 0  # GWs where captain scored 6+
+    best_captain = None
+    worst_captain = None
+
+    try:
+        for gw_data in gw_history:
+            gw_num = gw_data.get("event", 0)
+            if gw_num < 1:
+                continue
+
+            gw_picks = await fetch_gw_picks(manager_id, gw_num)
+            if not gw_picks:
+                continue
+
+            picks = gw_picks.get("picks", [])
+            for pick in picks:
+                if pick.get("is_captain"):
+                    pid = pick.get("element")
+                    element = elements.get(pid, {})
+                    multiplier = pick.get("multiplier", 2)
+
+                    # Get captain base points
+                    player_hist = player_histories.get(pid)
+                    if not player_hist and pid:
+                        try:
+                            player_hist = await fetch_player_history(pid)
+                            player_histories[pid] = player_hist
+                        except:
+                            player_hist = {"history": []}
+
+                    base_pts = get_player_gw_points(player_hist, gw_num)
+                    captain_pts_earned = base_pts * multiplier  # 2x or 3x if TC
+
+                    entry = {
+                        "gw": gw_num,
+                        "player": element.get("web_name", "Unknown"),
+                        "player_id": pid,
+                        "base_pts": base_pts,
+                        "multiplier": multiplier,
+                        "total_pts": captain_pts_earned,
+                    }
+                    captain_data.append(entry)
+                    total_captain_pts += captain_pts_earned
+
+                    if base_pts >= 6:
+                        captain_hits += 1
+
+                    if best_captain is None or base_pts > best_captain["base_pts"]:
+                        best_captain = entry
+                    if worst_captain is None or base_pts < worst_captain["base_pts"]:
+                        worst_captain = entry
+                    break
+    except Exception as e:
+        logger.error(f"Failed to calculate captain performance: {e}")
+
+    captain_performance = {
+        "total_pts": total_captain_pts,
+        "hit_rate": round(captain_hits / max(1, len(captain_data)) * 100, 1),
+        "hits": captain_hits,
+        "total_gws": len(captain_data),
+        "best": best_captain,
+        "worst": worst_captain,
+        "picks": captain_data,
+    }
+
+    # Transfer P/L - cumulative impact of all transfers
+    transfer_pl = []
+    cumulative = 0
+    for ta in transfer_analysis:
+        cumulative += ta["pts_diff"]
+        transfer_pl.append({
+            "gw": ta["gw"],
+            "in_name": ta["in"]["name"],
+            "out_name": ta["out"]["name"],
+            "pts_diff": ta["pts_diff"],
+            "cumulative": cumulative,
+        })
+
+    # Total bench points across all GWs
+    total_bench_pts = sum(gw.get("points_on_bench", 0) for gw in gw_history)
+
     return {
         "manager_id": manager_id,
         "current_gw": current_gw,
@@ -1921,6 +2004,12 @@ async def get_manager_stats(manager_id: int):
         "bb2_analysis": bb2_analysis,
         "best_differential": best_differential,
         "chips_used": chips_used,
+        # Captain performance
+        "captain_performance": captain_performance,
+        # Transfer P/L
+        "transfer_pl": transfer_pl,
+        # Total bench waste
+        "total_bench_pts": total_bench_pts,
     }
 
 
@@ -2178,6 +2267,16 @@ async def get_transfer_planner(
                 "reason": bt.reason or "",
             })
 
+    # Parse chip overrides
+    chip_overrides = []
+    if request and request.chip_overrides:
+        for co in request.chip_overrides:
+            chip_overrides.append({
+                "chip": co.chip,
+                "action": co.action,
+                "gw": co.gw,
+            })
+
     # Build strategy plans
     strategies = {}
     for strategy_name in ["safe", "balanced", "risky"]:
@@ -2196,7 +2295,8 @@ async def get_transfer_planner(
             squad_health=squad_health,
             fixture_swings=fixture_swings,
             chip_recommendations=chip_recommendations,
-            booked_transfers=booked_transfers
+            booked_transfers=booked_transfers,
+            chip_overrides=chip_overrides,
         )
         strategies[strategy_name] = {
             "name": plan.name.title(),
@@ -2330,54 +2430,6 @@ async def get_transfer_planner(
         "strategies": strategies,
         "booked_transfers": booked_transfers,
     }
-
-
-# ============ MODEL BACKTESTING ============
-
-@app.post("/api/backtest")
-async def run_backtest_endpoint(request: BacktestRequest):
-    """
-    Run comprehensive xPts backtest over a GW range.
-
-    Returns accuracy metrics broken down by position, price tier, FDR,
-    and individual xPts components.
-
-    Note: Uses current-season cumulative stats (look-ahead bias caveat).
-    """
-    result = await run_backtest_async(
-        gw_start=request.gw_start,
-        gw_end=request.gw_end,
-        position_filter=request.position,
-        min_season_minutes=request.min_minutes,
-        min_gw_minutes=request.min_gw_minutes,
-    )
-    return backtest_result_to_dict(result)
-
-
-@app.get("/api/backtest/gw/{gw}")
-async def backtest_gameweek(
-    gw: int = Path(..., ge=1, le=38),
-    position: Optional[Position] = None,
-    min_minutes: int = Query(200, ge=0),
-):
-    """Single-GW backtest (backward-compatible convenience wrapper)."""
-    result = await run_backtest_async(
-        gw_start=gw,
-        gw_end=gw,
-        position_filter=position.value if position else None,
-        min_season_minutes=min_minutes,
-    )
-    return backtest_result_to_dict(result)
-
-
-@app.get("/api/backtest/summary")
-async def backtest_summary(
-    gw_start: int = Query(1, ge=1, le=38),
-    gw_end: int = Query(10, ge=1, le=38),
-):
-    """Multi-GW backtest summary (backward-compatible convenience wrapper)."""
-    result = await run_backtest_async(gw_start=gw_start, gw_end=gw_end)
-    return backtest_result_to_dict(result)
 
 
 # ============ VARIANCE AND HOME/AWAY SPLIT ENDPOINTS ============

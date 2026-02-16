@@ -23,7 +23,6 @@ from fpl_assistant.cache import *        # noqa: F401,F403
 from fpl_assistant.calculators import *  # noqa: F401,F403
 from fpl_assistant.services import *     # noqa: F401,F403
 from fpl_assistant.planner import *      # noqa: F401,F403
-from fpl_assistant.backtest import *     # noqa: F401,F403
 from fpl_assistant.endpoints import app  # noqa: F401
 
 if __name__ == "__main__":

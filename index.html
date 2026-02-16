@@ -80,9 +80,6 @@
             <button class="nav-tab" data-section="fixtures">
                 <span class="nav-icon">📅</span> Fixtures
             </button>
-            <button class="nav-tab" data-section="backtest">
-                <span class="nav-icon">🔬</span> Backtest
-            </button>
 
         </div>
     </nav>
@@ -166,55 +163,8 @@
                     </div>
                     
                     <div id="statsContent" style="display: none;">
-                        <!-- Chip Analysis Buttons -->
-                        <div class="chip-analysis-section">
-                            <h3>🎫 Chip Performance</h3>
-                            <div class="chip-buttons-grid-8" id="chipButtonsGrid">
-                                <div class="chip-btn unused" id="chipBtnWC1" data-chip="wildcard1">
-                                    <div class="chip-btn-header"><span class="chip-badge wc">WC1</span><span class="chip-status">Not Used</span></div>
-                                    <div class="chip-btn-value">-</div>
-                                    <div class="chip-btn-label">net pts (5 GW)</div>
-                                </div>
-                                <div class="chip-btn unused" id="chipBtnWC2" data-chip="wildcard2">
-                                    <div class="chip-btn-header"><span class="chip-badge wc">WC2</span><span class="chip-status">Not Used</span></div>
-                                    <div class="chip-btn-value">-</div>
-                                    <div class="chip-btn-label">net pts (5 GW)</div>
-                                </div>
-                                <div class="chip-btn unused" id="chipBtnFH1" data-chip="freehit1">
-                                    <div class="chip-btn-header"><span class="chip-badge fh">FH1</span><span class="chip-status">Not Used</span></div>
-                                    <div class="chip-btn-value">-</div>
-                                    <div class="chip-btn-label">vs prev team</div>
-                                </div>
-                                <div class="chip-btn unused" id="chipBtnFH2" data-chip="freehit2">
-                                    <div class="chip-btn-header"><span class="chip-badge fh">FH2</span><span class="chip-status">Not Used</span></div>
-                                    <div class="chip-btn-value">-</div>
-                                    <div class="chip-btn-label">vs prev team</div>
-                                </div>
-                                <div class="chip-btn unused" id="chipBtnTC1" data-chip="tc1">
-                                    <div class="chip-btn-header"><span class="chip-badge tc">TC1</span><span class="chip-status">Not Used</span></div>
-                                    <div class="chip-btn-value">-</div>
-                                    <div class="chip-btn-label">extra pts</div>
-                                </div>
-                                <div class="chip-btn unused" id="chipBtnTC2" data-chip="tc2">
-                                    <div class="chip-btn-header"><span class="chip-badge tc">TC2</span><span class="chip-status">Not Used</span></div>
-                                    <div class="chip-btn-value">-</div>
-                                    <div class="chip-btn-label">extra pts</div>
-                                </div>
-                                <div class="chip-btn unused" id="chipBtnBB1" data-chip="bb1">
-                                    <div class="chip-btn-header"><span class="chip-badge bb">BB1</span><span class="chip-status">Not Used</span></div>
-                                    <div class="chip-btn-value">-</div>
-                                    <div class="chip-btn-label">bench pts</div>
-                                </div>
-                                <div class="chip-btn unused" id="chipBtnBB2" data-chip="bb2">
-                                    <div class="chip-btn-header"><span class="chip-badge bb">BB2</span><span class="chip-status">Not Used</span></div>
-                                    <div class="chip-btn-value">-</div>
-                                    <div class="chip-btn-label">bench pts</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Summary Cards - 5 cards including differential -->
-                        <div class="stats-summary-grid-5">
+                        <!-- Summary Cards Row 1 -->
+                        <div class="stats-summary-grid-4">
                             <div class="stat-summary-card best">
                                 <div class="stat-summary-icon">🏆</div>
                                 <div class="stat-summary-info">
@@ -239,14 +189,6 @@
                                     <div class="stat-summary-sub" id="worstTransferDetail">-</div>
                                 </div>
                             </div>
-                            <div class="stat-summary-card bench">
-                                <div class="stat-summary-icon">🪑</div>
-                                <div class="stat-summary-info">
-                                    <div class="stat-summary-label">Highest Bench</div>
-                                    <div class="stat-summary-value" id="highestBenchPts">-</div>
-                                    <div class="stat-summary-sub" id="highestBenchGw">GW -</div>
-                                </div>
-                            </div>
                             <div class="stat-summary-card differential">
                                 <div class="stat-summary-icon">💎</div>
                                 <div class="stat-summary-info">
@@ -257,8 +199,8 @@
                             </div>
                         </div>
 
-                        <!-- Second row of fun stats -->
-                        <div class="stats-summary-grid-5" style="margin-top: 0;">
+                        <!-- Summary Cards Row 2 -->
+                        <div class="stats-summary-grid-4" style="margin-top: 0;">
                             <div class="stat-summary-card green-arrow">
                                 <div class="stat-summary-icon">🟢</div>
                                 <div class="stat-summary-info">
@@ -291,13 +233,46 @@
                                     <div class="stat-summary-sub" id="totalPointsSub">- total</div>
                                 </div>
                             </div>
-                            <div class="stat-summary-card gws-played">
-                                <div class="stat-summary-icon">📅</div>
-                                <div class="stat-summary-info">
-                                    <div class="stat-summary-label">GWs Played</div>
-                                    <div class="stat-summary-value" id="gwsPlayedValue">-</div>
-                                    <div class="stat-summary-sub" id="gwsPlayedSub">gameweeks</div>
+                        </div>
+
+                        <!-- Captain Performance Panel -->
+                        <div class="stats-section captain-section">
+                            <div class="section-header-toggle" onclick="toggleCaptainPanel()">
+                                <h3>👑 Captain Performance</h3>
+                                <span class="toggle-arrow" id="captainArrow">▼</span>
+                            </div>
+                            <div class="captain-summary">
+                                <div class="captain-stat">
+                                    <div class="captain-stat-value" id="captainTotalPts">-</div>
+                                    <div class="captain-stat-label">Total Captain Pts</div>
                                 </div>
+                                <div class="captain-stat">
+                                    <div class="captain-stat-value" id="captainHitRate">-</div>
+                                    <div class="captain-stat-label">Hit Rate (6+ pts)</div>
+                                </div>
+                                <div class="captain-stat best-cap">
+                                    <div class="captain-stat-value positive" id="bestCaptainValue">-</div>
+                                    <div class="captain-stat-label" id="bestCaptainDetail">Best Pick</div>
+                                </div>
+                                <div class="captain-stat worst-cap">
+                                    <div class="captain-stat-value negative" id="worstCaptainValue">-</div>
+                                    <div class="captain-stat-label" id="worstCaptainDetail">Worst Pick</div>
+                                </div>
+                            </div>
+                            <div class="captain-picks-panel" id="captainPicksPanel" style="display: none;">
+                                <div class="captain-picks-list" id="captainPicksList"></div>
+                            </div>
+                        </div>
+
+                        <!-- Chip Performance (collapsible) -->
+                        <div class="stats-section chip-section-collapsible">
+                            <div class="section-header-toggle" onclick="toggleChipPanel()">
+                                <h3>🎫 Chip Performance</h3>
+                                <div class="chip-summary-badges" id="chipSummaryBadges"></div>
+                                <span class="toggle-arrow" id="chipArrow">▼</span>
+                            </div>
+                            <div class="chip-details-panel" id="chipDetailsPanel" style="display: none;">
+                                <div id="chipDetailsList"></div>
                             </div>
                         </div>
 
@@ -313,6 +288,15 @@
                             </div>
                             <div class="or-chart-container">
                                 <canvas id="orChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Transfer P/L Chart -->
+                        <div class="stats-section">
+                            <h3>💰 Transfer Profit & Loss</h3>
+                            <div class="transfer-pl-summary" id="transferPlSummary"></div>
+                            <div class="or-chart-container">
+                                <canvas id="transferPlChart"></canvas>
                             </div>
                         </div>
                     </div>
@@ -518,6 +502,68 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
                         <button onclick="addPreBookedTransfer()">+</button>
                     </div>
                 </div>
+
+                <!-- Chip Strategy Controls -->
+                <div class="planner-prebook" style="margin-top: 2rem; max-width: 500px; margin-left: auto; margin-right: auto;">
+                    <div class="planner-card-title" style="text-align: left;">🎯 Chip Strategy (Optional)</div>
+                    <div class="prebook-help" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                        Lock chips to specific GWs or block them entirely. Default: auto-placed by algorithm.
+                    </div>
+                    <div class="chip-overrides-grid">
+                        <div class="chip-override-row">
+                            <span class="chip-override-label">🃏 Wildcard</span>
+                            <select id="chipOverride_wildcard" class="chip-override-action" onchange="toggleChipGw('wildcard')">
+                                <option value="auto">Auto</option>
+                                <option value="lock">Lock to GW</option>
+                                <option value="block">Block</option>
+                            </select>
+                            <select id="chipGw_wildcard" class="chip-override-gw" style="display:none;">
+                                <option value="23">GW23</option><option value="24">GW24</option><option value="25">GW25</option>
+                                <option value="26">GW26</option><option value="27">GW27</option><option value="28">GW28</option>
+                                <option value="29">GW29</option><option value="30">GW30</option>
+                            </select>
+                        </div>
+                        <div class="chip-override-row">
+                            <span class="chip-override-label">🔄 Free Hit</span>
+                            <select id="chipOverride_freehit" class="chip-override-action" onchange="toggleChipGw('freehit')">
+                                <option value="auto">Auto</option>
+                                <option value="lock">Lock to GW</option>
+                                <option value="block">Block</option>
+                            </select>
+                            <select id="chipGw_freehit" class="chip-override-gw" style="display:none;">
+                                <option value="23">GW23</option><option value="24">GW24</option><option value="25">GW25</option>
+                                <option value="26">GW26</option><option value="27">GW27</option><option value="28">GW28</option>
+                                <option value="29">GW29</option><option value="30">GW30</option>
+                            </select>
+                        </div>
+                        <div class="chip-override-row">
+                            <span class="chip-override-label">🪑 Bench Boost</span>
+                            <select id="chipOverride_bboost" class="chip-override-action" onchange="toggleChipGw('bboost')">
+                                <option value="auto">Auto</option>
+                                <option value="lock">Lock to GW</option>
+                                <option value="block">Block</option>
+                            </select>
+                            <select id="chipGw_bboost" class="chip-override-gw" style="display:none;">
+                                <option value="23">GW23</option><option value="24">GW24</option><option value="25">GW25</option>
+                                <option value="26">GW26</option><option value="27">GW27</option><option value="28">GW28</option>
+                                <option value="29">GW29</option><option value="30">GW30</option>
+                            </select>
+                        </div>
+                        <div class="chip-override-row">
+                            <span class="chip-override-label">👑 Triple Captain</span>
+                            <select id="chipOverride_3xc" class="chip-override-action" onchange="toggleChipGw('3xc')">
+                                <option value="auto">Auto</option>
+                                <option value="lock">Lock to GW</option>
+                                <option value="block">Block</option>
+                            </select>
+                            <select id="chipGw_3xc" class="chip-override-gw" style="display:none;">
+                                <option value="23">GW23</option><option value="24">GW24</option><option value="25">GW25</option>
+                                <option value="26">GW26</option><option value="27">GW27</option><option value="28">GW28</option>
+                                <option value="29">GW29</option><option value="30">GW30</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Planner Loading -->
@@ -620,79 +666,6 @@ Or paste the full table - it will parse Team, AdjxG For, AdjxG Ag columns"></tex
 
 
         <!-- BACKTEST SECTION -->
-        <section id="backtest" class="section">
-            <div class="backtest-controls">
-                <div class="team-input-title">Model Accuracy Dashboard</div>
-                <div class="team-input-subtitle">
-                    Validate xPts predictions against actual results
-                    <span class="backtest-caveat">(uses current stats — look-ahead bias caveat)</span>
-                </div>
-                <div class="backtest-input-row">
-                    <label>GW Range:</label>
-                    <input type="number" id="backtestGwStart" value="1" min="1" max="38" class="gw-input">
-                    <span>to</span>
-                    <input type="number" id="backtestGwEnd" value="10" min="1" max="38" class="gw-input">
-                    <select id="backtestPosition" class="backtest-select">
-                        <option value="">All Positions</option>
-                        <option value="GKP">GKP</option>
-                        <option value="DEF">DEF</option>
-                        <option value="MID">MID</option>
-                        <option value="FWD">FWD</option>
-                    </select>
-                    <button class="btn btn-primary" onclick="runBacktest()">Run Backtest</button>
-                </div>
-            </div>
-
-            <div id="backtestLoading" class="loading" style="display: none;">
-                <div class="loading-spinner"></div>
-                <div style="margin-top: 1rem;">Running backtest... (this may take a minute)</div>
-            </div>
-
-            <div id="backtestContent" style="display: none;">
-                <!-- Overall Metrics -->
-                <div class="backtest-metrics-row" id="backtestMetrics"></div>
-
-                <!-- Charts Grid -->
-                <div class="backtest-charts-grid">
-                    <div class="backtest-card">
-                        <div class="backtest-card-title">MAE by Position</div>
-                        <canvas id="backtestPositionChart"></canvas>
-                    </div>
-                    <div class="backtest-card">
-                        <div class="backtest-card-title">MAE by Price Tier</div>
-                        <canvas id="backtestPriceChart"></canvas>
-                    </div>
-                    <div class="backtest-card">
-                        <div class="backtest-card-title">MAE by Fixture Difficulty</div>
-                        <canvas id="backtestFdrChart"></canvas>
-                    </div>
-                    <div class="backtest-card">
-                        <div class="backtest-card-title">Component Rates (Actual)</div>
-                        <canvas id="backtestComponentChart"></canvas>
-                    </div>
-                </div>
-
-                <!-- GW Trend -->
-                <div class="backtest-card backtest-card-wide">
-                    <div class="backtest-card-title">MAE by Gameweek</div>
-                    <canvas id="backtestGwTrendChart"></canvas>
-                </div>
-
-                <!-- Worst/Best Tables -->
-                <div class="backtest-tables-grid">
-                    <div class="backtest-card">
-                        <div class="backtest-card-title">Biggest Misses</div>
-                        <div id="backtestWorstTable"></div>
-                    </div>
-                    <div class="backtest-card">
-                        <div class="backtest-card-title">Most Accurate</div>
-                        <div id="backtestBestTable"></div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-
     </main>
 
 </body>

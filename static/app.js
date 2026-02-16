@@ -690,11 +690,12 @@ function renderOptimizedSquad(data) {
 
 // ============ STATS TAB ============
 let orChart = null;
+let transferPlChart = null;
 
 async function loadManagerStats(teamId) {
     const loadingEl = document.getElementById('statsLoading');
     const contentEl = document.getElementById('statsContent');
-    
+
     loadingEl.style.display = 'flex';
     loadingEl.innerHTML = `
         <div class="loading-spinner"></div>
@@ -702,7 +703,7 @@ async function loadManagerStats(teamId) {
         <span class="stats-loading-sub">Analyzing transfers, bench points, and chip usage</span>
     `;
     contentEl.style.display = 'none';
-    
+
     try {
         const response = await fetch(`${API_BASE}/api/my-team/${teamId}/stats`);
         if (!response.ok) {
@@ -722,39 +723,40 @@ async function loadManagerStats(teamId) {
     }
 }
 
+const formatRankChange = (change) => {
+    const abs = Math.abs(change);
+    if (abs >= 1000000) return (abs/1000000).toFixed(1) + 'M';
+    if (abs >= 1000) return (abs/1000).toFixed(0) + 'K';
+    return abs.toString();
+};
+
 function renderManagerStats(stats) {
-    // Best GW - points + rank
+    // Best GW
     document.getElementById('bestGwPoints').textContent = `${stats.best_gw?.points || '-'} pts`;
     document.getElementById('bestGwRank').textContent = `GW ${stats.best_gw?.gw || '-'} · Rank ${stats.best_gw?.rank?.toLocaleString() || '-'}`;
-    
-    // Best Transfer - actual pts gained
+
+    // Best Transfer
     if (stats.best_transfer) {
         const bt = stats.best_transfer;
-        const ptsClass = bt.pts_diff >= 0 ? 'positive' : 'negative';
         document.getElementById('bestTransferPts').textContent = `+${bt.pts_diff} pts`;
-        document.getElementById('bestTransferPts').className = `stat-summary-value ${ptsClass}`;
+        document.getElementById('bestTransferPts').className = `stat-summary-value ${bt.pts_diff >= 0 ? 'positive' : 'negative'}`;
         document.getElementById('bestTransferDetail').textContent = `${bt.out.name} → ${bt.in.name} (GW${bt.gw})`;
     } else {
         document.getElementById('bestTransferPts').textContent = '-';
         document.getElementById('bestTransferDetail').textContent = 'No transfers yet';
     }
-    
-    // Worst Transfer - actual pts lost
+
+    // Worst Transfer
     if (stats.worst_transfer) {
         const wt = stats.worst_transfer;
-        const ptsClass = wt.pts_diff >= 0 ? 'positive' : 'negative';
         document.getElementById('worstTransferPts').textContent = `${wt.pts_diff} pts`;
-        document.getElementById('worstTransferPts').className = `stat-summary-value ${ptsClass}`;
+        document.getElementById('worstTransferPts').className = `stat-summary-value ${wt.pts_diff >= 0 ? 'positive' : 'negative'}`;
         document.getElementById('worstTransferDetail').textContent = `${wt.out.name} → ${wt.in.name} (GW${wt.gw})`;
     } else {
         document.getElementById('worstTransferPts').textContent = '-';
         document.getElementById('worstTransferDetail').textContent = 'No transfers yet';
     }
-    
-    // Highest Bench
-    document.getElementById('highestBenchPts').textContent = `${stats.highest_bench?.points || 0} pts`;
-    document.getElementById('highestBenchGw').textContent = `GW ${stats.highest_bench?.gw || '-'}`;
-    
+
     // Best Differential
     if (stats.best_differential) {
         const diff = stats.best_differential;
@@ -764,15 +766,8 @@ function renderManagerStats(stats) {
         document.getElementById('bestDiffPts').textContent = '-';
         document.getElementById('bestDiffDetail').textContent = 'No differentials (<10%)';
     }
-    
+
     // Biggest Green Arrow
-    const formatRankChange = (change) => {
-        const abs = Math.abs(change);
-        if (abs >= 1000000) return (abs/1000000).toFixed(1) + 'M';
-        if (abs >= 1000) return (abs/1000).toFixed(0) + 'K';
-        return abs.toString();
-    };
-    
     if (stats.biggest_green_arrow && stats.biggest_green_arrow.change > 0) {
         document.getElementById('biggestGreenValue').textContent = `↑ ${formatRankChange(stats.biggest_green_arrow.change)}`;
         document.getElementById('biggestGreenDetail').textContent = `GW ${stats.biggest_green_arrow.gw}`;
@@ -780,7 +775,7 @@ function renderManagerStats(stats) {
         document.getElementById('biggestGreenValue').textContent = '-';
         document.getElementById('biggestGreenDetail').textContent = 'No green arrows';
     }
-    
+
     // Biggest Red Arrow
     if (stats.biggest_red_arrow && stats.biggest_red_arrow.change < 0) {
         document.getElementById('biggestRedValue').textContent = `↓ ${formatRankChange(stats.biggest_red_arrow.change)}`;
@@ -789,89 +784,259 @@ function renderManagerStats(stats) {
         document.getElementById('biggestRedValue').textContent = '-';
         document.getElementById('biggestRedDetail').textContent = 'No red arrows';
     }
-    
+
     // Total Hits
     document.getElementById('totalHitsValue').textContent = stats.total_hits || 0;
     document.getElementById('totalHitsCost').textContent = stats.total_hit_cost > 0 ? `-${stats.total_hit_cost} pts` : '0 pts';
-    
-    // Average GW Points & Total
+
+    // Average GW Points
     document.getElementById('avgGwPoints').textContent = stats.avg_gw_points || '-';
     document.getElementById('totalPointsSub').textContent = `${stats.total_points || 0} total`;
-    
-    // GWs Played
-    document.getElementById('gwsPlayedValue').textContent = stats.total_gws_played || 0;
-    document.getElementById('gwsPlayedSub').textContent = 'gameweeks';
-    
-    // Chip Analysis Buttons
-    renderChipButtons(stats);
-    
+
+    // Captain Performance
+    renderCaptainPanel(stats.captain_performance);
+
+    // Chip Performance (collapsible)
+    renderChipSection(stats);
+
     // OR Chart
     renderORChart(stats.or_progression);
-    
+
+    // Transfer P/L Chart
+    renderTransferPlChart(stats.transfer_pl);
+
     document.getElementById('statsLoading').style.display = 'none';
     document.getElementById('statsContent').style.display = 'block';
 }
 
-function renderChipButtons(stats) {
+// --- Captain Performance ---
+function renderCaptainPanel(cap) {
+    if (!cap || !cap.total_gws) {
+        document.getElementById('captainTotalPts').textContent = '-';
+        document.getElementById('captainHitRate').textContent = '-';
+        return;
+    }
+
+    document.getElementById('captainTotalPts').textContent = cap.total_pts;
+    document.getElementById('captainHitRate').textContent = `${cap.hit_rate}%`;
+
+    if (cap.best) {
+        document.getElementById('bestCaptainValue').textContent = `${cap.best.base_pts} pts`;
+        document.getElementById('bestCaptainDetail').textContent = `${cap.best.player} GW${cap.best.gw}`;
+    }
+    if (cap.worst) {
+        document.getElementById('worstCaptainValue').textContent = `${cap.worst.base_pts} pts`;
+        document.getElementById('worstCaptainDetail').textContent = `${cap.worst.player} GW${cap.worst.gw}`;
+    }
+
+    // Build expandable picks list
+    const listEl = document.getElementById('captainPicksList');
+    if (!listEl || !cap.picks) return;
+
+    listEl.innerHTML = cap.picks.map(p => {
+        const ptsClass = p.base_pts >= 6 ? 'positive' : p.base_pts <= 2 ? 'negative' : '';
+        const tcBadge = p.multiplier === 3 ? ' <span class="chip-badge tc" style="font-size:0.6rem;padding:0.1rem 0.3rem;">TC</span>' : '';
+        return `<div class="captain-pick-row">
+            <span class="captain-pick-gw">GW${p.gw}</span>
+            <span class="captain-pick-name">${p.player}${tcBadge}</span>
+            <span class="captain-pick-pts ${ptsClass}">${p.base_pts} pts</span>
+        </div>`;
+    }).join('');
+}
+
+function toggleCaptainPanel() {
+    const panel = document.getElementById('captainPicksPanel');
+    const arrow = document.getElementById('captainArrow');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        arrow.textContent = '▲';
+    } else {
+        panel.style.display = 'none';
+        arrow.textContent = '▼';
+    }
+}
+
+// --- Chip Performance (collapsible) ---
+function renderChipSection(stats) {
+    const badgesEl = document.getElementById('chipSummaryBadges');
+    const detailsEl = document.getElementById('chipDetailsList');
+    if (!badgesEl || !detailsEl) return;
+
+    const chipConfigs = [
+        { key: 'wc1', label: 'WC1', analysis: stats.wc1_analysis, color: '#f59e0b', type: 'wc' },
+        { key: 'wc2', label: 'WC2', analysis: stats.wc2_analysis, color: '#f59e0b', type: 'wc' },
+        { key: 'fh1', label: 'FH1', analysis: stats.fh1_analysis, color: '#8b5cf6', type: 'fh' },
+        { key: 'fh2', label: 'FH2', analysis: stats.fh2_analysis, color: '#8b5cf6', type: 'fh' },
+        { key: 'tc1', label: 'TC1', analysis: stats.tc1_analysis, color: '#ec4899', type: 'tc' },
+        { key: 'tc2', label: 'TC2', analysis: stats.tc2_analysis, color: '#ec4899', type: 'tc' },
+        { key: 'bb1', label: 'BB1', analysis: stats.bb1_analysis, color: '#3b82f6', type: 'bb' },
+        { key: 'bb2', label: 'BB2', analysis: stats.bb2_analysis, color: '#3b82f6', type: 'bb' },
+    ];
+
+    // Also check chips_used for chips without analysis
     const chipsUsed = stats.chips_used || [];
-    
-    // Group chip uses by type and half of season
-    const wcUses = chipsUsed.filter(c => c.name === 'wildcard');
-    const fhUses = chipsUsed.filter(c => c.name === 'freehit');
-    const tcUses = chipsUsed.filter(c => c.name === '3xc');
-    const bbUses = chipsUsed.filter(c => c.name === 'bboost');
-    
-    // Helper to render a chip button
-    const renderChip = (btnId, analysis, uses, chipType, isSecondHalf) => {
-        const btn = document.getElementById(btnId);
-        if (!btn) return;
-        
-        if (analysis) {
-            btn.classList.remove('unused');
-            btn.classList.add('used');
-            btn.querySelector('.chip-status').textContent = `GW ${analysis.gw}`;
-            
-            // Different value display based on chip type
-            if (chipType === 'wc' || chipType === 'fh') {
-                const sign = analysis.net_pts >= 0 ? '+' : '';
-                btn.querySelector('.chip-btn-value').textContent = `${sign}${analysis.net_pts}`;
-                btn.querySelector('.chip-btn-value').className = `chip-btn-value ${analysis.net_pts >= 0 ? 'positive' : 'negative'}`;
-            } else if (chipType === 'tc') {
-                btn.querySelector('.chip-btn-value').textContent = `+${analysis.extra_pts}`;
-                btn.querySelector('.chip-btn-value').className = 'chip-btn-value positive';
-                btn.querySelector('.chip-btn-label').textContent = analysis.player || 'extra pts';
-            } else if (chipType === 'bb') {
-                btn.querySelector('.chip-btn-value').textContent = `+${analysis.bench_pts}`;
-                btn.querySelector('.chip-btn-value').className = 'chip-btn-value positive';
+    const chipNameMap = { wildcard: 'wc', freehit: 'fh', '3xc': 'tc', bboost: 'bb' };
+
+    // Build summary badges (inline preview) and detail cards
+    let badgesHtml = '';
+    let detailsHtml = '';
+    let usedCount = 0;
+
+    for (const cfg of chipConfigs) {
+        const a = cfg.analysis;
+        // Check if chip was used (even without analysis)
+        const chipApiName = { wc: 'wildcard', fh: 'freehit', tc: '3xc', bb: 'bboost' }[cfg.type];
+        const isSecondHalf = cfg.key.endsWith('2');
+        const chipUse = chipsUsed.find(c => c.name === chipApiName && (isSecondHalf ? c.event >= 20 : c.event < 20));
+
+        if (a) {
+            usedCount++;
+            let valueText = '';
+            let valueClass = '';
+            let detail = '';
+
+            if (cfg.type === 'wc' || cfg.type === 'fh') {
+                const sign = a.net_pts >= 0 ? '+' : '';
+                valueText = `${sign}${a.net_pts}`;
+                valueClass = a.net_pts >= 0 ? 'positive' : 'negative';
+                detail = cfg.type === 'wc'
+                    ? `${a.players_in} players in, ${a.players_out} out · ${a.gw_range}`
+                    : `FH: ${a.fh_pts} pts vs prev team: ${a.prev_team_pts} pts`;
+            } else if (cfg.type === 'tc') {
+                valueText = `+${a.extra_pts}`;
+                valueClass = 'positive';
+                detail = `${a.player} scored ${a.captain_pts} base pts`;
+            } else if (cfg.type === 'bb') {
+                valueText = `+${a.bench_pts}`;
+                valueClass = 'positive';
+                detail = `Bench scored ${a.bench_pts} pts`;
             }
-        } else {
-            // Check if chip was used but analysis not available
-            const chipUse = uses.find(u => isSecondHalf ? u.event >= 20 : u.event < 20);
-            if (chipUse) {
-                btn.classList.remove('unused');
-                btn.classList.add('used');
-                btn.querySelector('.chip-status').textContent = `GW ${chipUse.event}`;
-                btn.querySelector('.chip-btn-value').textContent = '?';
-                btn.querySelector('.chip-btn-value').className = 'chip-btn-value';
-            } else {
-                btn.classList.add('unused');
-                btn.classList.remove('used');
-                btn.querySelector('.chip-status').textContent = 'Not Used';
-                btn.querySelector('.chip-btn-value').textContent = '-';
-                btn.querySelector('.chip-btn-value').className = 'chip-btn-value';
+
+            badgesHtml += `<span class="chip-summary-badge" style="border-color: ${cfg.color}; color: ${cfg.color};">${cfg.label} GW${a.gw} <strong class="${valueClass}">${valueText}</strong></span>`;
+            detailsHtml += `<div class="chip-detail-card" style="border-left: 3px solid ${cfg.color};">
+                <div class="chip-detail-header"><span class="chip-badge" style="background: ${cfg.color};">${cfg.label}</span><span>GW ${a.gw}</span></div>
+                <div class="chip-detail-value ${valueClass}">${valueText} pts</div>
+                <div class="chip-detail-sub">${detail}</div>
+            </div>`;
+        } else if (chipUse) {
+            usedCount++;
+            badgesHtml += `<span class="chip-summary-badge" style="border-color: ${cfg.color}; color: ${cfg.color};">${cfg.label} GW${chipUse.event}</span>`;
+            detailsHtml += `<div class="chip-detail-card" style="border-left: 3px solid ${cfg.color};">
+                <div class="chip-detail-header"><span class="chip-badge" style="background: ${cfg.color};">${cfg.label}</span><span>GW ${chipUse.event}</span></div>
+                <div class="chip-detail-value">Used</div>
+            </div>`;
+        }
+    }
+
+    if (usedCount === 0) {
+        badgesHtml = '<span style="color: var(--text-muted); font-size: 0.75rem;">No chips used yet</span>';
+        detailsHtml = '<div style="color: var(--text-muted); padding: 1rem; text-align: center;">No chips have been played this season</div>';
+    }
+
+    badgesEl.innerHTML = badgesHtml;
+    detailsEl.innerHTML = detailsHtml;
+}
+
+function toggleChipPanel() {
+    const panel = document.getElementById('chipDetailsPanel');
+    const arrow = document.getElementById('chipArrow');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        arrow.textContent = '▲';
+    } else {
+        panel.style.display = 'none';
+        arrow.textContent = '▼';
+    }
+}
+
+// --- Transfer P/L Chart ---
+function renderTransferPlChart(transferPl) {
+    const ctx = document.getElementById('transferPlChart');
+    const summaryEl = document.getElementById('transferPlSummary');
+    if (!ctx) return;
+
+    if (transferPlChart) transferPlChart.destroy();
+
+    if (!transferPl || transferPl.length === 0) {
+        if (summaryEl) summaryEl.innerHTML = '<span style="color: var(--text-muted);">No transfers made yet</span>';
+        return;
+    }
+
+    const finalPl = transferPl[transferPl.length - 1].cumulative;
+    const totalTransfers = transferPl.length;
+    const profitable = transferPl.filter(t => t.pts_diff > 0).length;
+
+    if (summaryEl) {
+        const plClass = finalPl >= 0 ? 'positive' : 'negative';
+        const plSign = finalPl >= 0 ? '+' : '';
+        summaryEl.innerHTML = `
+            <span class="transfer-pl-stat"><strong class="${plClass}">${plSign}${finalPl}</strong> net pts</span>
+            <span class="transfer-pl-stat">${totalTransfers} transfers</span>
+            <span class="transfer-pl-stat">${profitable}/${totalTransfers} profitable</span>
+        `;
+    }
+
+    const labels = transferPl.map(t => `GW${t.gw}`);
+    const cumulativeData = transferPl.map(t => t.cumulative);
+    const perTransferData = transferPl.map(t => t.pts_diff);
+
+    // Color bars green/red based on individual transfer P/L
+    const barColors = perTransferData.map(v => v >= 0 ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)');
+
+    transferPlChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                type: 'line',
+                label: 'Cumulative P/L',
+                data: cumulativeData,
+                borderColor: '#00d4aa',
+                backgroundColor: 'transparent',
+                tension: 0.3,
+                pointRadius: 3,
+                pointBackgroundColor: '#00d4aa',
+                yAxisID: 'y',
+                order: 0,
+            }, {
+                type: 'bar',
+                label: 'Per Transfer',
+                data: perTransferData,
+                backgroundColor: barColors,
+                borderRadius: 3,
+                yAxisID: 'y',
+                order: 1,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { labels: { color: '#9090a0' } },
+                tooltip: {
+                    callbacks: {
+                        afterBody: function(context) {
+                            const idx = context[0].dataIndex;
+                            const t = transferPl[idx];
+                            return [`${t.out_name} → ${t.in_name}`];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#606070' },
+                    grid: { color: 'rgba(255,255,255,0.05)' }
+                },
+                y: {
+                    ticks: { color: '#9090a0' },
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    title: { display: true, text: 'Points', color: '#9090a0' }
+                }
             }
         }
-    };
-    
-    // Render all 8 chips
-    renderChip('chipBtnWC1', stats.wc1_analysis, wcUses, 'wc', false);
-    renderChip('chipBtnWC2', stats.wc2_analysis, wcUses, 'wc', true);
-    renderChip('chipBtnFH1', stats.fh1_analysis, fhUses, 'fh', false);
-    renderChip('chipBtnFH2', stats.fh2_analysis, fhUses, 'fh', true);
-    renderChip('chipBtnTC1', stats.tc1_analysis, tcUses, 'tc', false);
-    renderChip('chipBtnTC2', stats.tc2_analysis, tcUses, 'tc', true);
-    renderChip('chipBtnBB1', stats.bb1_analysis, bbUses, 'bb', false);
-    renderChip('chipBtnBB2', stats.bb2_analysis, bbUses, 'bb', true);
+    });
 }
 
 function renderORChart(progression) {
@@ -913,6 +1078,23 @@ function renderORChart(progression) {
         return 'circle';
     });
     
+    // Auto-scale Y-axis based on actual rank range
+    const validOr = orData.filter(v => v > 0);
+    const minRank = Math.min(...validOr);
+    const maxRank = Math.max(...validOr);
+
+    // Build nice tick values that span the actual range
+    const allTicks = [1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000, 2000000, 4000000, 8000000, 12000000];
+    // Pad range by ~20% on each side (in log space)
+    const logMin = Math.log10(minRank) - 0.2;
+    const logMax = Math.log10(maxRank) + 0.2;
+    const scaledMin = Math.max(100, Math.pow(10, logMin));
+    const scaledMax = Math.min(12000000, Math.pow(10, logMax));
+    const filteredTicks = allTicks.filter(t => t >= scaledMin * 0.8 && t <= scaledMax * 1.2);
+    // Ensure we always have the boundary ticks
+    if (filteredTicks.length === 0 || filteredTicks[0] > scaledMin) filteredTicks.unshift(Math.round(scaledMin));
+    if (filteredTicks[filteredTicks.length - 1] < scaledMax) filteredTicks.push(Math.round(scaledMax));
+
     orChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -938,44 +1120,31 @@ function renderORChart(progression) {
                 borderDash: [5, 5],
                 tension: 0.3,
                 yAxisID: 'y1',
-                pointRadius: 0,  // Hide points for cleaner look
+                pointRadius: 0,
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false,
-            },
+            interaction: { mode: 'index', intersect: false },
             plugins: {
-                legend: {
-                    labels: { color: '#9090a0' }
-                },
+                legend: { labels: { color: '#9090a0' } },
                 tooltip: {
                     callbacks: {
                         afterBody: function(context) {
                             const idx = context[0].dataIndex;
                             const d = progression[idx];
                             let lines = [];
-                            
                             if (d.rank_change) {
                                 const arrow = d.rank_change > 0 ? '🟢 ↑' : '🔴 ↓';
-                                const change = Math.abs(d.rank_change);
-                                const formatted = change >= 1000000 ? (change/1000000).toFixed(1) + 'M' :
-                                                 change >= 1000 ? (change/1000).toFixed(0) + 'K' : change;
-                                lines.push(`${arrow} ${formatted} places`);
+                                lines.push(`${arrow} ${formatRankChange(d.rank_change)} places`);
                             }
                             if (d.chip) {
                                 const chipNames = { wildcard: 'Wildcard', '3xc': 'Triple Captain', bboost: 'Bench Boost', freehit: 'Free Hit' };
                                 lines.push(`⭐ ${chipNames[d.chip] || d.chip}`);
                             }
-                            if (d.hit_cost > 0) {
-                                lines.push(`🔻 -${d.hit_cost} pts (hit)`);
-                            }
-                            if (d.bench_pts > 5) {
-                                lines.push(`🪑 ${d.bench_pts} pts on bench`);
-                            }
+                            if (d.hit_cost > 0) lines.push(`🔻 -${d.hit_cost} pts (hit)`);
+                            if (d.bench_pts > 5) lines.push(`🪑 ${d.bench_pts} pts on bench`);
                             return lines;
                         }
                     }
@@ -990,26 +1159,16 @@ function renderORChart(progression) {
                     type: 'logarithmic',
                     display: true,
                     position: 'left',
-                    reverse: true,  // Lower rank is better (top of chart)
-                    min: 100000,     // Top 100K at top
-                    max: 12000000,   // 12M at bottom
+                    reverse: true,
+                    min: scaledMin,
+                    max: scaledMax,
                     afterBuildTicks: function(axis) {
-                        // Force specific tick values for better readability
-                        axis.ticks = [
-                            { value: 100000 },
-                            { value: 250000 },
-                            { value: 500000 },
-                            { value: 1000000 },
-                            { value: 2000000 },
-                            { value: 4000000 },
-                            { value: 8000000 },
-                            { value: 12000000 }
-                        ];
+                        axis.ticks = filteredTicks.map(v => ({ value: v }));
                     },
-                    ticks: { 
+                    ticks: {
                         color: '#00d4aa',
                         callback: function(value) {
-                            if (value >= 1000000) return (value/1000000).toFixed(0) + 'M';
+                            if (value >= 1000000) return (value/1000000).toFixed(value >= 10000000 ? 0 : 1) + 'M';
                             if (value >= 1000) return (value/1000).toFixed(0) + 'K';
                             return value;
                         }
@@ -1560,6 +1719,30 @@ function renderPreBookedList() {
     `).join('');
 }
 
+function toggleChipGw(chip) {
+    const action = document.getElementById(`chipOverride_${chip}`).value;
+    const gwSelect = document.getElementById(`chipGw_${chip}`);
+    gwSelect.style.display = action === 'lock' ? 'inline-block' : 'none';
+}
+
+function getChipOverrides() {
+    const chips = ['wildcard', 'freehit', 'bboost', '3xc'];
+    const overrides = [];
+    for (const chip of chips) {
+        const actionEl = document.getElementById(`chipOverride_${chip}`);
+        if (!actionEl) continue;
+        const action = actionEl.value;
+        if (action === 'auto') continue;
+        const override = { chip, action };
+        if (action === 'lock') {
+            const gwEl = document.getElementById(`chipGw_${chip}`);
+            override.gw = parseInt(gwEl.value);
+        }
+        overrides.push(override);
+    }
+    return overrides;
+}
+
 async function loadPlanner() {
     const teamIdInput = document.getElementById('plannerTeamIdInput');
     const horizonSelect = document.getElementById('plannerHorizonSelect');
@@ -1612,11 +1795,17 @@ async function loadPlanner() {
             }
         }
 
+        // Collect chip overrides
+        const chipOverrides = getChipOverrides();
+
         // Load planner data
         const res = await fetch(`${API_BASE}/api/transfer-planner/${managerId}?horizon=${horizon}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ booked_transfers: bookedTransfers })
+            body: JSON.stringify({
+                booked_transfers: bookedTransfers,
+                chip_overrides: chipOverrides,
+            })
         });
 
         if (!res.ok) {
@@ -1856,16 +2045,33 @@ function renderTimeline() {
         }
 
         if (gw.action === 'wildcard') {
-            actionHtml += gw.transfers && gw.transfers.length > 0
-                ? gw.transfers.map(t => `
-                    <div class="transfer-detail">
-                        <span class="transfer-out">${t.out?.name || '?'}</span>
-                        →
-                        <span class="transfer-in">${t.in?.name || '?'}</span>
-                    </div>`).join('')
-                : '<span class="action-badge roll">Squad rebuilt</span>';
+            const wcSquad = gw.wildcard_squad;
+            if (wcSquad && wcSquad.length > 0) {
+                actionHtml += `<button class="wc-squad-toggle" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.textContent = this.nextElementSibling.style.display === 'none' ? 'View WC Squad ▼' : 'Hide WC Squad ▲'">View WC Squad ▼</button>`;
+                actionHtml += `<div class="wc-squad-panel" style="display:none;">`;
+                const posOrder = {'GKP':1,'DEF':2,'MID':3,'FWD':4};
+                const sorted = [...wcSquad].sort((a,b) => (posOrder[a.position]||9) - (posOrder[b.position]||9));
+                sorted.forEach(p => {
+                    actionHtml += `<div class="wc-squad-player"><span class="wc-pos">${p.position}</span> <span class="wc-name">${p.name}</span> <span class="wc-team">${p.team}</span> <span class="wc-price">£${p.price.toFixed(1)}m</span></div>`;
+                });
+                actionHtml += `</div>`;
+            } else {
+                actionHtml += '<span class="action-badge roll">Squad rebuilt</span>';
+            }
         } else if (gw.action === 'freehit') {
-            actionHtml += '<span class="action-badge roll">Temporary squad</span>';
+            const fhSquad = gw.freehit_squad;
+            if (fhSquad && fhSquad.length > 0) {
+                actionHtml += `<button class="wc-squad-toggle" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.textContent = this.nextElementSibling.style.display === 'none' ? 'View FH Squad ▼' : 'Hide FH Squad ▲'">View FH Squad ▼</button>`;
+                actionHtml += `<div class="wc-squad-panel" style="display:none;">`;
+                const posOrder = {'GKP':1,'DEF':2,'MID':3,'FWD':4};
+                const sorted = [...fhSquad].sort((a,b) => (posOrder[a.position]||9) - (posOrder[b.position]||9));
+                sorted.forEach(p => {
+                    actionHtml += `<div class="wc-squad-player"><span class="wc-pos">${p.position}</span> <span class="wc-name">${p.name}</span> <span class="wc-team">${p.team}</span> <span class="wc-price">£${p.price.toFixed(1)}m</span></div>`;
+                });
+                actionHtml += `</div>`;
+            } else {
+                actionHtml += '<span class="action-badge roll">Temporary squad</span>';
+            }
         } else if (gw.action === 'roll') {
             actionHtml += `<span class="action-badge roll">🔄 Roll FT</span>`;
         } else if (gw.transfers && gw.transfers.length > 0) {
@@ -2050,188 +2256,3 @@ function showPlannerInput() {
     document.getElementById('plannerInputSection').style.display = 'block';
     renderPreBookedList();
 }
-
-
-// ============ BACKTEST ============
-
-let backtestCharts = {};
-
-async function runBacktest() {
-    const gwStart = parseInt(document.getElementById('backtestGwStart').value);
-    const gwEnd = parseInt(document.getElementById('backtestGwEnd').value);
-    const position = document.getElementById('backtestPosition').value;
-
-    document.getElementById('backtestLoading').style.display = 'block';
-    document.getElementById('backtestContent').style.display = 'none';
-
-    try {
-        const resp = await fetch(`${API_BASE}/api/backtest`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                gw_start: gwStart,
-                gw_end: gwEnd,
-                position: position || null,
-            }),
-        });
-        const data = await resp.json();
-        if (data.total_predictions === 0) {
-            document.getElementById('backtestLoading').style.display = 'none';
-            alert('No predictions found for the selected range. Make sure the GWs are finished.');
-            return;
-        }
-        renderBacktestResults(data);
-    } catch (err) {
-        console.error('Backtest failed:', err);
-        alert('Backtest failed. Check server connection.');
-    } finally {
-        document.getElementById('backtestLoading').style.display = 'none';
-    }
-}
-
-function renderBacktestResults(data) {
-    document.getElementById('backtestContent').style.display = 'block';
-    renderBacktestMetrics(data.overall, data.total_predictions, data.gw_range);
-    renderBacktestBarChart('backtestPositionChart', data.by_position);
-    renderBacktestBarChart('backtestPriceChart', data.by_price_tier);
-    renderBacktestBarChart('backtestFdrChart', data.by_fdr);
-    renderBacktestComponentChart('backtestComponentChart', data.component_accuracy);
-    renderBacktestGwTrend('backtestGwTrendChart', data.by_gameweek);
-    renderBacktestPredictionTable('backtestWorstTable', data.worst_predictions);
-    renderBacktestPredictionTable('backtestBestTable', data.best_predictions);
-}
-
-function renderBacktestMetrics(overall, count, range) {
-    const el = document.getElementById('backtestMetrics');
-    const metrics = [
-        { label: 'MAE', value: overall.mae?.toFixed(2) ?? '-', color: '#f97316' },
-        { label: 'RMSE', value: overall.rmse?.toFixed(2) ?? '-', color: '#ef4444' },
-        { label: 'Correlation', value: overall.correlation?.toFixed(3) ?? '-', color: '#22c55e' },
-        { label: 'Bias', value: overall.bias?.toFixed(2) ?? '-', color: '#3b82f6' },
-        { label: 'Predictions', value: count.toLocaleString(), color: '#a855f7' },
-    ];
-    el.innerHTML = metrics.map(m => `
-        <div class="backtest-metric-card">
-            <div class="backtest-metric-value" style="color: ${m.color}">${m.value}</div>
-            <div class="backtest-metric-label">${m.label}</div>
-        </div>
-    `).join('');
-}
-
-function renderBacktestBarChart(canvasId, segments) {
-    if (backtestCharts[canvasId]) backtestCharts[canvasId].destroy();
-    const ctx = document.getElementById(canvasId).getContext('2d');
-    backtestCharts[canvasId] = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: segments.map(s => s.label),
-            datasets: [{
-                label: 'MAE',
-                data: segments.map(s => s.mae),
-                backgroundColor: 'rgba(249, 115, 22, 0.7)',
-                borderColor: '#f97316',
-                borderWidth: 1,
-            }, {
-                label: 'Bias',
-                data: segments.map(s => s.avg_error),
-                backgroundColor: 'rgba(59, 130, 246, 0.5)',
-                borderColor: '#3b82f6',
-                borderWidth: 1,
-            }],
-        },
-        options: {
-            responsive: true,
-            plugins: { legend: { labels: { color: '#9ca3af' } } },
-            scales: {
-                x: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                y: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-            },
-        },
-    });
-}
-
-function renderBacktestComponentChart(canvasId, components) {
-    if (backtestCharts[canvasId]) backtestCharts[canvasId].destroy();
-    const ctx = document.getElementById(canvasId).getContext('2d');
-    backtestCharts[canvasId] = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: components.map(c => c.component),
-            datasets: [{
-                label: 'Actual Rate',
-                data: components.map(c => c.actual_rate),
-                backgroundColor: 'rgba(34, 197, 94, 0.7)',
-                borderColor: '#22c55e',
-                borderWidth: 1,
-            }],
-        },
-        options: {
-            responsive: true,
-            plugins: { legend: { labels: { color: '#9ca3af' } } },
-            scales: {
-                x: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                y: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-            },
-        },
-    });
-}
-
-function renderBacktestGwTrend(canvasId, gwData) {
-    if (backtestCharts[canvasId]) backtestCharts[canvasId].destroy();
-    const ctx = document.getElementById(canvasId).getContext('2d');
-    backtestCharts[canvasId] = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: gwData.map(g => g.label),
-            datasets: [{
-                label: 'MAE',
-                data: gwData.map(g => g.mae),
-                borderColor: '#f97316',
-                backgroundColor: 'rgba(249, 115, 22, 0.1)',
-                fill: true,
-                tension: 0.3,
-            }, {
-                label: 'Correlation',
-                data: gwData.map(g => g.correlation),
-                borderColor: '#22c55e',
-                borderDash: [5, 5],
-                tension: 0.3,
-                yAxisID: 'y1',
-            }],
-        },
-        options: {
-            responsive: true,
-            plugins: { legend: { labels: { color: '#9ca3af' } } },
-            scales: {
-                x: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                y: { title: { display: true, text: 'MAE', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                y1: { position: 'right', title: { display: true, text: 'Correlation', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { display: false }, min: -0.2, max: 1.0 },
-            },
-        },
-    });
-}
-
-function renderBacktestPredictionTable(containerId, predictions) {
-    if (!predictions || predictions.length === 0) {
-        document.getElementById(containerId).innerHTML = '<div style="color: var(--text-muted); padding: 1rem;">No data</div>';
-        return;
-    }
-    let html = '<table class="backtest-table"><thead><tr>';
-    html += '<th>Player</th><th>Pos</th><th>GW</th><th>Pred</th><th>Actual</th><th>Error</th>';
-    html += '</tr></thead><tbody>';
-    for (const p of predictions) {
-        const errColor = p.error > 0 ? '#ef4444' : '#22c55e';
-        html += `<tr>
-            <td>${p.name} <span style="color: var(--text-muted)">(${p.team})</span></td>
-            <td>${p.position}</td>
-            <td>${p.gw}</td>
-            <td>${p.predicted.toFixed(1)}</td>
-            <td>${p.actual}</td>
-            <td style="color: ${errColor}">${p.error > 0 ? '+' : ''}${p.error.toFixed(1)}</td>
-        </tr>`;
-    }
-    html += '</tbody></table>';
-    document.getElementById(containerId).innerHTML = html;
-}
-
-

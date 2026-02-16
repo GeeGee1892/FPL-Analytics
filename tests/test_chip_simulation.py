@@ -13,7 +13,7 @@ from main import (
     ChipPlacement, ChipRecommendation, StrategyPlan, TransferPlannerConfig,
     DataCache, MODEL_CONFIG, POSITION_MAP,
 )
-from fpl_assistant.planner import _greedy_squad
+from fpl_assistant.planner import _greedy_squad, convert_path_to_gw_actions, TransferPath
 
 
 # ============ FIXTURES ============
@@ -464,3 +464,122 @@ class TestChipConfig:
         balanced = TransferPlannerConfig.STRATEGIES["balanced"]["min_chip_marginal_xpts"]
         risky = TransferPlannerConfig.STRATEGIES["risky"]["min_chip_marginal_xpts"]
         assert safe > balanced > risky
+
+
+# ============ TESTS: Chip Overrides ============
+
+class TestChipOverrides:
+    @patch("fpl_assistant.planner.calculate_chip_marginal_value")
+    def test_block_prevents_placement(self, mock_calc):
+        """Blocking a chip should prevent it from being placed."""
+        mock_calc.return_value = (10.0, None)
+
+        available = {"wildcard": True, "freehit": True, "bboost": True, "3xc": True}
+        recs = []
+        config = TransferPlannerConfig.STRATEGIES["risky"]
+
+        overrides = [{"chip": "wildcard", "action": "block"}]
+
+        placements, details = determine_chip_placements(
+            available, recs, _make_squad(), 2.0,
+            _make_fixtures(), _make_events(), _teams_dict(),
+            _make_pool(), {}, 24, 28, config, {},
+            chip_overrides=overrides,
+        )
+
+        placed_chips = {d.chip for d in details}
+        assert "wildcard" not in placed_chips
+        # Other chips should still be placed
+        assert len(details) > 0
+
+    @patch("fpl_assistant.planner.calculate_chip_marginal_value")
+    def test_lock_forces_gw(self, mock_calc):
+        """Locking a chip to a specific GW should force placement there."""
+        mock_calc.return_value = (3.0, None)
+
+        available = {"wildcard": False, "freehit": True, "bboost": False, "3xc": False}
+        recs = []
+        config = TransferPlannerConfig.STRATEGIES["balanced"]
+
+        overrides = [{"chip": "freehit", "action": "lock", "gw": 25}]
+
+        placements, details = determine_chip_placements(
+            available, recs, _make_squad(), 2.0,
+            _make_fixtures(), _make_events(), _teams_dict(),
+            _make_pool(), {}, 24, 28, config, {},
+            chip_overrides=overrides,
+        )
+
+        fh = next((d for d in details if d.chip == "freehit"), None)
+        assert fh is not None
+        assert fh.gw == 25
+
+    @patch("fpl_assistant.planner.calculate_chip_marginal_value")
+    def test_lock_skips_threshold(self, mock_calc):
+        """Locked chips should be placed even if marginal is below threshold."""
+        mock_calc.return_value = (0.5, None)  # Well below safe threshold of 4.0
+
+        available = {"wildcard": False, "freehit": False, "bboost": True, "3xc": False}
+        recs = []
+        config = TransferPlannerConfig.STRATEGIES["safe"]  # threshold = 4.0
+
+        overrides = [{"chip": "bboost", "action": "lock", "gw": 26}]
+
+        placements, details = determine_chip_placements(
+            available, recs, _make_squad(), 2.0,
+            _make_fixtures(), _make_events(), _teams_dict(),
+            _make_pool(), {}, 24, 28, config, {},
+            chip_overrides=overrides,
+        )
+
+        bb = next((d for d in details if d.chip == "bboost"), None)
+        assert bb is not None
+        assert bb.gw == 26
+        assert bb.marginal_xpts == 0.5
+
+    @patch("fpl_assistant.planner.calculate_chip_marginal_value")
+    def test_block_and_lock_together(self, mock_calc):
+        """Block WC + Lock FH should only place FH."""
+        mock_calc.return_value = (5.0, None)
+
+        available = {"wildcard": True, "freehit": True, "bboost": False, "3xc": False}
+        recs = []
+        config = TransferPlannerConfig.STRATEGIES["balanced"]
+
+        overrides = [
+            {"chip": "wildcard", "action": "block"},
+            {"chip": "freehit", "action": "lock", "gw": 27},
+        ]
+
+        placements, details = determine_chip_placements(
+            available, recs, _make_squad(), 2.0,
+            _make_fixtures(), _make_events(), _teams_dict(),
+            _make_pool(), {}, 24, 28, config, {},
+            chip_overrides=overrides,
+        )
+
+        placed_chips = {d.chip for d in details}
+        assert "wildcard" not in placed_chips
+        assert "freehit" in placed_chips
+        fh = next(d for d in details if d.chip == "freehit")
+        assert fh.gw == 27
+
+    def test_wildcard_squad_in_gw_actions(self):
+        """convert_path_to_gw_actions should include wildcard_squad when WC action has new_squad."""
+        new_squad = [
+            {"id": 1, "name": "Player1", "team": "ARS", "position": "GKP", "price": 5.0},
+            {"id": 2, "name": "Player2", "team": "CHE", "position": "DEF", "price": 5.5},
+        ]
+        path = TransferPath(squad=[], bank=0.0, free_transfers=1)
+        path.actions = [{"type": "wildcard", "gw": 25, "new_squad": new_squad}]
+        path.gw_xpts = {25: 45.0}
+
+        chip_placements = {25: "wildcard"}
+
+        gw_actions = convert_path_to_gw_actions(path, 25, 25, chip_placements)
+
+        assert 25 in gw_actions
+        assert gw_actions[25]["action"] == "wildcard"
+        assert "wildcard_squad" in gw_actions[25]
+        assert len(gw_actions[25]["wildcard_squad"]) == 2
+        assert gw_actions[25]["wildcard_squad"][0]["name"] == "Player1"

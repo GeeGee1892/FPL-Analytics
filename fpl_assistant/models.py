@@ -328,116 +328,14 @@ class BookedTransfer(BaseModel):
     reason: Optional[str] = ""
 
 
+class ChipOverride(BaseModel):
+    """User override for chip placement: lock to a GW or block entirely."""
+    chip: str          # "wildcard", "freehit", "bboost", "3xc"
+    action: str        # "lock" (force to gw) or "block" (never use)
+    gw: Optional[int] = None  # Required for "lock", ignored for "block"
+
+
 class TransferPlannerRequest(BaseModel):
     """Request body for transfer planner."""
     booked_transfers: Optional[List[BookedTransfer]] = []
-
-
-# ============ BACKTEST MODELS ============
-
-@dataclass
-class BacktestPrediction:
-    """A single player-GW prediction vs actual result."""
-    player_id: int
-    player_name: str
-    team_short: str
-    position: str
-    position_id: int
-    price: float
-    gameweek: int
-
-    predicted_xpts: float
-    predicted_minutes: float
-    actual_points: int
-    actual_minutes: int
-    actual_goals: int
-    actual_assists: int
-    actual_cs: int
-    actual_bonus: int
-
-    opponent_id: int
-    opponent_name: str
-    is_home: bool
-    fdr: int
-
-    @property
-    def error(self) -> float:
-        return self.predicted_xpts - self.actual_points
-
-    @property
-    def abs_error(self) -> float:
-        return abs(self.error)
-
-    @property
-    def price_tier(self) -> str:
-        if self.price >= 10.0:
-            return "premium"
-        elif self.price >= 7.0:
-            return "mid_price"
-        elif self.price >= 5.0:
-            return "budget"
-        else:
-            return "fodder"
-
-    @property
-    def fdr_bucket(self) -> str:
-        if self.fdr <= 3:
-            return "easy"
-        elif self.fdr <= 6:
-            return "medium"
-        else:
-            return "hard"
-
-
-@dataclass
-class SegmentStats:
-    """Aggregate statistics for a segment of predictions."""
-    label: str
-    count: int
-    mae: float
-    rmse: float
-    avg_error: float
-    correlation: Optional[float]
-
-
-@dataclass
-class ComponentAccuracy:
-    """Accuracy metrics for a single xPts component."""
-    component: str
-    predicted_rate: float
-    actual_rate: float
-    calibration_error: float
-    count: int
-
-
-@dataclass
-class BacktestResult:
-    """Complete result of a backtest run."""
-    gw_start: int
-    gw_end: int
-    total_predictions: int
-
-    overall_mae: float
-    overall_rmse: float
-    overall_correlation: Optional[float]
-    overall_bias: float
-
-    by_position: List[SegmentStats]
-    by_price_tier: List[SegmentStats]
-    by_fdr: List[SegmentStats]
-    by_gameweek: List[SegmentStats]
-
-    component_accuracy: List[ComponentAccuracy]
-    predictions: List['BacktestPrediction']
-
-    look_ahead_bias: bool
-    timestamp: str
-
-
-class BacktestRequest(BaseModel):
-    """Request body for running a backtest."""
-    gw_start: int = 1
-    gw_end: int = 10
-    position: Optional[str] = None
-    min_minutes: int = 200
-    min_gw_minutes: int = 45
+    chip_overrides: Optional[List[ChipOverride]] = []
