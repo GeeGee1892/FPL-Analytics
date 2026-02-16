@@ -767,22 +767,26 @@ function renderManagerStats(stats) {
         document.getElementById('bestDiffDetail').textContent = 'No differentials (<10%)';
     }
 
-    // Biggest Green Arrow
+    // Biggest Rank Gain
     if (stats.biggest_green_arrow && stats.biggest_green_arrow.change > 0) {
-        document.getElementById('biggestGreenValue').textContent = `↑ ${formatRankChange(stats.biggest_green_arrow.change)}`;
-        document.getElementById('biggestGreenDetail').textContent = `GW ${stats.biggest_green_arrow.gw}`;
+        const g = stats.biggest_green_arrow;
+        const pctGain = ((g.change / g.from) * 100).toFixed(1);
+        document.getElementById('biggestGreenValue').textContent = `↑ ${formatRankChange(g.change)}`;
+        document.getElementById('biggestGreenDetail').textContent = `GW${g.gw} · ${formatRankChange(g.from)} → ${formatRankChange(g.to)} (${pctGain}%)`;
     } else {
         document.getElementById('biggestGreenValue').textContent = '-';
-        document.getElementById('biggestGreenDetail').textContent = 'No green arrows';
+        document.getElementById('biggestGreenDetail').textContent = 'No rank gains';
     }
 
-    // Biggest Red Arrow
+    // Biggest Rank Drop
     if (stats.biggest_red_arrow && stats.biggest_red_arrow.change < 0) {
-        document.getElementById('biggestRedValue').textContent = `↓ ${formatRankChange(stats.biggest_red_arrow.change)}`;
-        document.getElementById('biggestRedDetail').textContent = `GW ${stats.biggest_red_arrow.gw}`;
+        const r = stats.biggest_red_arrow;
+        const pctDrop = ((Math.abs(r.change) / r.from) * 100).toFixed(1);
+        document.getElementById('biggestRedValue').textContent = `↓ ${formatRankChange(r.change)}`;
+        document.getElementById('biggestRedDetail').textContent = `GW${r.gw} · ${formatRankChange(r.from)} → ${formatRankChange(r.to)} (${pctDrop}%)`;
     } else {
         document.getElementById('biggestRedValue').textContent = '-';
-        document.getElementById('biggestRedDetail').textContent = 'No red arrows';
+        document.getElementById('biggestRedDetail').textContent = 'No rank drops';
     }
 
     // Total Hits
