@@ -6,6 +6,7 @@ and ALL API endpoint handlers.
 """
 
 import asyncio
+import concurrent.futures
 import json
 import math
 import os
@@ -2352,9 +2353,6 @@ async def get_transfer_planner(
 
     # Build strategy plans with timeout
     # v5.3: 30-second timeout prevents runaway beam search
-    import asyncio
-    import concurrent.futures
-
     strategies = {}
     loop = asyncio.get_event_loop()
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
