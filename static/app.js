@@ -858,6 +858,15 @@ function renderCaptainPanel(cap) {
         document.getElementById('worstCaptainDetail').textContent = `${cap.worst.player} GW${cap.worst.gw}`;
     }
 
+    // Haaland comparison
+    const vsEl = document.getElementById('vsHaalandValue');
+    if (vsEl && cap.haaland_pts !== undefined) {
+        const diff = cap.vs_haaland;
+        const sign = diff >= 0 ? '+' : '';
+        vsEl.textContent = `${sign}${diff}`;
+        vsEl.className = `captain-stat-value ${diff >= 0 ? 'positive' : 'negative'}`;
+    }
+
     // Build expandable picks list
     const listEl = document.getElementById('captainPicksList');
     if (!listEl || !cap.picks) return;

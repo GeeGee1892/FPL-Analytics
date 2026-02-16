@@ -1947,6 +1947,30 @@ async def get_manager_stats(manager_id: int):
     except Exception as e:
         logger.error(f"Failed to calculate captain performance: {e}")
 
+    # Haaland comparison - what if you captained Haaland every GW?
+    haaland_total_pts = 0
+    haaland_id = None
+    try:
+        # Find Haaland by web_name
+        for pid, el in elements.items():
+            if el.get("web_name", "").lower() == "haaland":
+                haaland_id = pid
+                break
+
+        if haaland_id:
+            haaland_hist = player_histories.get(haaland_id)
+            if not haaland_hist:
+                haaland_hist = await fetch_player_history(haaland_id)
+                player_histories[haaland_id] = haaland_hist
+
+            # Sum Haaland's captain pts (2x) for each GW the manager played
+            for cap in captain_data:
+                gw_num = cap["gw"]
+                haaland_base = get_player_gw_points(haaland_hist, gw_num)
+                haaland_total_pts += haaland_base * 2  # Always 2x (no TC)
+    except Exception as e:
+        logger.error(f"Failed to calculate Haaland comparison: {e}")
+
     captain_performance = {
         "total_pts": total_captain_pts,
         "hit_rate": round(captain_hits / max(1, len(captain_data)) * 100, 1),
@@ -1955,6 +1979,8 @@ async def get_manager_stats(manager_id: int):
         "best": best_captain,
         "worst": worst_captain,
         "picks": captain_data,
+        "haaland_pts": haaland_total_pts,
+        "vs_haaland": total_captain_pts - haaland_total_pts,
     }
 
     # Transfer P/L - group by GW for clean chart

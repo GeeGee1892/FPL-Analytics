@@ -2601,8 +2601,13 @@ select { min-width: 140px; cursor: pointer; }
 }
 .captain-pick-pts.positive { color: #10b981; }
 .captain-pick-pts.negative { color: #ef4444; }
+.captain-summary-5 { grid-template-columns: repeat(5, 1fr); }
+.captain-stat.haaland-cmp { border-top: 2px solid #3b82f6; }
+@media (max-width: 900px) {
+    .captain-summary-5 { grid-template-columns: repeat(3, 1fr); }
+}
 @media (max-width: 768px) {
-    .captain-summary { grid-template-columns: repeat(2, 1fr); }
+    .captain-summary, .captain-summary-5 { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* Chip Collapsible Section */
